@@ -1,0 +1,14 @@
+{
+  "bugs": [
+    {
+      "id": "BUG-001",
+      "kind": "broken_image",
+      "url_contains": "/products/"
+    },
+    {
+      "id": "BUG-002",
+      "kind": "javascript_exception",
+      "url_contains": "/checkout"
+    }
+  ]
+}

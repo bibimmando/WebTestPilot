@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webtestpilot-crawler"
+version = "0.1.0"
+description = "Cost-aware Playwright crawler prototype for WebTestPilot"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["playwright>=1.45"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+benchmark = ["tiktoken>=0.7"]
+
+[project.scripts]
+webtestpilot-crawl = "webtestpilot_crawler.cli:main"
+webtestpilot-evaluate = "webtestpilot_crawler.evaluation:main"
+
+[tool.setuptools.packages.find]
+include = ["webtestpilot_crawler*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
