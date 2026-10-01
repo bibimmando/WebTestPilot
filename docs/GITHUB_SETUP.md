@@ -36,7 +36,7 @@ PR 병합 경로를 허용한다. `Required reviews and CI` 규칙은 예외 없
 | `teams/member-03/` | Majunseo |
 | `teams/member-04/` | shlee705 |
 | `teams/member-05/` | peongha |
-| `teams/member-06/` | 배정 예정 |
+| `teams/member-06/` | Yeoil123 |
 
 폴더는 양쪽 브랜치에 동일하게 존재한다. Git 브랜치별로 별도의 권한 체계가 있는 디렉터리는 아니다.
 개인 폴더는 작업 구분을 위한 것이며 저장소 쓰기 권한이 있는 팀원은 다른 폴더도 수정할 수 있다.
@@ -44,9 +44,9 @@ PR 병합 경로를 허용한다. `Required reviews and CI` 규칙은 예외 없
 
 ## 팀원 초대
 
-2026-10-01에 logoo82, Majunseo, shlee705, peongha에게 개발 Collaborator 초대를 보냈다.
+2026-10-01에 logoo82, Majunseo, shlee705, peongha, Yeoil123에게 개발 Collaborator 초대를 보냈다.
 초대받은 사람은 GitHub 알림 또는 이메일에서 초대를 수락한다.
-마지막 한 명은 나중에 Settings → Collaborators → Add people에서 초대하고 `member-06`에 배정하면 된다.
+추가 팀원은 Settings → Collaborators → Add people에서 초대한다.
 초대를 수락하면 기능 브랜치를 push하고 승인 리뷰를 남길 수 있다.
 팀원이 수락하기 전에는 병합 담당자 자신의 PR에 필요한 다른 사람의 승인 리뷰를 받을 수 없다.
 
