@@ -5,15 +5,20 @@
 ## 브랜치와 권한
 
 - 공개 저장소이며 기본 브랜치는 `main`이다.
-- `development`는 팀 개발 결과를 통합한다.
-- `main`과 `development`의 병합 담당자는 `bibimmando` 한 명이다.
-- 팀원은 기능 브랜치를 push하고 `development`에 PR을 올린다.
+- `development`는 팀 개발 결과를 통합한다. 저장소 쓰기 권한이 있는 팀원은 승인 없이 직접 push하거나 PR을 병합할 수 있다.
+- `main`의 병합 담당자는 `bibimmando` 한 명이다.
 - `main`에는 같은 저장소의 `development`에서 만든 PR만 올린다.
 - 팀원은 Collaborator로 초대하며 Admin 권한을 추가하지 않는다.
 
 ## 보호 규칙
 
-두 브랜치 모두 다음 규칙을 적용한다.
+### development
+
+- `Development branch safety`: force push와 브랜치 삭제만 차단한다.
+- PR·승인 리뷰·필수 CI를 push 조건으로 요구하지 않는다.
+- GitHub Actions는 push 후 자동 실행된다. 실패한 변경은 팀원이 수정한다.
+
+### main
 
 1. PR을 통해서만 변경한다. 직접 push는 차단한다.
 2. 다른 사람의 승인 리뷰 1개가 필요하다. 마지막 push 작성자가 자신의 변경을 승인할 수 없다.
@@ -23,8 +28,8 @@
 6. 최신 대상 브랜치를 반영해 검사해야 한다.
 7. force push와 브랜치 삭제를 차단한다.
 
-`Owner-only protected branch updates` 규칙은 브랜치 갱신을 제한하고 `bibimmando`에게만
-PR 병합 경로를 허용한다. `Required reviews and CI` 규칙은 예외 없이 리뷰와 검사를 요구한다.
+`Owner-only protected branch updates`와 `Required reviews and CI`는 `main`에만 적용한다.
+첫 번째 규칙은 `bibimmando`에게만 PR 병합 경로를 허용하며 두 번째 규칙에는 예외가 없다.
 따라서 병합 담당자도 CI와 리뷰를 생략할 수 없다. 저장소 소유자는 설정 자체를 관리할 수 있다.
 
 ## 6명 작업 공간
@@ -47,7 +52,7 @@ PR 병합 경로를 허용한다. `Required reviews and CI` 규칙은 예외 없
 2026-10-01에 logoo82, Majunseo, shlee705, peongha, Yeoil123에게 개발 Collaborator 초대를 보냈다.
 초대받은 사람은 GitHub 알림 또는 이메일에서 초대를 수락한다.
 추가 팀원은 Settings → Collaborators → Add people에서 초대한다.
-초대를 수락하면 기능 브랜치를 push하고 승인 리뷰를 남길 수 있다.
-팀원이 수락하기 전에는 병합 담당자 자신의 PR에 필요한 다른 사람의 승인 리뷰를 받을 수 없다.
+초대를 수락하면 `development`에 직접 push하고 승인 리뷰를 남길 수 있다.
+`main` PR은 병합 담당자가 작성했더라도 다른 팀원의 승인 리뷰가 필요하다.
 
 개발 명령과 PR 양식은 루트 `CONTRIBUTING.md`와 `.github/pull_request_template.md`를 참고한다.
