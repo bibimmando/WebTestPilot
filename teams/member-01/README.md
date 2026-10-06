@@ -2,7 +2,8 @@
 
 - 담당자: `bibimmando` (총괄·최종 병합)
 - 구현 위치: [`page-preprocessor/`](page-preprocessor/)
-- 기능 브랜치에서 작업하고 `development`에 PR을 올린다.
+- `development`에 승인 없이 직접 push한다. 기능 브랜치 → `development` PR도 선택할 수 있다.
+- `main` 반영은 `development`에서 PR을 올려 승인·CI를 통과한 뒤 총괄 담당자가 병합한다.
 
 ## 하는 일
 

@@ -5,16 +5,16 @@
 ## 브랜치 흐름
 
 ```text
-feature/member-01/<작업명> ─┐
-feature/member-02/<작업명>  │
-...                        ├─ PR → development ─ PR → main
-feature/member-06/<작업명> ─┘
+팀원 개발 → development에 직접 push → 승인 리뷰·CI → main PR 병합
+                    ↑
+개인 기능 브랜치 ─ PR (선택)
 ```
 
 - `main`: 테스트를 통과한 안정 버전. `development`에서 올린 PR만 받는다.
-- `development`: 팀 개발 결과를 통합하는 브랜치.
-- `feature/member-NN/<작업명>`: 각 팀원의 실제 작업과 push 대상.
-- `main`과 `development`의 최종 병합은 지정한 총괄 담당자만 수행한다.
+- `development`: 팀원이 승인 없이 직접 push할 수 있는 통합 브랜치. CI는 push 후 자동 실행된다.
+- `feature/member-NN/<작업명>`: 작업 분리를 위한 선택 기능 브랜치.
+- `main`에는 승인 리뷰 1개와 필수 CI가 필요하며 `bibimmando`만 최종 병합한다.
+- 두 브랜치 모두 force push와 브랜치 삭제를 차단한다.
 
 ## 디렉터리
 
@@ -30,7 +30,8 @@ feature/member-06/<작업명> ─┘
 
 ## 개발 시작
 
-프로젝트 설치와 실행은 [크롤러 README](webtestpilot-crawler/README.md)를 참고한다.
+페이지 전처리·URL 크롤러의 설치·실행·출력 구조는 [member-01 사용 안내](teams/member-01/README.md)를 참고한다.
+기존 패키지는 [크롤러 README](webtestpilot-crawler/README.md)에 정리되어 있다.
 브랜치 생성, PR, 병합 규칙은 [CONTRIBUTING.md](CONTRIBUTING.md)를 따른다.
 GitHub 설정은 [설정 안내](docs/GITHUB_SETUP.md)에 정리되어 있다.
 
