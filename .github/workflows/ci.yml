@@ -50,3 +50,9 @@ jobs:
       - name: Test
         run: python -m pytest
 
+      - name: Install member-01 preprocessor
+        working-directory: teams/member-01/page-preprocessor
+        run: python -m pip install -e '.[dev]'
+      - name: Test member-01 preprocessor
+        working-directory: teams/member-01/page-preprocessor
+        run: python -m pytest -q
