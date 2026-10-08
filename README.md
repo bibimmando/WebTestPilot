@@ -30,6 +30,8 @@
 
 ## 개발 시작
 
+각 팀의 AI 개발과 코드 통합 기준은 [공용 개발·통합 가이드](docs/INTEGRATION_GUIDE.md)를 먼저 읽는다.
+
 페이지 전처리·URL 크롤러의 설치·실행·출력 구조는 [member-01 사용 안내](teams/member-01/README.md)를 참고한다.
 기존 패키지는 [크롤러 README](webtestpilot-crawler/README.md)에 정리되어 있다.
 브랜치 생성, PR, 병합 규칙은 [CONTRIBUTING.md](CONTRIBUTING.md)를 따른다.
