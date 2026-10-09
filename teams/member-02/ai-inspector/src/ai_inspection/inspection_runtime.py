@@ -174,6 +174,7 @@ def run_inspection(input_path: Path, output_dir: Path, *, runtime_factory: Calla
                   "reproduction_status": "not_attempted"}
         summary["results"].append(result)
         checkpoint()
+        binding = None
         try:
             binding = runtime_factory(deepcopy(context))
             origins = _validate_binding(binding)
@@ -239,6 +240,7 @@ def run_inspection(input_path: Path, output_dir: Path, *, runtime_factory: Calla
                         receipt = binding.executor.execute(deepcopy(step))
                         if not isinstance(receipt, dict) or receipt.get("execution_status") != "completed":
                             raise ValueError("Tool execution did not complete")
+                        trace["receipt"] = deepcopy(receipt)
                         current = observe()
                         trace.update(execution_status="completed", after=current)
                     except Exception as exc:
@@ -257,6 +259,15 @@ def run_inspection(input_path: Path, output_dir: Path, *, runtime_factory: Calla
             result.update(execution_status="incomplete", termination_reason="runtime_error",
                           error_type=type(exc).__name__)
             # Raw integration exceptions may contain keys, values or page content.
+        finally:
+            # 실제 연결부가 소유한 세션은 성공·실패·한도 중단 모두에서 반환한다.
+            close = getattr(getattr(binding, "executor", None), "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception as exc:
+                    result.update(execution_status="incomplete", termination_reason="cleanup_error",
+                                  cleanup_error_type=type(exc).__name__)
         summary["processed_count"] += 1
         checkpoint()
     summary["unprocessed_input_ids"] = [item["record"]["input_id"] for item in records

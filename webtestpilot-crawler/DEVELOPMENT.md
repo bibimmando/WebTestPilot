@@ -5,6 +5,12 @@
 
 ## 현재 단계
 
+2026-10-09, `claude-playwright-chain`: AI 검사 모듈에 실제 로컬 Playwright MCP 런타임을 연결했다.
+기존 ClaudePlanner·실행 관리자·MCPExecutor·공통 탭 관찰기를 재사용하며 크롤러 동작은 변경하지 않았다.
+Mock Planner로 실제 MCP 클릭·입력·Enter, 동일 CDP 탭 재관찰·JSON 저장·POST 차단을 검증했다.
+AI·브라우저·신규 MCP 테스트 48개가 통과했다. 유료 Claude 계획 호출 검증은 별도로 진행한다.
+자세한 설정·실행·제한은 `teams/member-02/ai-inspector/docs/ai_inspection/PLAYWRIGHT_MCP_RUNTIME.md`에 있다.
+
 Playwright 기반 크롤러와 AI 호출 전 사이트 단위 전처리 파이프라인을 구현한 상태다. 실제 API는
 호출하지 않으며, 축약된 `hybrid_ai_input.jsonl`을 로컬 AI CLI에 전달하는 경계를 사용한다.
 

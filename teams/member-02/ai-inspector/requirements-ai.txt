@@ -1,2 +1,4 @@
 # Local .env configuration for the AI API adapter
 python-dotenv>=1.0,<2
+mcp>=1.20,<2
+jsonschema>=4.23,<5
