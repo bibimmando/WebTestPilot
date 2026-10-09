@@ -5,3 +5,8 @@ __pycache__/
 .env.*
 !.env.example
 결과파일/
+
+# Local-only personal documents
+/docs/private/
+*.py[cod]
+tmp/

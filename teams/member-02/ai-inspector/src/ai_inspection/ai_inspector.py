@@ -1,4 +1,4 @@
-"""Explicit offline preparation or Claude analysis of crawler JSONL evidence."""
+"""Explicit preparation, evidence analysis or injected shared-tab inspection."""
 
 import argparse
 import math
@@ -19,6 +19,11 @@ def main(argv=None) -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--prepare-only", action="store_true", help="prepare requests without AI or browser calls")
     mode.add_argument("--analyze", action="store_true", help="explicitly authorize paid Claude API analysis")
+    mode.add_argument("--execute", action="store_true", help="authorize paid planning and approved shared-tab actions")
+    parser.add_argument("--runtime-factory", help="trusted local module:function creating a RuntimeBinding")
+    parser.add_argument("--max-rounds", type=int, default=3)
+    parser.add_argument("--max-actions", type=int, default=10)
+    parser.add_argument("--max-seconds", type=float, default=60.0)
     parser.add_argument("--limit", type=int, default=1, help="maximum records, in input order (default: 1)")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--tier", choices=["haiku", "sonnet", "opus"], default="haiku")
@@ -30,6 +35,10 @@ def main(argv=None) -> int:
         parser.error("--limit and --max-tokens must be positive")
     if not math.isfinite(args.api_timeout) or args.api_timeout <= 0:
         parser.error("--api-timeout must be finite and positive")
+    if args.execute and (not args.runtime_factory or args.runtime_factory.count(":") != 1):
+        parser.error("--execute requires --runtime-factory module:function for the prepared shared tab")
+    if not args.execute and args.runtime_factory:
+        parser.error("--runtime-factory is only supported with --execute")
     factory = None
     config = None
     if args.analyze:
@@ -42,6 +51,25 @@ def main(argv=None) -> int:
             return ClaudeAnalyzer(tier=args.tier, model=args.model, max_tokens=args.max_tokens, timeout=args.api_timeout)
 
     try:
+        if args.execute:
+            from src.ai_inspection.inspection_runtime import RuntimeLimits, run_inspection
+            limits = RuntimeLimits(args.max_rounds, args.max_actions, args.max_seconds)
+
+            def runtime_factory(context):
+                # The CLI integration module is trusted code, never a JSONL/page field.
+                import importlib
+                from src.ai_inspection.claude_client import ClaudePlanner
+                module, name = args.runtime_factory.split(":")
+                create = getattr(importlib.import_module(module), name)
+                planner = ClaudePlanner(tier=args.tier, model=args.model,
+                                        max_tokens=args.max_tokens, timeout=args.api_timeout)
+                return create(context=context, planner=planner, output_dir=Path(args.output_dir))
+
+            result = run_inspection(Path(args.hybrid_input), Path(args.output_dir),
+                                    runtime_factory=runtime_factory, limit=args.limit, limits=limits)
+            incomplete = sum(row["execution_status"] != "completed" for row in result["results"])
+            print(f"Mode: execute; processed: {result['processed_count']}/{result['total_records']}; actions: {result['action_count']}; incomplete: {incomplete}; wrote {args.output_dir}/inspection_run.json")
+            return 1 if incomplete or result["termination_reason"] != "completed" else 0
         result = inspect_hybrid_input(Path(args.hybrid_input), Path(args.output_dir), limit=args.limit,
                                       analyzer_factory=factory, analysis_config=config)
     except (ValueError, OSError) as exc:

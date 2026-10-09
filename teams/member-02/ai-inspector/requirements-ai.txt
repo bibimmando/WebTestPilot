@@ -1,0 +1,2 @@
+# Local .env configuration for the AI API adapter
+python-dotenv>=1.0,<2

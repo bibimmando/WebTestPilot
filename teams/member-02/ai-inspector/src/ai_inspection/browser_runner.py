@@ -3,8 +3,40 @@
 import json
 import os
 from pathlib import Path
+from uuid import uuid4
 
 from src.ai_inspection.inspection_input import _origin
+
+
+class SharedPageObserver:
+    """Capture the preprocessor-owned synchronous Playwright page without opening a browser.
+
+    A CDP/MCP integration may instead supply its own observer with the same output
+    shape. The integration must ensure this page is the MCP-controlled tab.
+    """
+
+    def __init__(self, page, output_dir: Path, *, max_text_characters: int = 10_000):
+        if type(max_text_characters) is not int or max_text_characters < 1:
+            raise ValueError("Positive observation text limit is required")
+        self.page = page
+        self.output_dir = Path(output_dir)
+        self.max_text_characters = max_text_characters
+
+    def __call__(self):
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        text = self.page.locator("body").inner_text()
+        observation = {"url": self.page.url, "title": self.page.title(),
+                       "text": text[:self.max_text_characters],
+                       "text_truncated": len(text) > self.max_text_characters,
+                       "viewport": self.page.evaluate("({width: innerWidth, height: innerHeight, scroll_x: scrollX, scroll_y: scrollY})"),
+                       "evidence": [], "evidence_status": "available"}
+        screenshot = self.output_dir / f"evidence_{uuid4().hex}.png"
+        try:
+            self.page.screenshot(path=str(screenshot), full_page=False)
+            observation["evidence"].append({"kind": "viewport_screenshot", "path": str(screenshot.resolve())})
+        except Exception as exc:
+            observation.update(evidence_status="missing", evidence_error_type=type(exc).__name__)
+        return observation
 
 
 # 기존 크롤러에 의존하지 않고 설치 브라우저를 찾는다.

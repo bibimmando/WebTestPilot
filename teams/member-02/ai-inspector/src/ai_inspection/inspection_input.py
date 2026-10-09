@@ -3,11 +3,36 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from urllib.parse import urlsplit
 
 HYBRID_SCHEMA = "webtestpilot.hybrid-ai-input.v1"
-HYBRID_KINDS = {"navigation_failure", "interaction_execution_error", "semantic_test_planning"}
+HYBRID_KINDS = {"navigation_failure", "interaction_execution_error", "ambiguous_interaction", "semantic_test_planning"}
+
+
+def adapt_inspection_context(record: dict) -> dict:
+    """Keep the team JSONL envelope; normalize optional runtime context locally.
+
+    payload.inspection_context is an AI-side extension, not a new team schema.
+    Missing context is represented explicitly and never grants permissions.
+    """
+    payload = record["payload"]
+    extension = payload.get("inspection_context", {})
+    if not isinstance(extension, dict):
+        raise ValueError("payload.inspection_context must be an object")
+    context = {}
+    for name in ("site_context", "page_observation", "inspection_flow"):
+        value = extension.get(name, {})
+        if not isinstance(value, dict):
+            raise ValueError(f"inspection_context.{name} must be an object")
+        context[name] = deepcopy(value)
+    context["page_observation"].setdefault("url", record["url"])
+    context["page_observation"]["collected_evidence"] = deepcopy(payload)
+    # Do not recursively duplicate the extension in the legacy evidence.
+    context["page_observation"]["collected_evidence"].pop("inspection_context", None)
+    context["inspection_flow"].setdefault("history", [])
+    return {"input_id": record["input_id"], "kind": record["kind"], **context}
 
 
 # 전체 JSONL을 검증하고 원래 순서와 물리적 줄 번호를 보존한다.
