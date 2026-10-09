@@ -69,6 +69,11 @@ class ClaudeAnalyzer:
                 "schema": analysis_schema(request["response_contract"]),
             }},
         }
+        return self._request_json(payload)
+
+    def _request_json(self, payload: dict) -> dict:
+        """Shared transport for evidence analysis and structured action selection."""
+        self.last_usage = {}
         api_request = Request(
             "https://api.anthropic.com/v1/messages",
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -100,3 +105,16 @@ class ClaudeAnalyzer:
             return json.loads(text)
         except (TypeError, KeyError, ValueError, AttributeError):
             raise ClaudeAPIError("invalid_model_json", "Claude response did not contain valid JSON") from None
+
+
+class ClaudePlanner(ClaudeAnalyzer):
+    """Select registered actions; the program, not the model, executes MCP tools."""
+
+    def __call__(self, request: dict) -> dict:
+        content = {key: request[key] for key in ("input_id", "kind", "work_type", "context", "controls", "checks")}
+        return self._request_json({
+            "model": self.model, "max_tokens": self.max_tokens,
+            "system": request["system"],
+            "messages": [{"role": "user", "content": json.dumps(content, ensure_ascii=False)}],
+            "output_config": {"format": {"type": "json_schema", "schema": request["response_schema"]}},
+        })

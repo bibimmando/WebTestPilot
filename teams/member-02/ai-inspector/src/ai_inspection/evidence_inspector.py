@@ -13,9 +13,41 @@ Return only the requested JSON fields. Explain in Korean. No final bug verdict.
 Plans are descriptive proposals, not executable scripts."""
 
 
+def judge_observation(check: dict, observation: dict) -> dict:
+    """Evaluate a registered expectation, separately from execution and replay.
+
+    The integration owner supplies the check; a model cannot invent its source.
+    A mismatch is a candidate until reproduction is implemented and performed.
+    """
+    expected = {"kind", "value", "source", "evidence_ref"}
+    if not isinstance(check, dict) or set(check) != expected:
+        raise ValueError("A check needs kind, value, source and evidence_ref")
+    if (check["kind"] not in {"text_contains", "url_equals", "unknown"} or
+            check["source"] not in {"requirement", "explicit_constraint", "inference", "unknown"} or
+            not isinstance(check["value"], str) or not isinstance(check["evidence_ref"], str)):
+        raise ValueError("Invalid registered expectation")
+    if (check["kind"] == "unknown" or check["source"] in {"inference", "unknown"} or
+            not check["evidence_ref"].strip() or not check["value"]):
+        return {"status": "review_required", "reason": "expected_behavior_unconfirmed", "expectation": dict(check)}
+    key = "text" if check["kind"] == "text_contains" else "url"
+    actual = observation.get(key)
+    if not isinstance(actual, str):
+        return {"status": "incomplete", "reason": "observation_missing", "expectation": dict(check)}
+    matched = check["value"] in actual if key == "text" else check["value"] == actual
+    if key == "text" and not matched and observation.get("text_truncated"):
+        return {"status": "incomplete", "reason": "observation_truncated", "expectation": dict(check)}
+    return {"status": "passed" if matched else "candidate", "expectation": dict(check),
+            "actual": actual, "reproduction_status": "not_attempted"}
+
+
 # 종류별 목적을 정의하며 원본의 공통 task를 실행 지시로 사용하지 않는다.
 def build_evidence_request(record: dict) -> dict:
     planning = record["kind"] == "semantic_test_planning"
+    review_task = ("Compare the observed before/after interaction evidence and identify what remains ambiguous. "
+                   "An unchanged screen alone does not prove a bug. State whether additional verification or "
+                   "expected behavior clarification is needed; do not make a final bug verdict."
+                   if record["kind"] == "ambiguous_interaction" else
+                   "Summarize the evidence, explain possible causes, and state whether additional verification is needed; do not make a final bug verdict.")
     fields = ({"page_summary": "string", "proposed_checks": ["string"], "open_questions": ["string"]}
               if planning else {"evidence_summary": "string", "possible_explanations": ["string"],
                                 "needs_additional_verification": "boolean", "suggested_checks": ["string"]})
@@ -23,7 +55,7 @@ def build_evidence_request(record: dict) -> dict:
         "schema_version": 1, "input_id": record["input_id"], "kind": record["kind"],
         "work_type": "test_planning" if planning else "evidence_review", "system": SYSTEM,
         "task": ("Describe the page functionality and propose a small number of additional QA checks; identify unknown expected behavior."
-                 if planning else "Summarize the evidence, explain possible causes, and state whether additional verification is needed; do not make a final bug verdict."),
+                 if planning else review_task),
         "evidence": {"url": record["url"], "reason": record.get("reason", ""), "payload": record["payload"]},
         "response_contract": fields,
     }
