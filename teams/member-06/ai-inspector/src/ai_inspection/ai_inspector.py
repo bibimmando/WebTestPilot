@@ -21,6 +21,9 @@ def main(argv=None) -> int:
     mode.add_argument("--analyze", action="store_true", help="explicitly authorize paid Claude API analysis")
     mode.add_argument("--execute", action="store_true", help="authorize paid planning and approved shared-tab actions")
     parser.add_argument("--runtime-factory", help="trusted local module:function creating a RuntimeBinding")
+    parser.add_argument("--runtime-config", help="reviewed local JSON config for the built-in Playwright MCP runtime")
+    parser.add_argument("--analysis-results", help="existing ai_results.jsonl; map suggested_checks by input_id")
+    parser.add_argument("--mock-plan", help="local JSON array of mock plans; no Claude API calls")
     parser.add_argument("--max-rounds", type=int, default=3)
     parser.add_argument("--max-actions", type=int, default=10)
     parser.add_argument("--max-seconds", type=float, default=60.0)
@@ -35,10 +38,14 @@ def main(argv=None) -> int:
         parser.error("--limit and --max-tokens must be positive")
     if not math.isfinite(args.api_timeout) or args.api_timeout <= 0:
         parser.error("--api-timeout must be finite and positive")
-    if args.execute and (not args.runtime_factory or args.runtime_factory.count(":") != 1):
-        parser.error("--execute requires --runtime-factory module:function for the prepared shared tab")
-    if not args.execute and args.runtime_factory:
-        parser.error("--runtime-factory is only supported with --execute")
+    if args.execute and (bool(args.runtime_factory) == bool(args.runtime_config)):
+        parser.error("--execute requires exactly one of --runtime-factory or --runtime-config")
+    if args.runtime_factory and args.runtime_factory.count(":") != 1:
+        parser.error("--runtime-factory must be module:function")
+    if not args.execute and any((args.runtime_factory, args.runtime_config, args.mock_plan, args.analysis_results)):
+        parser.error("Runtime options are only supported with --execute")
+    if args.analysis_results and not args.runtime_config:
+        parser.error("--analysis-results requires --runtime-config")
     factory = None
     config = None
     if args.analyze:
@@ -59,15 +66,31 @@ def main(argv=None) -> int:
                 # The CLI integration module is trusted code, never a JSONL/page field.
                 import importlib
                 from src.ai_inspection.claude_client import ClaudePlanner
-                module, name = args.runtime_factory.split(":")
-                create = getattr(importlib.import_module(module), name)
-                planner = ClaudePlanner(tier=args.tier, model=args.model,
-                                        max_tokens=args.max_tokens, timeout=args.api_timeout)
+                if args.runtime_config:
+                    from src.ai_inspection.playwright_mcp_runtime import create
+                else:
+                    module, name = args.runtime_factory.split(":")
+                    create = getattr(importlib.import_module(module), name)
+                if args.mock_plan:
+                    import json
+                    from src.ai_inspection.playwright_mcp_runtime import ScriptedPlanner
+                    plans = json.loads(Path(args.mock_plan).read_text(encoding="utf-8-sig"))
+                    if not isinstance(plans, list):
+                        raise ValueError("--mock-plan must contain a JSON array")
+                    planner = ScriptedPlanner(plans)
+                else:
+                    planner = ClaudePlanner(tier=args.tier, model=args.model,
+                                            max_tokens=args.max_tokens, timeout=args.api_timeout)
+                if args.runtime_config:
+                    return create(context=context, planner=planner, output_dir=Path(args.output_dir),
+                                  config_path=Path(args.runtime_config), analysis_path=args.analysis_results)
                 return create(context=context, planner=planner, output_dir=Path(args.output_dir))
 
             result = run_inspection(Path(args.hybrid_input), Path(args.output_dir),
                                     runtime_factory=runtime_factory, limit=args.limit, limits=limits)
             incomplete = sum(row["execution_status"] != "completed" for row in result["results"])
+            if any(row.get("error_type") == "MissingAPIKeyError" for row in result["results"]):
+                print("ANTHROPIC_API_KEY is not set; configure WebTestPilot/.env or use --mock-plan")
             print(f"Mode: execute; processed: {result['processed_count']}/{result['total_records']}; actions: {result['action_count']}; incomplete: {incomplete}; wrote {args.output_dir}/inspection_run.json")
             return 1 if incomplete or result["termination_reason"] != "completed" else 0
         result = inspect_hybrid_input(Path(args.hybrid_input), Path(args.output_dir), limit=args.limit,

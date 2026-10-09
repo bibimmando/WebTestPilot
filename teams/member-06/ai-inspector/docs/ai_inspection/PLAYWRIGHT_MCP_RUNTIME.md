@@ -1,8 +1,9 @@
 # 실제 Playwright MCP 연결
 
-2026-10-09, `claude-playwright-chain` 브랜치.
+2026-10-09, `development` 브랜치의 `member-06` 작업 공간.
 
-기존 `run_inspection`, `ClaudePlanner`, `MCPExecutor`, `SharedPageObserver`를 재사용한다.
+기존 `run_inspection`, `ClaudePlanner`, `MCPExecutor`, `SharedPageObserver` 소스를 재사용한다.
+담당자 확인 후 구현을 `teams/member-06/ai-inspector/`로 이동했으며 `member-02` 원본은 작업 전 상태로 복원했다.
 크롤러·JSONL 입력 규격·기존 증거 분석 기능은 재구현하지 않았다.
 
 ```text
@@ -20,7 +21,7 @@ input_id + 등록된 검사 / 승인된 컨트롤
 
 ```powershell
 . .\.tools\dev.ps1
-python -m pip install -r teams/member-02/ai-inspector/requirements-ai.txt
+python -m pip install -r teams/member-06/ai-inspector/requirements-ai.txt
 npm install --prefix .tools/playwright-mcp @playwright/mcp@0.0.83 --no-audit --no-fund
 ```
 
@@ -35,7 +36,7 @@ Playwright MCP 0.0.83이다. 서버 도구 목록과 `inputSchema`는 연결 시
 ## API 호출 없는 실제 실행
 
 ```powershell
-python teams/member-02/ai-inspector/scripts/smoke_playwright_mcp.py
+python teams/member-06/ai-inspector/scripts/smoke_playwright_mcp.py
 ```
 
 로컬 fixture 서버와 격리된 Chromium을 시작하고 실제 MCP로 버튼 클릭, `pilot` 입력,
@@ -58,7 +59,7 @@ Enter 키를 실행한다. API 호출은 0회다. 실행 후 서버·MCP 세션�
 설정 경로·MCP 실행 파일·서버 CLI 인자는 절대 경로 사용을 권장한다.
 
 ```powershell
-cd teams/member-02/ai-inspector
+cd teams/member-06/ai-inspector
 python -m src.ai_inspection.ai_inspector `
   --hybrid-input "C:\path\hybrid_ai_input.jsonl" `
   --execute --runtime-config "C:\path\runtime.json" `
@@ -109,7 +110,7 @@ MCP 서버에는 제한된 브라우저 실행 환경변수만 전달하며 API 
 Mock 검증 뒤 명시적으로 유료 테스트할 때만 다음 명령을 사용한다.
 
 ```powershell
-python teams/member-02/ai-inspector/scripts/smoke_playwright_mcp.py `
+python teams/member-06/ai-inspector/scripts/smoke_playwright_mcp.py `
   --planner claude --output-dir .tools/mcp-smoke-claude
 ```
 
@@ -131,7 +132,7 @@ python teams/member-02/ai-inspector/scripts/smoke_playwright_mcp.py `
 - 기존 준비·분석·실행 모드 회귀 및 환경변수 우선권·키 출력 방지
 
 ```powershell
-cd teams/member-02/ai-inspector
+cd teams/member-06/ai-inspector
 $env:WEBTESTPILOT_BROWSER_TESTS = "1"
 $env:WEBTESTPILOT_MCP_TESTS = "1"
 python -m unittest discover -s src -t . -v

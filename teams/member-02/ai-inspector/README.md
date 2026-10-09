@@ -1,11 +1,5 @@
 # WebTestPilot AI 검사 프로토타입
 
-실제 Claude Planner → Playwright MCP 연결과 실행 방법은
-[MCP 런타임 안내](docs/ai_inspection/PLAYWRIGHT_MCP_RUNTIME.md)를 참고합니다.
-로컬 실제 MCP와 Mock Planner의 클릭·입력·키 동작 및 같은 탭 재관찰을 검증했습니다.
-API 키 설정 위치는 저장소 루트 `WebTestPilot/.env`입니다.
-아래의 기존 후속 연결 설명은 새 런타임 안내를 우선합니다.
-
 현재 기본 흐름은 **팀원 크롤러 → hybrid_ai_input.jsonl → 요청 준비 또는 Claude 분석**입니다.
 크롤러가 수집한 증거를 재사용하고, 작업 종류에 따라 증거 검토와 추가 검사 계획을
 구분합니다. 준비 모드는 API를 호출하지 않고, `--analyze`를 선택하면 유료 Claude API를 호출합니다.

@@ -17,6 +17,10 @@ MODELS = {
 }
 
 
+class MissingAPIKeyError(ValueError):
+    """Safe missing-configuration error, with no credential value."""
+
+
 class ClaudeAPIError(RuntimeError):
     """A safe API failure description, without raw server bodies or credentials."""
 
@@ -50,7 +54,7 @@ class ClaudeAnalyzer:
             raise ValueError("Model ID cannot be empty")
         self._api_key = get_anthropic_api_key()
         if not self._api_key:
-            raise ValueError("ANTHROPIC_API_KEY is not set; fill the project-root .env or use --prepare-only")
+            raise MissingAPIKeyError("ANTHROPIC_API_KEY is not set; fill the repository-root .env or use --prepare-only")
         self.model = model or MODELS[tier]
         self.max_tokens = max_tokens
         self.timeout = timeout
