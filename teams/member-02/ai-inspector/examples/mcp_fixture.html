@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>WebTestPilot local MCP fixture</title>
+<h1>Local MCP verification</h1>
+<button id="click" type="button" onclick="document.querySelector('#clicked').textContent='clicked'">Read demo</button>
+<p id="clicked">initial</p>
+<label>Test input <input id="field" onkeydown="if(event.key==='Enter')document.querySelector('#typed').textContent='typed '+this.value"></label>
+<p id="typed">waiting</p>
+</html>
