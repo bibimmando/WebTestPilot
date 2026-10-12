@@ -1,0 +1,4 @@
+[SYNTHETIC FIXTURE - NOT A REAL SITE LOG]
+action_id=action-help
+button event completed; observation requires review.
+No reproduction attempted. No final defect judgment supplied.
