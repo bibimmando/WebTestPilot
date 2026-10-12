@@ -30,3 +30,14 @@ dist/
 dist-ssr/
 *.tsbuildinfo
 vite.config.ts.timestamp-*
+/output/
+/archives/output/
+**/.browser-profile/
+/archives/code/webtestpilot-crawler/generated/
+/node_modules/
+/tools/playwright-agents/tests/generated/
+.codex/
+.serena/
+
+# Integrated runs inside team workspaces
+**/output/

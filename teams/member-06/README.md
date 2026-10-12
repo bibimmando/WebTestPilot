@@ -1,5 +1,7 @@
 # 팀원 6 작업 공간
 
+> 현재 통합 실행은 [integration/](../member-01/integration/DEVELOPMENT.md)의 `executor.py`, `runtime.py`, `mcp.py`, `mcp_client.py`에서 개발합니다. [실행 AI·MCP 계약](../member-01/integration/docs/EXECUTION_AGENT.md)을 함께 읽습니다. 기존 ai-inspector는 프로토타입 참고용입니다.
+
 - 이름 / GitHub 아이디: Yeoil123
 - 담당 모듈: Claude Planner → 실제 Playwright MCP 실행 연결
 - 작업 브랜치: `development` (기능 브랜치 `feature/member-06/<작업명>`는 선택)

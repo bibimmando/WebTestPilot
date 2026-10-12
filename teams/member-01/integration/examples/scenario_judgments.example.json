@@ -1,0 +1,49 @@
+{
+  "judgments": [
+    {
+      "scenario_id": "counter_increment",
+      "verdict": "candidate",
+      "actual": "실행과 관찰은 완료되었으나 클릭 후 Count: 0이 유지되어 요구된 Count: 1과 다르다. 버그 후보이며 재현 확인이 필요하다.",
+      "snapshot_ids": [
+        "snapshot-counter-before",
+        "snapshot-counter-after"
+      ],
+      "action_ids": [
+        "action-counter"
+      ]
+    },
+    {
+      "scenario_id": "invalid_email",
+      "verdict": "inconclusive",
+      "actual": "제출 동작 중 POST가 프로그램의 쓰기 제한에 차단되었다. 앱이 이메일을 검증한 것인지 확인할 증거가 부족하다.",
+      "snapshot_ids": [
+        "snapshot-email-before",
+        "snapshot-email-after"
+      ],
+      "action_ids": [
+        "action-email"
+      ]
+    },
+    {
+      "scenario_id": "next_route",
+      "verdict": "passed",
+      "actual": "동작 후 URL이 요구사항의 https://example.test/tests/next와 일치하고 Next page 본문이 관찰된다.",
+      "snapshot_ids": [
+        "snapshot-route-before",
+        "snapshot-route-after"
+      ],
+      "action_ids": [
+        "action-route"
+      ]
+    },
+    {
+      "scenario_id": "next_page_layout",
+      "verdict": "inconclusive",
+      "actual": "DOM에 제목 문구가 있어도 실제 이미지가 없어 겹침과 잘림을 판정할 수 없다.",
+      "snapshot_ids": [
+        "snapshot-route-after"
+      ],
+      "action_ids": []
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 # 팀원 2 작업 공간
 
+> 현재 제품 개발은 [integration/](../member-01/integration/DEVELOPMENT.md)에서 이어갑니다. 판단 AI는 **[판단용 JSON 규격](../member-01/integration/docs/JUDGMENT_CONTRACT.md)**, [입력 예시](../member-01/integration/examples/judge_input.v2.example.json), [응답 예시](../member-01/integration/examples/scenario_judgments.example.json)를 기준으로 연결합니다. 기존 ai-inspector는 프로토타입 참고용입니다.
+
 - 이름 / GitHub 아이디: logoo82
 - 담당 모듈: AI 검사기 및 리포트 구현
 - 작업 브랜치: `development` (기능 브랜치 `feature/member-02/<작업명>`는 선택)

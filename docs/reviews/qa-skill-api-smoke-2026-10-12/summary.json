@@ -1,0 +1,51 @@
+{
+  "skill_id": "skill_01KhB92UZNb864EEV2PKfVHH",
+  "skill_version_id": "skver_015Z2MbbXrku6CFfxrVUb8DL",
+  "model": "claude-opus-5-5",
+  "calls": 1,
+  "duration_s": 15.69,
+  "server_tool_calls": [
+    {
+      "name": "bash_code_execution",
+      "input": {
+        "command": "cat /skills/webtestpilot-qa-test-planner/SKILL.md; ls -R /skills/webtestpilot-qa-test-planner"
+      }
+    },
+    {
+      "name": "bash_code_execution",
+      "input": {
+        "command": "cd /skills/webtestpilot-qa-test-planner/references; for f in test_case_templates.md regression_testing.md test-plan-v2.md; do echo \"=== $PWD/$f\"; cat $f; done"
+      }
+    }
+  ],
+  "server_result_count": 2,
+  "qa_test_plan_calls": 1,
+  "plan_schema_valid": true,
+  "plan_contract_valid": true,
+  "scenario_titles": [
+    "잘못된 이메일 형식 제출 시 제출 차단과 오류 안내 확인"
+  ],
+  "file_content_verified": {
+    "SKILL.md": true,
+    "references/test_case_templates.md": true,
+    "references/regression_testing.md": true,
+    "references/test-plan-v2.md": true
+  },
+  "server_tool_results": [
+    {
+      "tool_use_id": "srvtoolu_01DCw4e7m95kwVbEAB2W4qx2",
+      "type": "bash_code_execution_result",
+      "return_code": 0,
+      "stderr": "",
+      "stdout_chars": 4206
+    },
+    {
+      "tool_use_id": "srvtoolu_01FtjMV2CkTcUHXCyUQZF88E",
+      "type": "bash_code_execution_result",
+      "return_code": 0,
+      "stderr": "",
+      "stdout_chars": 8127
+    }
+  ],
+  "all_file_contents_match_desktop": true
+}

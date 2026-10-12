@@ -36,8 +36,10 @@ git push origin development
 `teams/member-01`부터 `teams/member-06`까지 각자 한 폴더를 배정한다.
 각 폴더 README에 이름·GitHub 아이디·담당 모듈을 적는다. 공통 패키지 수정이 필요한 경우
 해당 모듈 담당자와 조율하고 커밋이나 PR에 영향 범위를 적는다.
-페이지 전처리·URL 크롤러는 `teams/member-01/page-preprocessor/`에 있다.
-기존 공통 구현은 `webtestpilot-crawler/webtestpilot_crawler/`에 있다.
+현재 제품 코드 기준은 `teams/member-01/integration/`이다. [통합 개발 기준](teams/member-01/integration/DEVELOPMENT.md)을 읽고 담당 모듈에서 개발한다.
+전처리·URL 크롤러는 `teams/member-01/integration/preprocessor/`, AI 계획·실행·판단·MCP는 `teams/member-01/integration/` 내부 모듈에 있다.
+AI팀의 판단 입력·응답은 [판단 JSON 연결 규격](teams/member-01/integration/docs/JUDGMENT_CONTRACT.md)과 예시·Schema를 따른다.
+팀 폴더와 `webtestpilot-crawler/`의 기존 구현은 참고용이다.
 
 ## 비밀값과 실행 결과
 

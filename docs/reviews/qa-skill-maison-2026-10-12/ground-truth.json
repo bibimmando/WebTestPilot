@@ -1,0 +1,251 @@
+{
+  "generatedAt": "2026-10-12T08:33:19.245Z",
+  "total": 17,
+  "enabled": 17,
+  "byArea": {
+    "functional": 4,
+    "validation": 5,
+    "routing": 3,
+    "ui": 5
+  },
+  "bySymptom": {
+    "partial": 1,
+    "false_result": 6,
+    "no_response": 2,
+    "wrong_target": 3,
+    "visual": 5
+  },
+  "detectable": 2,
+  "defects": [
+    {
+      "id": "F1",
+      "area": "functional",
+      "symptom": "partial",
+      "title": "위시리스트 목록에서 마지막 항목이 빠짐",
+      "description": "하트는 채워지고 헤더 배지 수도 늘어나는데, 위시리스트 화면의 카드 목록에서만 가장 최근에 담은 항목이 보이지 않는다. '1 piece saved' 라고 쓰여 있는데 카드가 0개인 상태가 된다.",
+      "location": "src/pages/Wishlist.tsx",
+      "reproduce": "상품 목록이나 상세에서 하트를 눌러 담은 뒤 /wishlist 로 간다. 상단 카운트와 실제 카드 수를 비교한다.",
+      "detectable": false,
+      "needs": [
+        "ai"
+      ]
+    },
+    {
+      "id": "F2",
+      "area": "functional",
+      "symptom": "false_result",
+      "title": "장바구니 담기 거짓 성공",
+      "description": "'Added to bag' 토스트가 뜨지만 실제로는 담기지 않는다. 헤더의 장바구니 배지가 늘지 않고 /cart 도 비어 있다. 오류도 없고 화면도 바뀌어 정상과 구분되지 않는다.",
+      "location": "src/pages/ProductDetail.tsx",
+      "reproduce": "/product/arc-pendant-light 에서 Add to Bag 을 누른다. 성공 토스트가 뜨는데 헤더 장바구니 배지는 그대로다.",
+      "detectable": false,
+      "needs": [
+        "ai"
+      ]
+    },
+    {
+      "id": "F3",
+      "area": "functional",
+      "symptom": "no_response",
+      "title": "수량 조절 버튼 무반응",
+      "description": "상품 상세와 장바구니의 + / - 버튼을 눌러도 수량이 바뀌지 않는다. 버튼은 눌리는데 숫자가 그대로다.",
+      "location": "src/components/QuantitySelector.tsx",
+      "reproduce": "/product/arc-pendant-light 의 Quantity 에서 + 를 누른다.",
+      "detectable": false,
+      "needs": [
+        "ai",
+        "no_state_change"
+      ]
+    },
+    {
+      "id": "F4",
+      "area": "functional",
+      "symptom": "no_response",
+      "title": "컬렉션 필터 해제 무반응",
+      "description": "컬렉션을 고른 상태에서 ALL 을 눌러도 필터가 풀리지 않는다. 전체 목록으로 돌아갈 방법이 없어진다. 이미 ALL 인 상태에서 ALL 을 누르는 정상 동작과 겉보기가 같다.",
+      "location": "src/pages/Products.tsx",
+      "reproduce": "/products?collection=lighting 에서 ALL 을 누른다. 상품이 2개에서 13개로 늘어나야 하는데 그대로다.",
+      "detectable": false,
+      "needs": [
+        "ai",
+        "no_state_change"
+      ]
+    },
+    {
+      "id": "V1",
+      "area": "validation",
+      "symptom": "false_result",
+      "title": "BUG-001 주문 이메일 형식 검증 누락",
+      "description": "형식이 잘못된 이메일로 주문이 접수된다. 과거 V3.",
+      "location": "src/pages/Checkout.tsx",
+      "reproduce": "/checkout에서 다른 필수값은 정상, 이메일은 invalid-address로 제출",
+      "detectable": false,
+      "needs": [
+        "ui_validity",
+        "order_state"
+      ]
+    },
+    {
+      "id": "V2",
+      "area": "validation",
+      "symptom": "false_result",
+      "title": "BUG-002 계정 이름 공백 저장",
+      "description": "스페이스 3개가 저장되어 재조회 시 이름이 비어 있다. 과거 V6.",
+      "location": "server/bugs/validation-behavior.ts",
+      "reproduce": "로그인 후 /account에서 이름을 스페이스 3개로 저장하고 새로고침",
+      "detectable": false,
+      "needs": [
+        "state_comparison"
+      ]
+    },
+    {
+      "id": "V3",
+      "area": "validation",
+      "symptom": "false_result",
+      "title": "BUG-004 배송 도시 빈값 수용",
+      "description": "도시를 비워도 주문이 접수된다. 과거 V7.",
+      "location": "src/pages/Checkout.tsx",
+      "reproduce": "/checkout에서 정상 이메일 및 다른 필수값을 채우고 City만 비워 제출",
+      "detectable": false,
+      "needs": [
+        "ui_validity",
+        "order_state"
+      ]
+    },
+    {
+      "id": "V4",
+      "area": "validation",
+      "symptom": "false_result",
+      "title": "BUG-005 재설정 암호 확인 불일치 수용",
+      "description": "확인값과 달라도 첫 번째 암호로 재설정된다. 과거 V9.",
+      "location": "src/pages/ResetPassword.tsx",
+      "reproduce": "새 유효 링크에서 FirstPass!123 / OtherPass!456을 입력하고 제출",
+      "detectable": false,
+      "needs": [
+        "ui_error",
+        "subsequent_login"
+      ]
+    },
+    {
+      "id": "V5",
+      "area": "validation",
+      "symptom": "false_result",
+      "title": "BUG-003 정확히 8자인 가입 암호 거부",
+      "description": "8자인 가입 암호가 weak_password로 거부된다. 과거 V11.",
+      "location": "server/bugs/validation-behavior.ts",
+      "reproduce": "/signup에서 새 이메일, 정상 이름, Ab12!xyz로 가입",
+      "detectable": false,
+      "needs": [
+        "boundary_comparison",
+        "http_error"
+      ]
+    },
+    {
+      "id": "N1",
+      "area": "routing",
+      "symptom": "wrong_target",
+      "title": "연관 상품을 누르면 다른 상품이 열림",
+      "description": "상품 상세 아래의 연관 상품 카드에 적힌 이름·사진·가격은 맞는데, 누르면 전혀 다른 컬렉션의 상품이 열린다. 이동은 정상적으로 일어나고 오류도 없어서, 카드에 적힌 이름과 도착한 페이지의 제목을 맞춰보지 않으면 모른다.",
+      "location": "src/pages/ProductDetail.tsx",
+      "reproduce": "/product/arc-pendant-light 맨 아래 You May Also Like 에서 카드 이름(Orb Table Lamp)을 적어두고 누른다. Harvest Dining Table 페이지가 열린다.",
+      "detectable": false,
+      "needs": [
+        "ai",
+        "link_target_mismatch"
+      ]
+    },
+    {
+      "id": "N3",
+      "area": "routing",
+      "symptom": "wrong_target",
+      "title": "화면을 옮겨도 스크롤이 맨 위로 가지 않음",
+      "description": "목록 아래쪽에서 상품을 누르면 상세 페이지가 중간부터 보인다. 사진·이름·가격·담기 버튼이 화면 위로 지나가 있어서, 직접 올리지 않으면 무엇을 보고 있는지 알 수 없다.",
+      "location": "src/components/ScrollToTop.tsx",
+      "reproduce": "/products 를 아래로 충분히 내린 뒤 상품 카드를 누른다. 상세 페이지의 window.scrollY 가 0 이 아니다.",
+      "detectable": true,
+      "needs": [
+        "scroll_position"
+      ]
+    },
+    {
+      "id": "N4",
+      "area": "routing",
+      "symptom": "wrong_target",
+      "title": "로그인 후 원래 가려던 곳 대신 홈으로 감",
+      "description": "로그인이 필요한 화면에서 로그인하면 그 화면으로 돌아가야 하는데 홈으로 간다. 로그인 자체는 성공하고 오류도 없다. 사용자가 가려던 곳을 다시 찾아가야 한다.",
+      "location": "src/pages/Login.tsx",
+      "reproduce": "비로그인 상태로 /orders 에 들어가 Sign In 을 누르고 demo@maison.com / demo1234 로 로그인한다. /orders 가 아니라 / 로 간다.",
+      "detectable": false,
+      "needs": [
+        "ai",
+        "navigation_target"
+      ]
+    },
+    {
+      "id": "U1",
+      "area": "ui",
+      "symptom": "visual",
+      "title": "가로 스크롤이 생겨 오른쪽 내용이 잘림",
+      "description": "모든 화면의 본문 영역이 창보다 넓어져 가로 스크롤바가 생긴다. 좁은 창이나 모바일 폭에서는 오른쪽 끝의 가격·버튼이 화면 밖으로 밀려 보이지 않는다.",
+      "location": "src/styles/bugs-ui.css ([data-bugs~=\"U1\"] .container-full)",
+      "reproduce": "아무 화면이나 열고 창을 1200px 이하로 줄인다. 가로 스크롤바가 생기고 document.scrollWidth 가 window.innerWidth 보다 커진다.",
+      "detectable": true,
+      "needs": [
+        "horizontal_scroll"
+      ]
+    },
+    {
+      "id": "U2",
+      "area": "ui",
+      "symptom": "visual",
+      "title": "상품 이름이 줄임표 없이 잘림",
+      "description": "상품 카드의 이름이 한 줄로 고정되고 넘치는 부분이 그냥 사라진다. 줄임표가 없어서 잘렸다는 사실 자체를 알 수 없다. 짧은 이름은 멀쩡하고 긴 이름만 중간에 끊겨, 이름이 긴 상품을 서로 구분할 수 없다.",
+      "location": "src/styles/bugs-ui.css ([data-bugs~=\"U2\"] article h3)",
+      "reproduce": "/products 를 열고 'Hand-Felted Wool Cushion' 처럼 이름이 긴 카드를 본다. 이름이 중간에 끊기고 '...' 이 없다. 카드의 h3 에서 scrollWidth 가 clientWidth 보다 크다.",
+      "detectable": false,
+      "needs": [
+        "ai"
+      ]
+    },
+    {
+      "id": "U3",
+      "area": "ui",
+      "symptom": "visual",
+      "title": "키보드 포커스 표시가 보이지 않음",
+      "description": "Tab 으로 이동해도 지금 어느 요소에 있는지 화면에 표시되지 않는다. 포커스는 실제로 옮겨가지만 테두리가 그려지지 않아 키보드만으로는 조작할 수 없다.",
+      "location": "src/styles/bugs-ui.css ([data-bugs~=\"U3\"] :focus-visible)",
+      "reproduce": "아무 화면에서 Tab 을 여러 번 누른다. document.activeElement 는 바뀌는데 화면에는 아무 표시가 없다.",
+      "detectable": false,
+      "needs": [
+        "ai",
+        "accessibility"
+      ]
+    },
+    {
+      "id": "U4",
+      "area": "ui",
+      "symptom": "visual",
+      "title": "누를 수 없는 버튼이 누를 수 있어 보임",
+      "description": "disabled 상태의 버튼이 흐려지지 않고 손가락 커서까지 떠서 평소 버튼과 구분되지 않는다. 눌러도 아무 일이 없는데 왜 안 되는지 알 수 없다.",
+      "location": "src/styles/bugs-ui.css ([data-bugs~=\"U4\"] button:disabled)",
+      "reproduce": "/product/arc-pendant-light 의 Quantity 에서 수량이 1 일 때 - 버튼을 본다. 멀쩡한 버튼처럼 보이지만 눌러도 수량이 0 이 되지 않는다.",
+      "detectable": false,
+      "needs": [
+        "ai"
+      ]
+    },
+    {
+      "id": "U5",
+      "area": "ui",
+      "symptom": "visual",
+      "title": "상단 헤더가 본문 첫 부분을 덮음",
+      "description": "헤더가 문서 흐름에서 빠져 본문 위에 떠 있다. 모든 화면에서 제목이나 첫 줄이 헤더 뒤에 가려 보이지 않는다. 가려진 영역의 버튼은 눌러도 헤더가 클릭을 가져간다.",
+      "location": "src/styles/bugs-ui.css ([data-bugs~=\"U5\"] header)",
+      "reproduce": "/products 를 맨 위로 올린 상태에서 본다. 'Collection' 제목이 헤더에 가려 보이지 않는다. 가려진 자리를 클릭해도 반응하지 않는다.",
+      "detectable": false,
+      "needs": [
+        "ai"
+      ]
+    }
+  ]
+}

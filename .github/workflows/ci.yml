@@ -37,22 +37,32 @@ jobs:
     timeout-minutes: 15
     defaults:
       run:
-        working-directory: webtestpilot-crawler
+        working-directory: teams/member-01
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - name: Install dependencies
-        run: python -m pip install -e '.[test,benchmark]'
+        run: python -m pip install -r integration/requirements.txt pytest
+      - name: Install MCP server
+        run: npm install --prefix .tools/playwright-mcp @playwright/mcp@0.0.83 --no-audit --no-fund
       - name: Install browser
         run: python -m playwright install --with-deps chromium
-      - name: Test
-        run: python -m pytest
-
-      - name: Install member-01 preprocessor
-        working-directory: teams/member-01/page-preprocessor
-        run: python -m pip install -e '.[dev]'
-      - name: Test member-01 preprocessor
-        working-directory: teams/member-01/page-preprocessor
-        run: python -m pytest -q
+      - name: Test preprocessor
+        run: python -m pytest integration/tests/preprocessor -q
+      - name: Test common form evidence
+        run: python -m integration.test_form_evidence
+      - name: Test integrated MCP flow
+        run: python -m integration.test_integration
+      - name: Test staged plan and judgment contracts
+        run: python -m integration.test_staged
+      - name: Test Claude planning skill boundaries
+        run: python -m integration.test_skills
+      - name: Test adaptive MCP execution agent
+        run: python -m integration.test_executor
+      - name: Test reset, links and cancellation
+        run: python -m integration.test_regressions

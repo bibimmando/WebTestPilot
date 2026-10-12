@@ -1,0 +1,26 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "IV-001",
+      "proposal_index": 0,
+      "title": "잘못된 이메일 형식 제출 시 제출 차단과 오류 안내 확인",
+      "family": "input_validation",
+      "expected": "'not-an-email'을 입력하고 제출 버튼을 클릭하면 폼 제출이 진행되지 않고, 이메일 필드는 형식 오류 상태가 되며, 사용자가 입력을 수정할 수 있도록 오류 안내가 제공된다. 안내는 페이지 메시지 또는 브라우저 기본 검증 안내일 수 있다. 필드 검증 상태, 동작 전후 화면, 관측된 요청·응답을 함께 확인하며, validationMessage 존재만으로 화면 표시를 확정하지 않고 서버 처리 여부는 수집된 근거로만 판단한다.",
+      "expected_source": "관측된 이메일 필드(type=email, required)와 화면 안내 문구 '이메일 형식이 잘못되면 제출하지 않고 사용자에게 오류를 안내합니다.'에 근거한다.",
+      "steps": [
+        {
+          "operation": "fill",
+          "element_key": "email-demo",
+          "value": "not-an-email"
+        },
+        {
+          "operation": "click",
+          "element_key": "submit-demo"
+        }
+      ]
+    }
+  ],
+  "unplanned": [],
+  "schema_version": "test_plan/2",
+  "initial_snapshot_id": "synthetic-skill-smoke"
+}
