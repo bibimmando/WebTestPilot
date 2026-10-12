@@ -23,3 +23,10 @@ test-results/
 **/.playwright-mcp/
 .DS_Store
 Thumbs.db
+
+# Node (teams/member-03/maison 등)
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+vite.config.ts.timestamp-*
