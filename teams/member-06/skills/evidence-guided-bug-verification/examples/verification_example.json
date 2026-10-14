@@ -1,0 +1,94 @@
+{
+  "schema_version": "egbv/1",
+  "candidate_id": "bug",
+  "mode": "simulation",
+  "bug_types": [
+    "input-validation"
+  ],
+  "hypothesis": {
+    "claim": "필수 입력 제약이 구현되지 않았다",
+    "expected": "빈 이메일 제출은 성공 처리하지 않고 오류 안내",
+    "basis_type": "product_requirement",
+    "basis": "Synthetic fixture contract: Email is required; empty submission must not show success."
+  },
+  "scenario": {
+    "initial_state": "새 Chromium 컨텍스트; 인증 없음",
+    "environment": {
+      "os": "Windows-10-10.0.26300-SP0",
+      "python": "3.10.6",
+      "playwright": "1.63.0",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "locale": "en-US",
+      "timeout_ms": 5000,
+      "browser": "153.0.8010.12"
+    },
+    "steps": [
+      {
+        "action": "click",
+        "locator": {
+          "role": "button",
+          "name": "Submit"
+        }
+      },
+      {
+        "action": "wait_for_selector",
+        "locator": {
+          "css": "#success"
+        },
+        "state": "visible"
+      }
+    ]
+  },
+  "execution": {
+    "status": "NOT_RUN",
+    "record_path": null
+  },
+  "reproduction": {
+    "status": "UNKNOWN",
+    "reason": "공유 예시의 구조 설명용; 실제 증거는 로컬에 보관하고 Git에 업로드하지 않음"
+  },
+  "observations": [],
+  "evidence": [],
+  "sources": [
+    {
+      "id": "I04",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/API/ValidityState",
+      "section": "Instance properties",
+      "kind": "technical-reference",
+      "access": "retrieved",
+      "statement": "valid/valueMissing/typeMismatch 등의 원인을 분리한다.",
+      "application": "관찰의 기술적 의미를 설명하며 제품 필수 입력 요구는 별도 fixture 요구에서 얻음"
+    },
+    {
+      "id": "I02",
+      "url": "https://www.w3.org/WAI/tutorials/forms/validation/",
+      "section": "Validating required input",
+      "kind": "official-guidance",
+      "access": "retrieved",
+      "statement": "사용자가 오류를 이해하고 수정할 수 있도록 안내하는 접근성 튜토리얼이다.",
+      "application": "관찰의 기술적 의미를 설명하며 제품 필수 입력 요구는 별도 fixture 요구에서 얻음"
+    }
+  ],
+  "judgment": {
+    "verdict": "INCONCLUSIVE",
+    "reason": "공유 패키지에는 실행 증거가 없으므로 이 예시만으로 확정하지 않음",
+    "evidence_ids": [],
+    "source_ids": [
+      "I04",
+      "I02"
+    ],
+    "alternatives_considered": [
+      "제품 요구 또는 초기 상태가 다를 수 있음",
+      "자동화 또는 환경 문제일 수 있음"
+    ]
+  },
+  "uncertainties": [
+    "구조 설명용 simulation이며 실행 완료나 재현을 주장하지 않음"
+  ],
+  "next_steps": [
+    "demo.py로 새 로컬 fixture 증거를 수집하고 AI가 별도 판단한다"
+  ]
+}

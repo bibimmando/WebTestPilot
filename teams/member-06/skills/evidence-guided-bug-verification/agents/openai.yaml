@@ -1,0 +1,4 @@
+interface:
+  display_name: "Evidence-Guided Bug Verification"
+  short_description: "웹 버그 의심 현상을 Playwright 증거와 기술 문서로 검증"
+  default_prompt: "$evidence-guided-bug-verification을 사용해 이 웹 버그 의심 현상의 재현 계획을 만들고, 관찰 증거와 기대 근거를 구분해 판단해줘."

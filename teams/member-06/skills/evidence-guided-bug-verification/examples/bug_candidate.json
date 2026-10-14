@@ -1,0 +1,59 @@
+{
+  "id": "required-email-001",
+  "url": "http://127.0.0.1:8765/bug",
+  "symptom": "필수 이메일이 비어 있어도 성공 표시",
+  "expected": {
+    "behavior": "빈 이메일 제출은 성공 처리하지 않고 오류 안내",
+    "basis_type": "product_requirement",
+    "basis": "로컬 fixture의 데모 요구사항"
+  },
+  "initial_state": "새 Chromium 컨텍스트; 인증 없음",
+  "authorization": {
+    "origins": [
+      "http://127.0.0.1:8765"
+    ],
+    "basis": "사용자가 요청한 스킬 검증용 로컬 synthetic fixture",
+    "actions_reviewed": true
+  },
+  "hypothesis": {
+    "claim": "필수 입력 제약이 구현되지 않았다",
+    "supporting_observation": "빈 값이고 valueMissing=false, 제출 후 success 요소 표시",
+    "refuting_observation": "빈 값에서 invalid이며 성공 표시 없음"
+  },
+  "scenario": [
+    {
+      "action": "click",
+      "locator": {
+        "role": "button",
+        "name": "Submit"
+      }
+    },
+    {
+      "action": "wait_for_selector",
+      "locator": {
+        "css": "#success"
+      },
+      "state": "visible"
+    }
+  ],
+  "observe": [
+    {
+      "css": "#email"
+    },
+    {
+      "css": "#success"
+    }
+  ],
+  "environment": {
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "locale": "en-US",
+    "timeout_ms": 5000
+  },
+  "evidence_options": {
+    "screenshot": true,
+    "mask_selectors": []
+  }
+}

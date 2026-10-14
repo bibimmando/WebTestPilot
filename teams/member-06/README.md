@@ -9,3 +9,5 @@
 - `main` 반영은 `development` → `main` PR의 승인·CI 통과 후 총괄 담당자가 병합한다.
 
 구현과 실행 안내는 [AI 검사기 MCP 연결](ai-inspector/README.md)을 참고한다.
+
+팀원이 설치할 수 있는 [Evidence-Guided Bug Verification 스킬과 설치 안내](skills/README.md)를 제공합니다. 웹 버그의 재현·증거 수집·AI 판단을 지원하는 독립 모듈이며 제품 파이프라인에 자동 연결되지는 않습니다.
