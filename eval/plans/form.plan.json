@@ -1,0 +1,365 @@
+{
+  "version": 1,
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "이메일 형식이 잘못되면 가입 버튼을 눌러도 이메일 형식이 올바르지 않습니다 라는 안내가 보인다"
+    },
+    {
+      "id": "R2",
+      "text": "약관 동의 체크박스는 처음에 체크되어 있지 않다"
+    },
+    {
+      "id": "R3",
+      "text": "올바른 이메일로 가입하면 가입 완료 페이지로 이동한다"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "S1",
+      "title": "최초 진입 시 약관 동의 기본값",
+      "covers": [
+        "R2"
+      ],
+      "start": {
+        "url": "http://127.0.0.1:8765/form.html"
+      },
+      "steps": [],
+      "checks": [
+        {
+          "id": "S1.C1",
+          "after": "start",
+          "target": "T2",
+          "read": "checked",
+          "op": "equals",
+          "expected": "false",
+          "source": {
+            "kind": "requirement",
+            "id": "R2",
+            "quote": "약관 동의 체크박스는 처음에 체크되어 있지 않다"
+          }
+        }
+      ]
+    },
+    {
+      "id": "S2",
+      "title": "약관 미동의 상태에서 @ 없는 이메일 제출",
+      "covers": [
+        "R1"
+      ],
+      "start": {
+        "url": "http://127.0.0.1:8765/form.html"
+      },
+      "steps": [
+        {
+          "id": "S2.A1",
+          "op": "fill",
+          "target": "T1",
+          "value": "invalid-email"
+        },
+        {
+          "id": "S2.A2",
+          "op": "click",
+          "target": "T3"
+        }
+      ],
+      "checks": [
+        {
+          "id": "S2.C1",
+          "after": "S2.A2",
+          "target": "T4",
+          "read": "text",
+          "op": "equals",
+          "expected": "이메일 형식이 올바르지 않습니다",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "이메일 형식이 잘못되면 가입 버튼을 눌러도 이메일 형식이 올바르지 않습니다 라는 안내가 보인다"
+          }
+        },
+        {
+          "id": "S2.C2",
+          "after": "S2.A2",
+          "target": "T4",
+          "read": "visible",
+          "op": "equals",
+          "expected": "true",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "이메일 형식이 잘못되면 가입 버튼을 눌러도 이메일 형식이 올바르지 않습니다 라는 안내가 보인다"
+          }
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "title": "약관 동의 상태에서 @ 없는 이메일 제출",
+      "covers": [
+        "R1"
+      ],
+      "start": {
+        "url": "http://127.0.0.1:8765/form.html"
+      },
+      "steps": [
+        {
+          "id": "S3.A1",
+          "op": "fill",
+          "target": "T1",
+          "value": "invalid-email"
+        },
+        {
+          "id": "S3.A2",
+          "op": "click",
+          "target": "T2"
+        },
+        {
+          "id": "S3.A3",
+          "op": "click",
+          "target": "T3"
+        }
+      ],
+      "checks": [
+        {
+          "id": "S3.C1",
+          "after": "S3.A3",
+          "target": "T4",
+          "read": "text",
+          "op": "equals",
+          "expected": "이메일 형식이 올바르지 않습니다",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "이메일 형식이 잘못되면 가입 버튼을 눌러도 이메일 형식이 올바르지 않습니다 라는 안내가 보인다"
+          }
+        },
+        {
+          "id": "S3.C2",
+          "after": "S3.A3",
+          "target": "T4",
+          "read": "visible",
+          "op": "equals",
+          "expected": "true",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "이메일 형식이 잘못되면 가입 버튼을 눌러도 이메일 형식이 올바르지 않습니다 라는 안내가 보인다"
+          }
+        }
+      ]
+    },
+    {
+      "id": "S4",
+      "title": "로컬 부분이 없는 이메일 제출",
+      "covers": [
+        "R1"
+      ],
+      "start": {
+        "url": "http://127.0.0.1:8765/form.html"
+      },
+      "steps": [
+        {
+          "id": "S4.A1",
+          "op": "fill",
+          "target": "T1",
+          "value": "@example.com"
+        },
+        {
+          "id": "S4.A2",
+          "op": "click",
+          "target": "T2"
+        },
+        {
+          "id": "S4.A3",
+          "op": "click",
+          "target": "T3"
+        }
+      ],
+      "checks": [
+        {
+          "id": "S4.C1",
+          "after": "S4.A3",
+          "target": "T4",
+          "read": "text",
+          "op": "equals",
+          "expected": "이메일 형식이 올바르지 않습니다",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "이메일 형식이 잘못되면 가입 버튼을 눌러도 이메일 형식이 올바르지 않습니다 라는 안내가 보인다"
+          }
+        },
+        {
+          "id": "S4.C2",
+          "after": "S4.A3",
+          "target": "T4",
+          "read": "visible",
+          "op": "equals",
+          "expected": "true",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "이메일 형식이 잘못되면 가입 버튼을 눌러도 이메일 형식이 올바르지 않습니다 라는 안내가 보인다"
+          }
+        }
+      ]
+    },
+    {
+      "id": "S5",
+      "title": "도메인이 없는 이메일 제출",
+      "covers": [
+        "R1"
+      ],
+      "start": {
+        "url": "http://127.0.0.1:8765/form.html"
+      },
+      "steps": [
+        {
+          "id": "S5.A1",
+          "op": "fill",
+          "target": "T1",
+          "value": "qa@"
+        },
+        {
+          "id": "S5.A2",
+          "op": "click",
+          "target": "T2"
+        },
+        {
+          "id": "S5.A3",
+          "op": "click",
+          "target": "T3"
+        }
+      ],
+      "checks": [
+        {
+          "id": "S5.C1",
+          "after": "S5.A3",
+          "target": "T4",
+          "read": "text",
+          "op": "equals",
+          "expected": "이메일 형식이 올바르지 않습니다",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "이메일 형식이 잘못되면 가입 버튼을 눌러도 이메일 형식이 올바르지 않습니다 라는 안내가 보인다"
+          }
+        },
+        {
+          "id": "S5.C2",
+          "after": "S5.A3",
+          "target": "T4",
+          "read": "visible",
+          "op": "equals",
+          "expected": "true",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "이메일 형식이 잘못되면 가입 버튼을 눌러도 이메일 형식이 올바르지 않습니다 라는 안내가 보인다"
+          }
+        }
+      ]
+    },
+    {
+      "id": "S6",
+      "title": "이메일 빈 값 제출",
+      "covers": [
+        "R1"
+      ],
+      "start": {
+        "url": "http://127.0.0.1:8765/form.html"
+      },
+      "steps": [
+        {
+          "id": "S6.A1",
+          "op": "fill",
+          "target": "T1",
+          "value": ""
+        },
+        {
+          "id": "S6.A2",
+          "op": "click",
+          "target": "T2"
+        },
+        {
+          "id": "S6.A3",
+          "op": "click",
+          "target": "T3"
+        }
+      ],
+      "checks": [
+        {
+          "id": "S6.C1",
+          "after": "S6.A3",
+          "target": "T4",
+          "read": "text",
+          "op": "equals",
+          "expected": "이메일 형식이 올바르지 않습니다",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "이메일 형식이 잘못되면 가입 버튼을 눌러도 이메일 형식이 올바르지 않습니다 라는 안내가 보인다"
+          }
+        },
+        {
+          "id": "S6.C2",
+          "after": "S6.A3",
+          "target": "T4",
+          "read": "visible",
+          "op": "equals",
+          "expected": "true",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "이메일 형식이 잘못되면 가입 버튼을 눌러도 이메일 형식이 올바르지 않습니다 라는 안내가 보인다"
+          }
+        }
+      ]
+    }
+  ],
+  "unplanned": [
+    {
+      "requirement": "R3",
+      "reason": "올바른 이메일 qa@example.com을 입력하고 약관에 동의한 후 가입을 눌러 실제 정상 흐름을 탐색했다. 첫 시도에서는 chrome-error://chromewebdata/로 이동하고 snapshot이 비었으며, 시작 URL에 다시 진입한 재시도에서도 제출 후 snapshot이 비어 완료 화면에 도달했음을 확인할 수 없었다. 허용 origin이 http://127.0.0.1:8765로 제한되고 쓰기 요청이 차단된 현재 환경에서 완료 화면 요소를 실제로 관찰하여 pin할 수 없어, '올바른 이메일로 가입하면 가입 완료 페이지로 이동한다'의 검증 시나리오를 확정할 수 없다. 정상 제출과 완료 화면 접근이 가능한 환경에서 재탐색이 필요하다."
+    }
+  ],
+  "targets": {
+    "T1": {
+      "target": {
+        "role": "textbox",
+        "name": "^이메일$"
+      },
+      "group": false,
+      "url": "http://127.0.0.1:8765/form.html"
+    },
+    "T2": {
+      "target": {
+        "role": "checkbox",
+        "name": "^약관 동의$"
+      },
+      "group": false,
+      "url": "http://127.0.0.1:8765/form.html"
+    },
+    "T3": {
+      "target": {
+        "role": "button",
+        "name": "^가입$"
+      },
+      "group": false,
+      "url": "http://127.0.0.1:8765/form.html"
+    },
+    "T4": {
+      "target": {
+        "role": "status",
+        "text": "^이메일 형식이 올바르지 않습니다$"
+      },
+      "group": false,
+      "url": "http://127.0.0.1:8765/form.html"
+    }
+  },
+  "blocked": [
+    "POST http://127.0.0.1:8765/signup",
+    "POST http://127.0.0.1:8765/signup"
+  ],
+  "violations": []
+}

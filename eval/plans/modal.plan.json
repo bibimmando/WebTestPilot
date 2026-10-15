@@ -1,0 +1,314 @@
+{
+  "version": 1,
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "쿠폰 SAVE10을 적용하면 결제 금액이 10% 줄어든다"
+    },
+    {
+      "id": "R2",
+      "text": "잘못된 쿠폰 코드를 넣으면 결제 금액이 바뀌지 않는다"
+    },
+    {
+      "id": "R3",
+      "text": "쿠폰 사용 내역은 마이페이지에 남는다"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "S1",
+      "title": "SAVE10 정상 적용: 20,000원의 10% 할인",
+      "covers": [
+        "R1"
+      ],
+      "start": {
+        "url": "http://127.0.0.1:8765/modal.html"
+      },
+      "steps": [
+        {
+          "id": "S1.A1",
+          "op": "click",
+          "target": "T2"
+        },
+        {
+          "id": "S1.A2",
+          "op": "fill",
+          "target": "T3",
+          "value": "SAVE10"
+        },
+        {
+          "id": "S1.A3",
+          "op": "click",
+          "target": "T4"
+        }
+      ],
+      "checks": [
+        {
+          "id": "S1.C1",
+          "after": "start",
+          "target": "T1",
+          "read": "text",
+          "op": "equals",
+          "expected": "결제 금액 20,000원",
+          "source": {
+            "kind": "observed",
+            "quote": "시작 URL을 새로 열면 T1에 '결제 금액 20,000원'이 표시된다."
+          }
+        },
+        {
+          "id": "S1.C2",
+          "after": "S1.A3",
+          "target": "T1",
+          "read": "text",
+          "op": "equals",
+          "expected": "결제 금액 18,000원",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "쿠폰 SAVE10을 적용하면 결제 금액이 10% 줄어든다"
+          }
+        }
+      ]
+    },
+    {
+      "id": "S2",
+      "title": "잘못된 코드와 빈 입력 처리 후 SAVE10으로 재시도",
+      "covers": [
+        "R2",
+        "R1"
+      ],
+      "start": {
+        "url": "http://127.0.0.1:8765/modal.html"
+      },
+      "steps": [
+        {
+          "id": "S2.A1",
+          "op": "click",
+          "target": "T2"
+        },
+        {
+          "id": "S2.A2",
+          "op": "fill",
+          "target": "T3",
+          "value": "INVALID"
+        },
+        {
+          "id": "S2.A3",
+          "op": "click",
+          "target": "T4"
+        },
+        {
+          "id": "S2.A4",
+          "op": "click",
+          "target": "T2"
+        },
+        {
+          "id": "S2.A5",
+          "op": "fill",
+          "target": "T3",
+          "value": ""
+        },
+        {
+          "id": "S2.A6",
+          "op": "click",
+          "target": "T4"
+        },
+        {
+          "id": "S2.A7",
+          "op": "click",
+          "target": "T2"
+        },
+        {
+          "id": "S2.A8",
+          "op": "fill",
+          "target": "T3",
+          "value": "SAVE10"
+        },
+        {
+          "id": "S2.A9",
+          "op": "click",
+          "target": "T4"
+        }
+      ],
+      "checks": [
+        {
+          "id": "S2.C1",
+          "after": "start",
+          "target": "T1",
+          "read": "text",
+          "op": "equals",
+          "expected": "결제 금액 20,000원",
+          "source": {
+            "kind": "observed",
+            "quote": "시작 URL을 새로 열면 T1에 '결제 금액 20,000원'이 표시된다."
+          }
+        },
+        {
+          "id": "S2.C2",
+          "after": "S2.A3",
+          "target": "T1",
+          "read": "text",
+          "op": "equals",
+          "expected": "결제 금액 20,000원",
+          "source": {
+            "kind": "requirement",
+            "id": "R2",
+            "quote": "잘못된 쿠폰 코드를 넣으면 결제 금액이 바뀌지 않는다"
+          }
+        },
+        {
+          "id": "S2.C3",
+          "after": "S2.A6",
+          "target": "T1",
+          "read": "text",
+          "op": "equals",
+          "expected": "결제 금액 20,000원",
+          "source": {
+            "kind": "heuristic",
+            "quote": "빈 문자열을 유효하지 않은 쿠폰 입력의 경계값으로 취급하여, 제출 직전 결제 금액 20,000원이 유지되는지 확인한다. 빈 입력 처리 방식은 요구사항에 명시되지 않았다."
+          }
+        },
+        {
+          "id": "S2.C4",
+          "after": "S2.A9",
+          "target": "T1",
+          "read": "text",
+          "op": "equals",
+          "expected": "결제 금액 18,000원",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "쿠폰 SAVE10을 적용하면 결제 금액이 10% 줄어든다"
+          }
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "title": "SAVE10으로 할인된 상태에서 잘못된 코드를 넣어도 금액 유지",
+      "covers": [
+        "R1",
+        "R2"
+      ],
+      "start": {
+        "url": "http://127.0.0.1:8765/modal.html"
+      },
+      "steps": [
+        {
+          "id": "S3.A1",
+          "op": "click",
+          "target": "T2"
+        },
+        {
+          "id": "S3.A2",
+          "op": "fill",
+          "target": "T3",
+          "value": "SAVE10"
+        },
+        {
+          "id": "S3.A3",
+          "op": "click",
+          "target": "T4"
+        },
+        {
+          "id": "S3.A4",
+          "op": "click",
+          "target": "T2"
+        },
+        {
+          "id": "S3.A5",
+          "op": "fill",
+          "target": "T3",
+          "value": "INVALID"
+        },
+        {
+          "id": "S3.A6",
+          "op": "click",
+          "target": "T4"
+        }
+      ],
+      "checks": [
+        {
+          "id": "S3.C1",
+          "after": "start",
+          "target": "T1",
+          "read": "text",
+          "op": "equals",
+          "expected": "결제 금액 20,000원",
+          "source": {
+            "kind": "observed",
+            "quote": "시작 URL을 새로 열면 T1에 '결제 금액 20,000원'이 표시된다."
+          }
+        },
+        {
+          "id": "S3.C2",
+          "after": "S3.A3",
+          "target": "T1",
+          "read": "text",
+          "op": "equals",
+          "expected": "결제 금액 18,000원",
+          "source": {
+            "kind": "requirement",
+            "id": "R1",
+            "quote": "쿠폰 SAVE10을 적용하면 결제 금액이 10% 줄어든다"
+          }
+        },
+        {
+          "id": "S3.C3",
+          "after": "S3.A6",
+          "target": "T1",
+          "read": "text",
+          "op": "equals",
+          "expected": "결제 금액 18,000원",
+          "source": {
+            "kind": "requirement",
+            "id": "R2",
+            "quote": "잘못된 쿠폰 코드를 넣으면 결제 금액이 바뀌지 않는다"
+          }
+        }
+      ]
+    }
+  ],
+  "unplanned": [
+    {
+      "requirement": "R3",
+      "reason": "시작 페이지 전체와 쿠폰 모달을 실제로 살펴봤지만 마이페이지로 이동하는 링크·버튼이나 쿠폰 사용 내역 영역이 없다. 마이페이지 URL 또는 다른 접근 경로도 제공되지 않아 해당 화면에 도달하여 사용 내역 확인 대상을 pin할 수 없다."
+    }
+  ],
+  "targets": {
+    "T1": {
+      "target": {
+        "role": "paragraph",
+        "text": "^결제 금액 .*?원$"
+      },
+      "group": false,
+      "url": "http://127.0.0.1:8765/modal.html"
+    },
+    "T2": {
+      "target": {
+        "role": "button",
+        "name": "^쿠폰 적용$"
+      },
+      "group": false,
+      "url": "http://127.0.0.1:8765/modal.html"
+    },
+    "T3": {
+      "target": {
+        "role": "textbox",
+        "name": "^쿠폰 코드$"
+      },
+      "group": false,
+      "url": "http://127.0.0.1:8765/modal.html"
+    },
+    "T4": {
+      "target": {
+        "role": "button",
+        "name": "^확인$"
+      },
+      "group": false,
+      "url": "http://127.0.0.1:8765/modal.html"
+    }
+  },
+  "blocked": [],
+  "violations": []
+}

@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>상품 목록</title>
+<header><a href="/list.html">홈</a> <span id="cart">장바구니 (0)</span></header>
+<main>
+  <h1>상품</h1>
+  <ul id="items"></ul>
+</main>
+<script>
+  const items = document.getElementById('items');
+  for (let i = 1; i <= 30; i++) {
+    const li = document.createElement('li');
+    li.innerHTML = `상품 ${String.fromCharCode(0xAC00 + i * 97)} <span>${(i * 1100).toLocaleString()}원</span> <button>담기</button>`;
+    items.append(li);
+  }
+  let count = 0;
+  items.addEventListener('click', e => {
+    if (e.target.tagName === 'BUTTON') { const i = [...items.children].indexOf(e.target.closest('li')); count += i >= 20 ? 2 : 1; document.getElementById('cart').textContent = `장바구니 (${count})`; }
+  });
+</script>

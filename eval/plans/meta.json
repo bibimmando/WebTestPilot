@@ -1,0 +1,11 @@
+{
+  "description": "평가에 쓰는 고정 계획. 정상 개발 fixture에서 만들었고, 버그 변형이나 정답지는 생성 과정에 주지 않았다.",
+  "generated": "2026-10-15",
+  "generator": "Codex CLI 구독 (GPT 계열) + qa/src/mcp.ts 탐색 도구. Claude API 결과와 섞어 비교하지 않는다.",
+  "origin": "http://127.0.0.1:8765",
+  "plans": {
+    "list.plan.json": { "start": "/list.html", "note": "강화된 plan 검증(34df987) 이전에 생성, 현재 검증도 통과" },
+    "modal.plan.json": { "start": "/modal.html" },
+    "form.plan.json": { "start": "/form.html", "note": "가입 완료(R3)는 쓰기 차단으로 unplanned" }
+  }
+}
