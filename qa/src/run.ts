@@ -17,7 +17,8 @@ const PLAYWRIGHT_CLI = join(dirname(createRequire(import.meta.url).resolve('@pla
 export type RunResult = Reconciled & { runDir: string; exitCode: number | null };
 
 /** runDir는 qa 폴더 안이어야 한다 (spec이 qa의 ESM·TypeScript 설정과 의존성을 쓴다). */
-export async function runPlan(o: { plan: Plan; policy: Policy; runDir: string; timeoutMs?: number }): Promise<RunResult> {
+/** only를 주면 그 시나리오만 실행한다 (재현용). 대조는 전체 plan으로 하므로 나머지는 not_run이다. */
+export async function runPlan(o: { plan: Plan; policy: Policy; runDir: string; timeoutMs?: number; only?: string[] }): Promise<RunResult> {
   if (existsSync(o.runDir)) throw new Error(`실행 폴더가 이미 있음 (덮어쓰지 않음): ${o.runDir}`);
   const errors = validate(o.plan, o.plan.requirements, new Map(Object.entries(o.plan.targets)), o.policy.origins);
   if (errors.length) throw new Error(`plan이 계약을 통과하지 못함:\n- ${errors.join('\n- ')}`);
@@ -33,7 +34,8 @@ export async function runPlan(o: { plan: Plan; policy: Policy; runDir: string; t
   };
   // 실행 헬퍼도 복사해서 그 사본을 실행한다. manifest의 해시가 실제로 실행된 코드의 해시가 된다.
   for (const f of RUNTIME_SOURCES) files[`src/${f}`] = readFileSync(join(SRC, f), 'utf8');
-  for (const [name, code] of Object.entries(specs(o.plan, '../src/fixture.ts'))) files[`specs/${name}`] = code;
+  const selected = o.only ? { ...o.plan, scenarios: o.plan.scenarios.filter(s => o.only!.includes(s.id)) } : o.plan;
+  for (const [name, code] of Object.entries(specs(selected, '../src/fixture.ts'))) files[`specs/${name}`] = code;
   for (const [name, text] of Object.entries(files)) writeFileSync(join(o.runDir, name), text);
   const frozen: Plan = JSON.parse(files['plan.json']);
 

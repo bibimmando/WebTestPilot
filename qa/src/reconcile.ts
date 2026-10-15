@@ -5,14 +5,17 @@ import type { Plan, Check } from './plan.ts';
 import { sequence } from './generate.ts';
 
 export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; scenario?: string; id?: string; status?: string;
-  actual?: string; expected?: string; count?: number; reason?: string; error?: string; blocked?: string[]; violations?: string[] };
+  actual?: string; expected?: string; count?: number; reason?: string; error?: string; blocked?: string[]; violations?: string[];
+  startHash?: string; evidence?: string[] };
 
-export type StepResult = { id: string; status: 'ok' | 'not_executed' | 'uncertain_execution' | 'not_run'; reason?: string; error?: string };
+export type StepResult = { id: string; status: 'ok' | 'not_executed' | 'uncertain_execution' | 'not_run'; reason?: string; error?: string;
+  count?: number; evidence?: string[] };
 export type CheckStatus = 'passed' | 'mismatch' | 'unresolved' | 'error' | 'not_run';
-export type CheckResult = { id: string; status: CheckStatus; source: string; expected: string; actual?: string; count?: number };
+export type CheckResult = { id: string; status: CheckStatus; source: string; expected: string; actual?: string; count?: number;
+  error?: string; evidence?: string[] };
 export type ScenarioResult = {
   id: string; valid: boolean; invalid: string[];
-  start: 'ok' | 'failed' | 'not_run'; steps: StepResult[]; checks: CheckResult[];
+  start: 'ok' | 'failed' | 'not_run'; startHash?: string; startEvidence?: string[]; steps: StepResult[]; checks: CheckResult[];
   blocked: string[]; violations: string[];
 };
 /** checks의 invalid는 무효 시나리오에 속해 결과를 믿을 수 없는 검사 수다. */
@@ -52,7 +55,7 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
       const e = get('act', st.id);
       if (e && !STEP.has(e.status ?? '')) flag(`${st.id}: 알 수 없는 상태 ${e.status}`);
       const status = e && STEP.has(e.status ?? '') ? e.status as StepResult['status'] : 'not_run';
-      return { id: st.id, status, ...(e?.reason ? { reason: e.reason } : {}), ...(e?.error ? { error: e.error } : {}) };
+      return { id: st.id, status, ...pick(e, 'reason', 'error', 'count', 'evidence') };
     });
     // 멈춘 행동 뒤에 기록이 더 있으면 헬퍼 계약이 깨진 것이다.
     const stoppedAt = steps.findIndex(x => x.status === 'not_executed' || x.status === 'uncertain_execution');
@@ -70,10 +73,11 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
         }
       }
       return { id: c.id, status, source: c.source.kind, expected: c.expected,
-        ...(e?.actual !== undefined ? { actual: e.actual } : {}), ...(e?.count !== undefined ? { count: e.count } : {}) };
+        ...pick(e, 'actual', 'count', 'error', 'evidence') };
     });
 
-    return { id: s.id, valid: invalid.length === 0, invalid, start, steps, checks, blocked: policy.flatMap(e => e.blocked ?? []), violations };
+    return { id: s.id, valid: invalid.length === 0, invalid, start, ...(startEntry?.startHash ? { startHash: startEntry.startHash } : {}),
+      ...(startEntry?.evidence ? { startEvidence: startEntry.evidence } : {}), steps, checks, blocked: policy.flatMap(e => e.blocked ?? []), violations };
   });
 
   const known = new Set(plan.scenarios.flatMap(s => [s.id, ...s.steps.map(x => x.id), ...s.checks.map(x => x.id)]));
@@ -95,6 +99,11 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
     return { id: r.id, plan: plan_, checks: counts };
   });
   return { scenarios, requirements, problems };
+}
+
+/** 기록에서 값이 있는 필드만 옮긴다. */
+function pick<K extends keyof Entry>(e: Entry | undefined, ...keys: K[]): Partial<Pick<Entry, K>> {
+  return Object.fromEntries(keys.filter(k => e?.[k] !== undefined).map(k => [k, e![k]])) as Partial<Pick<Entry, K>>;
 }
 
 /** 고정된 plan의 연산·기대값으로 비교를 다시 계산한다. 실제 값이 없으면 비교할 수 없다. */

@@ -1,0 +1,176 @@
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer, type Server } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import type Anthropic from '@anthropic-ai/sdk';
+import { runPlan, type RunResult } from '../src/run.ts';
+import { checkQuotes, judge, preclassify } from '../src/triage.ts';
+import { Budget, type Send } from '../src/agent.ts';
+import type { Plan } from '../src/plan.ts';
+
+let server: Server | undefined;
+let origin = '';
+let counter = 0;
+const FLAKY = `<!doctype html><meta charset="utf-8"><title>번갈아</title><h1>결과 확인</h1><button>확인</button><p role="status"></p>
+<script>document.querySelector('button').onclick = async () => {
+  document.querySelector('p').textContent = await (await fetch('/counter')).text();
+};</script>`;
+
+before(async () => {
+  server = createServer(async (req, res) => {
+    const path = new URL(req.url!, 'http://x').pathname;
+    res.setHeader('content-type', 'text/html; charset=utf-8');
+    if (path === '/counter') return res.end(++counter % 2 ? '홀수' : '짝수');
+    if (path === '/flaky.html') return res.end(FLAKY);
+    try { res.end(await readFile(new URL(`./fixtures${path}`, import.meta.url))); } catch { res.statusCode = 404; res.end(); }
+  });
+  await new Promise<void>(r => server!.listen(0, '127.0.0.1', r));
+  origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+});
+after(() => { server?.close(); });
+
+const dir = (name: string) => fileURLToPath(new URL(`../runs/test-${name}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, import.meta.url));
+const src = (id: string, quote: string) => ({ kind: 'requirement' as const, id, quote });
+
+function plan(): Plan {
+  return {
+    version: 1,
+    requirements: [
+      { id: 'R1', text: '담기를 누르면 장바구니에 5개가 담긴다' },
+      { id: 'R2', text: '쿠폰 적용 창에서 확인을 누를 수 있다' },
+      { id: 'R3', text: '확인을 누르면 결과가 짝수로 표시된다' },
+    ],
+    targets: {
+      T1: { target: { role: 'listitem' }, group: true, url: `${origin}/list.html` },
+      T2: { target: { role: 'button', name: '^담기$', within: { role: 'listitem', text: '상품 걡 .*?원' } }, group: false, url: `${origin}/list.html` },
+      T3: { target: { text: '장바구니 \\(.*?\\)' }, group: false, url: `${origin}/list.html` },
+      T4: { target: { role: 'button', name: '^없어진 버튼$' }, group: false, url: `${origin}/modal.html` },
+      T5: { target: { role: 'button', name: '^확인$' }, group: false, url: `${origin}/flaky.html` },
+      T6: { target: { role: 'status' }, group: false, url: `${origin}/flaky.html` },
+    },
+    scenarios: [
+      { id: 'S1', title: '담기', covers: ['R1'], start: { url: `${origin}/list.html` },
+        steps: [{ id: 'S1.A1', op: 'click', target: 'T2' }],
+        checks: [
+          { id: 'S1.C1', after: 'start', target: 'T1', read: 'count', op: 'equals', expected: '30', source: { kind: 'heuristic' } },
+          { id: 'S1.C2', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (5)', source: src('R1', '5개가 담긴다') },
+        ] },
+      { id: 'S2', title: '사라진 버튼', covers: ['R2'], start: { url: `${origin}/modal.html` },
+        steps: [{ id: 'S2.A1', op: 'click', target: 'T4' }],
+        checks: [{ id: 'S2.C1', after: 'S2.A1', target: 'T4', read: 'visible', op: 'equals', expected: 'true', source: src('R2', '확인을 누를 수 있다') }] },
+      { id: 'S3', title: '번갈아 바뀌는 결과', covers: ['R3'], start: { url: `${origin}/flaky.html` },
+        steps: [{ id: 'S3.A1', op: 'click', target: 'T5' }],
+        checks: [{ id: 'S3.C1', after: 'S3.A1', target: 'T6', read: 'text', op: 'equals', expected: '짝수', source: src('R3', '짝수로 표시된다') }] },
+    ],
+    unplanned: [],
+  };
+}
+
+// 가짜 분류 모델: 첫 답은 증거에 없는 문장을 인용하고, 거부되면 시작 snapshot의 실제 줄을 인용한다.
+function fakeTriage(): Send & { calls: number } {
+  const send = async (req: Anthropic.MessageCreateParamsNonStreaming) => {
+    send.calls++;
+    const last = req.messages.at(-1)!;
+    const rejected = Array.isArray(last.content) && last.content.some(b => b.type === 'tool_result' && b.is_error);
+    // 거부 전: 시작 snapshot의 줄만 인용 (실패 시점 증거 인용이 없어서 거부됨). 거부 후: 실패 시점 snapshot을 인용.
+    const file = rejected ? 'evidence/S2.A1.aria.txt' : 'evidence/S2.start.aria.txt';
+    return {
+      id: 'm', type: 'message', role: 'assistant', model: req.model, stop_reason: 'tool_use', stop_sequence: null,
+      content: [{ type: 'tool_use', id: `t${send.calls}`, name: 'classify', input: {
+        class: 'app_defect_candidate', reason: '시작 화면에 계획한 버튼이 없다',
+        quotes: [{ file, text: 'button "쿠폰 적용"' }] } }],
+      usage: { input_tokens: 500, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+    } as unknown as Anthropic.Message;
+  };
+  send.calls = 0;
+  return send;
+}
+
+test('분류·재현: 재현되는 불일치, AI가 인용으로 분류한 사라진 대상, 재실행에서 바뀌는 결과를 구분한다', async () => {
+  counter = 0;
+  const p = plan();
+  const policy = { origins: [origin] };
+  const run = await runPlan({ plan: p, policy, runDir: dir('judge'), timeoutMs: 1500 });
+  const budget = new Budget(1);
+  const send = fakeTriage();
+  const j = await judge({ plan: p, run, send, model: 'claude-sonnet-5-5', budget, reproduceDir: dir('judge-repro'), timeoutMs: 1500 });
+  const v = Object.fromEntries(j.verdicts.map(x => [x.id, x]));
+
+  assert.equal(v['S1.C1'].class, 'passed_heuristic');
+  assert.deepEqual([v['S1.C2'].class, v['S1.C2'].reproduction], ['mismatch', 'reproduced']);
+
+  assert.equal(v['S2.A1'].observed, 'not_executed:target_changed:0');
+  assert.equal(v['S2.A1'].class, 'app_defect_candidate');
+  assert.deepEqual(v['S2.A1'].triage, { reason: '시작 화면에 계획한 버튼이 없다', quotes: [{ file: 'evidence/S2.A1.aria.txt', text: 'button "쿠폰 적용"' }] });
+  assert.equal(send.calls, 2, '실패 시점 증거를 인용하지 않은 답은 거부되고 한 번 더 답한다');
+  assert.ok(existsSync(`${run.runDir}/triage/S2.A1.json`), 'AI 분류 대화 기록을 남긴다');
+  assert.equal(v['S2.A1'].reproduction, 'reproduced');
+  assert.deepEqual([v['S2.C1'].class, v['S2.C1'].cause], ['not_run', 'S2.A1']);
+
+  assert.deepEqual([v['S3.C1'].class, v['S3.C1'].reproduction], ['mismatch', 'flaky']);
+
+  assert.ok(existsSync(`${run.runDir}/verdicts.json`));
+  assert.ok(existsSync(`${run.runDir}/evidence/S2.A1.aria.txt`) && existsSync(`${run.runDir}/evidence/S2.A1.png`));
+  assert.ok(budget.spent > 0);
+  assert.deepEqual(j.requirements.map(r => [r.id, r.classes]), [
+    ['R1', { mismatch: 1 }], ['R2', { app_defect_candidate: 1, not_run: 1 }], ['R3', { mismatch: 1 }],
+  ]);
+});
+
+test('AI 분류가 끝나지 않으면 uncertain으로 남기고 이유를 기록한다', async () => {
+  const p = plan();
+  p.scenarios = [p.scenarios[1]];
+  p.requirements = [p.requirements[1]];
+  const policy = { origins: [origin] };
+  const run = await runPlan({ plan: p, policy, runDir: dir('triage-fail'), timeoutMs: 1000 });
+  const j = await judge({ plan: p, run, send: fakeTriage(), model: 'claude-sonnet-5-5', budget: new Budget(0.0001),
+    reproduceDir: dir('triage-fail-repro'), timeoutMs: 1000 });
+  const a1 = j.verdicts.find(x => x.id === 'S2.A1')!;
+  assert.equal(a1.class, 'uncertain');
+  assert.match(JSON.stringify(a1.triage), /budget/);
+  assert.equal(a1.reproduction, undefined, 'uncertain은 재실행하지 않는다');
+  const again = await judge({ plan: p, run, send: fakeTriage(), model: 'claude-sonnet-5-5', budget: new Budget(0.0001),
+    reproduceDir: dir('triage-fail-repro2'), timeoutMs: 1000 });
+  assert.ok(j.file.endsWith('verdicts.json') && again.file.endsWith('verdicts-2.json'), '이전 판정 파일을 덮어쓰지 않는다');
+});
+
+test('1차 분류: 무효 시나리오와 실행 불명확 행동은 AI에 보내지 않는다', () => {
+  const p = plan();
+  const scenario = (id: string, extra: Partial<RunResult['scenarios'][number]>) => ({
+    id, valid: true, invalid: [], start: 'ok' as const, steps: [], checks: [], blocked: [], violations: [], ...extra });
+  const run = {
+    runDir: '', exitCode: 1, problems: [], requirements: [],
+    scenarios: [
+      scenario('S1', { valid: false, invalid: ['정책 위반: redirect'] }),
+      scenario('S2', { steps: [{ id: 'S2.A1', status: 'uncertain_execution', error: 'timeout' }],
+        checks: [{ id: 'S2.C1', status: 'not_run', source: 'requirement', expected: 'true' }] }),
+      scenario('S3', { steps: [{ id: 'S3.A1', status: 'ok' }], checks: [{ id: 'S3.C1', status: 'unresolved', count: 2, source: 'requirement', expected: '짝수' }] }),
+    ],
+  } satisfies RunResult;
+  const v = Object.fromEntries(preclassify(p, run).map(x => [x.id, x]));
+  assert.deepEqual([v['S1.C1'].class, v['S1.C2'].class], ['invalid', 'invalid']);
+  assert.equal(v['S2.A1'].class, 'uncertain_execution');
+  assert.deepEqual(v['S2.A1'].requirements, ['R2'], '행동 실패는 시나리오가 다루는 요구사항에 집계된다');
+  assert.deepEqual([v['S2.C1'].class, v['S2.C1'].cause], ['not_run', 'S2.A1']);
+  assert.deepEqual([v['S3.C1'].class, v['S3.C1'].observed], ['needs_triage', 'unresolved:2']);
+
+  const errored = { ...run, scenarios: [scenario('S1', { steps: [{ id: 'S1.A1', status: 'not_run' }], checks: [
+    { id: 'S1.C1', status: 'error', error: 'locator.count: Target closed', source: 'heuristic', expected: '30' },
+    { id: 'S1.C2', status: 'not_run', source: 'requirement', expected: '장바구니 (5)' }] }), run.scenarios[1], run.scenarios[2]] } satisfies RunResult;
+  const w = Object.fromEntries(preclassify(p, errored).map(x => [x.id, x]));
+  assert.deepEqual([w['S1.C1'].class, w['S1.C1'].error], ['needs_triage', 'locator.count: Target closed']);
+  assert.equal(w['S1.C2'].cause, 'S1.C1', '검사 예외로 멈춘 경우도 원인으로 연결한다');
+});
+
+test('인용 검증: 실패 시점 증거 인용 필수, 짧은 인용과 없는 문장은 거부', () => {
+  const files = new Map([['evidence/S2.start.aria.txt', '- button "쿠폰 적용"'], ['evidence/S2.A1.aria.txt', '- heading "주문 요약"']]);
+  const own = new Set(['evidence/S2.A1.aria.txt']);
+  const q = (file: string, text: string) => ({ class: 'app_defect_candidate', quotes: [{ file, text }] });
+  assert.deepEqual(checkQuotes(q('evidence/S2.A1.aria.txt', 'heading "주문 요약"'), files, own), []);
+  assert.ok(checkQuotes(q('evidence/S2.start.aria.txt', 'button "쿠폰 적용"'), files, own).some(e => e.includes('실패 시점 증거')));
+  assert.ok(checkQuotes(q('evidence/S2.A1.aria.txt', 'head'), files, own).some(e => e.includes('6자 이상')));
+  assert.ok(checkQuotes(q('evidence/S2.A1.aria.txt', 'heading "결제"'), files, own).some(e => e.includes('그대로 있는')));
+  assert.deepEqual(checkQuotes({ class: 'uncertain', quotes: [] }, files, own), []);
+});

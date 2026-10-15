@@ -1,6 +1,6 @@
 # WebTestPilot v2 (`qa/`)
 
-설계: [docs/design/V2_ARCHITECTURE.md](../docs/design/V2_ARCHITECTURE.md). 현재 2단계(spec 생성·결정적 실행·ledger 대조)까지 구현했다.
+설계: [docs/design/V2_ARCHITECTURE.md](../docs/design/V2_ARCHITECTURE.md). 현재 3단계(실패 분류·후보 재실행)까지 구현했다.
 
 | 파일 | 단계 |
 |---|---|
@@ -10,8 +10,9 @@
 | `src/fixture.ts` | ③ `start`·`act`·`check` 헬퍼, `ledger.jsonl` 기록 |
 | `src/run.ts` | ③ 실행 폴더에 입력·실행 코드 고정 → `playwright test` → 대조 |
 | `src/reconcile.ts` | ledger ↔ plan 대조. 상태 재계산, 무효 시나리오 제외, 요구사항별 집계 |
+| `src/triage.ts`, `prompts/triage.md` | ④ 1차 분류 → 애매한 실패만 AI 분류(증거 인용 검증) → ⑤ 결함 후보 재실행 |
 
-실행 결과는 `runs/<이름>/`에 남는다: `plan.json`, `policy.json`, `src/`(실행한 헬퍼 사본), `specs/`, `manifest.json`(해시·버전), `ledger.jsonl`, `results.json`, `artifacts/`(trace·스크린샷), `report.json`, `playwright.log`.
+실행 결과는 `runs/<이름>/`에 남는다: `plan.json`, `policy.json`, `src/`(실행한 헬퍼 사본), `specs/`, `manifest.json`(해시·버전), `ledger.jsonl`, `results.json`, `evidence/`(시작·실패 시점 snapshot·스크린샷), `artifacts/`(trace), `report.json`, `playwright.log`. 판정 후에는 `verdicts.json`(다시 판정하면 `verdicts-2.json`…)과 `triage/<항목>.json`(AI 대화·사용량)이 추가된다. 재실행은 별도 폴더에 남는다.
 
 ```powershell
 cd qa

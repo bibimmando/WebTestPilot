@@ -9,6 +9,13 @@ Claude Code와 Codex CLI가 작업을 넘길 때 최신 항목을 맨 위에 추
 - 미검증 / 주의:
 -->
 
+## 2026-10-15 (3) · Claude · chore/claude-codex-setup
+
+- 한 일: 3단계 구현 — 실패 시점 증거(aria snapshot·스크린샷)와 시작 화면 지문, `triage.ts`(1차 분류 → 애매한 실패만 AI 분류 → 결함 후보 재실행), `prompts/triage.md`. Codex 테스트 52/52·리뷰 11건 중 9건 반영 후 53/53 통과.
+- 결정: AI 분류는 실패 시점 증거를 하나 이상 그대로 인용해야 통과. 재실행은 최초 실행 폴더의 plan·정책으로 하고, 실행 코드 해시가 다르거나 시작 화면 지문이 다르면 inconclusive. 판정 파일은 단계마다 저장하고 덮어쓰지 않음.
+- 다음 할 일: 4a — `integration/`과 고정 계획 비교, 4b — 새 탐색 비교 (유료 API, 예산 필요). 그 전에 1단계 실제 모델 plan을 2·3단계까지 끝까지 이어 보는 무료 확인(Codex CLI 구독)을 권장.
+- 미검증 / 주의: 준비 조건(`ready`)이 계획 계약에 없어 로딩 중 값이 `mismatch`가 된다(Codex #1). 시작 지문은 화면만 봐서 서버 상태 차이를 놓친다(#5). AI 인용은 "증거에 그대로 있음"만 검증하고 결론과의 관련성은 검증하지 않는다. 스크린샷은 AI에 보내지 않는다. 실제 Claude API로 분류해 본 적 없음.
+
 ## 2026-10-15 (2) · Claude · chore/claude-codex-setup
 
 - 한 일: 2단계 구현 — `generate.ts`(plan→spec 템플릿), `fixture.ts`(start·act·check, ledger), `run.ts`(입력·실행 코드 사본 고정, 비동기 `playwright test`), `reconcile.ts`(상태 재계산, 무효 시나리오, 요구사항 집계). Codex가 workspace-write + TEMP를 `qa/runs/codex-tmp`로 바꿔 브라우저 테스트까지 실행(45/45 통과)하고 11건 리뷰. 반영 후 49/49 통과.

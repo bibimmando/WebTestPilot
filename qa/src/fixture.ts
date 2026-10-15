@@ -1,6 +1,7 @@
 // ③ 실행 헬퍼. 생성된 spec은 start·act·check만 부르고, 연산·대상·입력값·기대값은 모두 고정된 plan.json에서 읽는다.
 // 모든 결과는 즉시 ledger.jsonl에 쓴다. 판정은 테스트 통과 여부가 아니라 ledger와 plan의 대조(reconcile.ts)로 한다.
-import { appendFileSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test as base, expect, type Page, type Locator } from '@playwright/test';
 import { guardContext, toLocator, type Policy } from './browser.ts';
@@ -14,6 +15,18 @@ const TIMEOUT = Number(process.env.QA_TIMEOUT_MS ?? 5000);
 
 const steps = new Map(plan.scenarios.flatMap(s => s.steps.map(st => [st.id, st] as const)));
 const checks = new Map(plan.scenarios.flatMap(s => s.checks.map(c => [c.id, c] as const)));
+
+/** 실패 시점의 접근성 snapshot과 스크린샷을 evidence/에 남기고 실행 폴더 기준 경로를 돌려준다. 수집 실패는 결과를 바꾸지 않고 따로 기록한다. */
+async function capture(page: Page, id: string): Promise<{ evidence: string[]; captureErrors?: string[] }> {
+  mkdirSync(join(dir!, 'evidence'), { recursive: true });
+  const evidence: string[] = [];
+  const captureErrors: string[] = [];
+  try { writeFileSync(join(dir!, 'evidence', `${id}.aria.txt`), await page.locator('body').ariaSnapshot()); evidence.push(`evidence/${id}.aria.txt`); }
+  catch (e) { captureErrors.push(`aria: ${brief(e)}`); }
+  try { await page.screenshot({ path: join(dir!, 'evidence', `${id}.png`) }); evidence.push(`evidence/${id}.png`); }
+  catch (e) { captureErrors.push(`screenshot: ${brief(e)}`); }
+  return { evidence, ...(captureErrors.length ? { captureErrors } : {}) };
+}
 
 /** ledger 한 줄. 예외가 나기 전에 먼저 쓴다. */
 function log(entry: Record<string, unknown>): void {
@@ -38,7 +51,12 @@ export async function start(page: Page, scenarioId: string): Promise<void> {
     log({ kind: 'start', scenario: scenarioId, status: 'failed', error: brief(e) });
     throw e;
   }
-  log({ kind: 'start', scenario: scenarioId, status: 'ok', url: page.url() });
+  // 시작 직후 상태의 지문. 재실행이 같은 시작 상태에서 출발했는지 비교한다.
+  const aria = await page.locator('body').ariaSnapshot();
+  mkdirSync(join(dir!, 'evidence'), { recursive: true });
+  writeFileSync(join(dir!, 'evidence', `${scenarioId}.start.aria.txt`), aria);
+  log({ kind: 'start', scenario: scenarioId, status: 'ok', url: page.url(), startHash: createHash('sha256').update(page.url() + '\n' + aria).digest('hex'),
+    evidence: [`evidence/${scenarioId}.start.aria.txt`] });
 }
 
 /**
@@ -48,8 +66,8 @@ export async function start(page: Page, scenarioId: string): Promise<void> {
 export async function act(page: Page, stepId: string): Promise<void> {
   const st = steps.get(stepId);
   if (!st) throw new Error(`plan에 없는 단계: ${stepId}`);
-  const stop = (status: string, extra: Record<string, unknown>) => {
-    log({ kind: 'act', id: stepId, status, ...extra });
+  const stop = async (status: string, extra: Record<string, unknown>) => {
+    log({ kind: 'act', id: stepId, status, ...extra, ...(await capture(page, stepId)) });
     return new Stopped(`${stepId} ${status}`);
   };
   let loc: Locator | undefined;
@@ -59,7 +77,7 @@ export async function act(page: Page, stepId: string): Promise<void> {
     if (loc) {
       await loc.first().waitFor({ state: 'attached', timeout: TIMEOUT }).catch(() => {});
       const count = await loc.count();
-      if (count !== 1) throw stop('not_executed', { reason: 'target_changed', count });
+      if (count !== 1) throw await stop('not_executed', { reason: 'target_changed', count });
       // 효과 없이 행동 가능 여부만 확인한다.
       if (st.op === 'click') await loc.click({ trial: true, timeout: TIMEOUT });
       else if (st.op === 'fill' && !(await loc.isEditable())) throw new Error('not editable');
@@ -67,7 +85,7 @@ export async function act(page: Page, stepId: string): Promise<void> {
     }
   } catch (e) {
     if (e instanceof Stopped) throw e;
-    throw stop('not_executed', { reason: 'not_actionable', error: brief(e) });
+    throw await stop('not_executed', { reason: 'not_actionable', error: brief(e) });
   }
   // shortcut: 숫자 입력칸의 문자열·없는 옵션처럼 미전달이 확실한 실패도 uncertain으로 센다. 값별 사전 검증이 필요해지면 추가한다.
   try {
@@ -76,7 +94,7 @@ export async function act(page: Page, stepId: string): Promise<void> {
     else if (st.op === 'select') await loc!.selectOption({ label: st.value! }, { timeout: TIMEOUT });
     else await (loc ? loc.press(st.value!, { timeout: TIMEOUT }) : page.keyboard.press(st.value!));
   } catch (e) {
-    throw stop('uncertain_execution', { error: brief(e) });
+    throw await stop('uncertain_execution', { error: brief(e) });
   }
   log({ kind: 'act', id: stepId, status: 'ok', url: page.url() });
 }
@@ -103,11 +121,12 @@ export async function check(page: Page, checkId: string): Promise<void> {
       await page.waitForTimeout(100);
     }
   } catch (e) {
-    log({ kind: 'check', id: checkId, status: 'error', error: brief(e), reads, url: page.url() });
+    log({ kind: 'check', id: checkId, status: 'error', error: brief(e), reads, url: page.url(), ...(await capture(page, checkId)) });
     throw e;
   }
   log({ kind: 'check', id: checkId, ...r, expected: c.expected, op: c.op, read: c.read, reads,
-    ...(reads > 1 ? { first: { status: first!.status, actual: first!.actual } } : {}), url: page.url() });
+    ...(reads > 1 ? { first: { status: first!.status, actual: first!.actual } } : {}), url: page.url(),
+    ...(r!.status === 'passed' ? {} : await capture(page, checkId)) });
   expect.soft(r.status, `${checkId}: ${c.read} ${c.op} ${JSON.stringify(c.expected)}, 실제 ${JSON.stringify(r.actual ?? null)}`).toBe('passed');
 }
 
