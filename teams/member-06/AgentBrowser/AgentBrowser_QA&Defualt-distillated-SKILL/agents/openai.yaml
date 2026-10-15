@@ -1,0 +1,4 @@
+interface:
+  display_name: "WebTestPilot QA"
+  short_description: "Explore web bugs with Playwright and traceable AI verdicts"
+  default_prompt: "Use $webtestpilot-qa to explore this authorized site and produce evidence-backed verification JSON."

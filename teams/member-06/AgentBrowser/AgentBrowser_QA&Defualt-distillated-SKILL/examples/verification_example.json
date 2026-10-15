@@ -1,0 +1,56 @@
+{
+  "schema_version": "wtp.verification/1",
+  "run_id": "example-run",
+  "target": "http://127.0.0.1:8000",
+  "environment": {
+    "mode": "illustrative, not executed"
+  },
+  "tested_at": "2026-10-15T00:00:00Z",
+  "site_context_ref": "input_example.json",
+  "exploration_summary": "Illustrative candidate; browser execution not performed",
+  "bug_candidates": [
+    {
+      "id": "help-001",
+      "category": "Functional",
+      "url": "http://127.0.0.1:8000",
+      "element": "#help",
+      "first_observation": "Unverified hypothesis in synthetic example",
+      "priority": "medium"
+    }
+  ],
+  "verifications": [
+    {
+      "candidate_id": "help-001",
+      "expected": {
+        "behavior": "Help content becomes visible",
+        "basis_type": "product_requirement",
+        "basis": "Synthetic fixture requirement"
+      },
+      "actual": "Unknown; illustrative example not executed",
+      "reproduction_steps": [],
+      "execution_records": [],
+      "reproduction_status": "UNKNOWN",
+      "evidence_refs": [],
+      "citations": [],
+      "verdict": "INCONCLUSIVE",
+      "reason": "No browser evidence",
+      "counter_evidence": [],
+      "uncertainties": [
+        "Not executed"
+      ],
+      "next_tests": [
+        "Execute authorized fixture"
+      ]
+    }
+  ],
+  "artifacts": [],
+  "summary": {
+    "scope": "Illustrative fixture only",
+    "confirmed": 0,
+    "not_a_bug": 0,
+    "inconclusive": 1,
+    "limitations": [
+      "No execution"
+    ]
+  }
+}

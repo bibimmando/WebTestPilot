@@ -1,0 +1,38 @@
+{
+  "schema_version": "wtp.candidate/1",
+  "id": "help-001",
+  "category": "Functional",
+  "url": "http://127.0.0.1:8000",
+  "element": "#help",
+  "symptom": "Help content may not become visible",
+  "priority": "medium",
+  "initial_state": "Fresh context, synthetic fixture",
+  "expected": {
+    "behavior": "Help content becomes visible",
+    "basis_type": "product_requirement",
+    "basis": "Synthetic fixture requirement"
+  },
+  "authorization": {
+    "origins": [
+      "http://127.0.0.1:8000"
+    ],
+    "basis": "Replace with actual user-authorized test scope",
+    "actions_reviewed": true
+  },
+  "scenario": [
+    {
+      "action": "click",
+      "locator": {
+        "css": "#help"
+      }
+    },
+    {
+      "action": "observe"
+    }
+  ],
+  "observe": [
+    {
+      "css": "#content"
+    }
+  ]
+}

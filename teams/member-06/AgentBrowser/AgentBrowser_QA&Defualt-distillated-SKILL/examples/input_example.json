@@ -1,0 +1,16 @@
+{
+  "schema_version": "wtp.site_context/1",
+  "run_id": "example-run",
+  "target": "http://127.0.0.1:8000",
+  "authorization": {
+    "origins": [
+      "http://127.0.0.1:8000"
+    ],
+    "basis": "Replace with actual user-authorized test scope",
+    "actions_reviewed": true
+  },
+  "requirements": [
+    "Show help after activating the help button"
+  ],
+  "crawler_context": {}
+}
