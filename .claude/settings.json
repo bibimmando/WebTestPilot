@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(codex review:*)",
+      "Bash(codex exec -s read-only:*)",
+      "PowerShell(codex review:*)",
+      "PowerShell(codex exec -s read-only:*)"
+    ]
+  }
+}
