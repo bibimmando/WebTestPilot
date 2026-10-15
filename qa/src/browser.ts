@@ -14,6 +14,11 @@ export type Guarded = { context: BrowserContext; blocked: string[]; violations: 
  */
 export async function openContext(browser: Browser, policy: Policy): Promise<Guarded> {
   const context = await browser.newContext({ serviceWorkers: 'block' });
+  return { context, ...(await guardContext(context, policy)) };
+}
+
+/** 이미 만든 컨텍스트에 정책을 건다. Playwright 테스트 러너의 컨텍스트(trace 기록 포함)에도 쓴다. 서비스 워커 차단은 컨텍스트 생성 옵션이다. */
+export async function guardContext(context: BrowserContext, policy: Policy): Promise<Omit<Guarded, 'context'>> {
   const blocked: string[] = [];
   const violations: string[] = [];
   const allowed = (url: string) => {
@@ -36,7 +41,7 @@ export async function openContext(browser: Browser, policy: Policy): Promise<Gua
     blocked.push(`WS ${ws.url()}`);
     return ws.close();
   });
-  return { context, blocked, violations };
+  return { blocked, violations };
 }
 
 /** 페이지 전체 또는 ref 영역의 접근성 snapshot. ref 번호는 전체·부분 snapshot에서 같다. depth를 주면 그 깊이까지만 보여준다. */

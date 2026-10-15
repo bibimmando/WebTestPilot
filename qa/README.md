@@ -1,6 +1,17 @@
 # WebTestPilot v2 (`qa/`)
 
-설계: [docs/design/V2_ARCHITECTURE.md](../docs/design/V2_ARCHITECTURE.md). 현재 1단계(탐색·계획)까지 구현했다.
+설계: [docs/design/V2_ARCHITECTURE.md](../docs/design/V2_ARCHITECTURE.md). 현재 2단계(spec 생성·결정적 실행·ledger 대조)까지 구현했다.
+
+| 파일 | 단계 |
+|---|---|
+| `src/explore.ts`, `src/mcp.ts` | ① 탐색·계획 (API 루프 / 개발용 MCP 서버) |
+| `src/plan.ts` | 계획 계약 검증·고정 |
+| `src/generate.ts` | ② plan → spec 템플릿 (ID만 담는다) |
+| `src/fixture.ts` | ③ `start`·`act`·`check` 헬퍼, `ledger.jsonl` 기록 |
+| `src/run.ts` | ③ 실행 폴더에 입력·실행 코드 고정 → `playwright test` → 대조 |
+| `src/reconcile.ts` | ledger ↔ plan 대조. 상태 재계산, 무효 시나리오 제외, 요구사항별 집계 |
+
+실행 결과는 `runs/<이름>/`에 남는다: `plan.json`, `policy.json`, `src/`(실행한 헬퍼 사본), `specs/`, `manifest.json`(해시·버전), `ledger.jsonl`, `results.json`, `artifacts/`(trace·스크린샷), `report.json`, `playwright.log`.
 
 ```powershell
 cd qa

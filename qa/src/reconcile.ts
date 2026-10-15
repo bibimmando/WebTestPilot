@@ -1,0 +1,104 @@
+// ledger ↔ plan 대조. ledger가 판정의 기준이지만 ledger를 그대로 믿지 않는다.
+// 비교 결과는 고정된 plan의 기대값과 기록된 실제 값으로 다시 계산하고, 순서·중복·정책 위반이 있는 시나리오는 무효로 집계한다.
+// 코드에 있어도 실행되지 않은 검사는 not_run이다. 상태는 차원별로 나누고 분모에서 빼지 않는다.
+import type { Plan, Check } from './plan.ts';
+import { sequence } from './generate.ts';
+
+export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; scenario?: string; id?: string; status?: string;
+  actual?: string; expected?: string; count?: number; reason?: string; error?: string; blocked?: string[]; violations?: string[] };
+
+export type StepResult = { id: string; status: 'ok' | 'not_executed' | 'uncertain_execution' | 'not_run'; reason?: string; error?: string };
+export type CheckStatus = 'passed' | 'mismatch' | 'unresolved' | 'error' | 'not_run';
+export type CheckResult = { id: string; status: CheckStatus; source: string; expected: string; actual?: string; count?: number };
+export type ScenarioResult = {
+  id: string; valid: boolean; invalid: string[];
+  start: 'ok' | 'failed' | 'not_run'; steps: StepResult[]; checks: CheckResult[];
+  blocked: string[]; violations: string[];
+};
+/** checks의 invalid는 무효 시나리오에 속해 결과를 믿을 수 없는 검사 수다. */
+export type RequirementResult = { id: string; plan: 'planned' | 'unplanned' | 'missing'; checks: Record<CheckStatus | 'invalid', number> };
+export type Reconciled = { scenarios: ScenarioResult[]; requirements: RequirementResult[]; problems: string[] };
+
+const STEP = new Set(['ok', 'not_executed', 'uncertain_execution']);
+const CHECK = new Set(['passed', 'mismatch', 'unresolved', 'error']);
+
+export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
+  const problems: string[] = [];
+  const checksById = new Map(plan.scenarios.flatMap(s => s.checks.map(c => [c.id, c] as const)));
+
+  const scenarios = plan.scenarios.map((s): ScenarioResult => {
+    const invalid: string[] = [];
+    const flag = (msg: string) => { invalid.push(msg); problems.push(`${s.id}: ${msg}`); };
+    const mine = entries.filter(e => (e.kind === 'start' || e.kind === 'policy') ? e.scenario === s.id : e.id?.startsWith(`${s.id}.`));
+    const records = mine.filter(e => e.kind !== 'policy');
+    const policy = mine.filter(e => e.kind === 'policy');
+
+    // 실행된 기록은 계획된 순서의 앞부분과 정확히 같아야 한다. 중복도 여기서 순서 위반으로 드러난다.
+    const expected = sequence(s).map(x => `${x.call}:${x.id}`);
+    records.forEach((e, i) => {
+      const k = `${e.kind}:${e.kind === 'start' ? e.scenario : e.id}`;
+      if (k !== expected[i]) flag(`${i + 1}번째 기록이 ${k} (계획 순서는 ${expected[i] ?? '끝'})`);
+    });
+    const get = (kind: string, id: string) => records.find(e => e.kind === kind && (kind === 'start' ? e.scenario : e.id) === id);
+
+    const startEntry = get('start', s.id);
+    const start = startEntry?.status === 'ok' || startEntry?.status === 'failed' ? startEntry.status : 'not_run';
+    if (start !== 'ok' && records.length > (startEntry ? 1 : 0)) flag('시작하지 못했는데 뒤 기록이 있음');
+    if (records.length && !policy.length) flag('정책 기록(policy)이 없음');
+    const violations = policy.flatMap(e => e.violations ?? []);
+    if (violations.length) flag(`정책 위반: ${violations.join(', ')}`);
+
+    const steps = s.steps.map((st): StepResult => {
+      const e = get('act', st.id);
+      if (e && !STEP.has(e.status ?? '')) flag(`${st.id}: 알 수 없는 상태 ${e.status}`);
+      const status = e && STEP.has(e.status ?? '') ? e.status as StepResult['status'] : 'not_run';
+      return { id: st.id, status, ...(e?.reason ? { reason: e.reason } : {}), ...(e?.error ? { error: e.error } : {}) };
+    });
+    // 멈춘 행동 뒤에 기록이 더 있으면 헬퍼 계약이 깨진 것이다.
+    const stoppedAt = steps.findIndex(x => x.status === 'not_executed' || x.status === 'uncertain_execution');
+    if (stoppedAt >= 0 && s.steps.slice(stoppedAt + 1).some(st => get('act', st.id))) flag(`${steps[stoppedAt].id}에서 멈췄는데 뒤 행동 기록이 있음`);
+
+    const checks = s.checks.map((c): CheckResult => {
+      const e = get('check', c.id);
+      let status: CheckStatus = 'not_run';
+      if (e) {
+        status = CHECK.has(e.status ?? '') ? e.status as CheckStatus : 'error';
+        if (status === 'passed' || status === 'mismatch') {
+          const recomputed = compare(c, e.actual);
+          if (recomputed !== status) flag(`${c.id}: 기록된 ${e.status}와 다시 계산한 ${recomputed}가 다름`);
+          status = recomputed;
+        }
+      }
+      return { id: c.id, status, source: c.source.kind, expected: c.expected,
+        ...(e?.actual !== undefined ? { actual: e.actual } : {}), ...(e?.count !== undefined ? { count: e.count } : {}) };
+    });
+
+    return { id: s.id, valid: invalid.length === 0, invalid, start, steps, checks, blocked: policy.flatMap(e => e.blocked ?? []), violations };
+  });
+
+  const known = new Set(plan.scenarios.flatMap(s => [s.id, ...s.steps.map(x => x.id), ...s.checks.map(x => x.id)]));
+  for (const e of entries) {
+    const id = e.kind === 'start' || e.kind === 'policy' ? e.scenario : e.id;
+    if (!id || !known.has(id)) problems.push(`plan에 없는 ID가 ledger에 있음: ${id}`);
+  }
+
+  const resultOf = new Map(scenarios.flatMap(s => s.checks.map(c => [c.id, { c, valid: s.valid }] as const)));
+  const requirements = plan.requirements.map((r): RequirementResult => {
+    const counts = { passed: 0, mismatch: 0, unresolved: 0, error: 0, not_run: 0, invalid: 0 };
+    for (const [id, c] of checksById) {
+      if (c.source.kind !== 'requirement' || c.source.id !== r.id) continue;
+      const { c: res, valid } = resultOf.get(id)!;
+      counts[valid ? res.status : 'invalid']++;
+    }
+    const covered = plan.scenarios.some(s => s.covers.includes(r.id));
+    const plan_ = covered ? 'planned' : plan.unplanned.some(u => u.requirement === r.id) ? 'unplanned' : 'missing';
+    return { id: r.id, plan: plan_, checks: counts };
+  });
+  return { scenarios, requirements, problems };
+}
+
+/** 고정된 plan의 연산·기대값으로 비교를 다시 계산한다. 실제 값이 없으면 비교할 수 없다. */
+function compare(c: Check, actual: string | undefined): CheckStatus {
+  if (typeof actual !== 'string') return 'error';
+  return (c.op === 'equals' ? actual === c.expected : actual.includes(c.expected)) ? 'passed' : 'mismatch';
+}
