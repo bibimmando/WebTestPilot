@@ -35,7 +35,7 @@ test('MCP 서버: CLI처럼 도구를 불러 계획을 제출하면 plan.json을
   }));
   try {
     const names = (await client.listTools()).tools.map(t => t.name).sort();
-    assert.deepEqual(names, ['click', 'fill', 'navigate', 'pin', 'press', 'select', 'snapshot', 'submit_plan']);
+    assert.deepEqual(names, ['ask_user', 'click', 'fill', 'navigate', 'pin', 'press', 'select', 'snapshot', 'submit_plan']);
     const prompt = await client.getPrompt({ name: 'explore' });
     assert.match(JSON.stringify(prompt), /R1: 쿠폰 적용 버튼이 보인다/);
 

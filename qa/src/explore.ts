@@ -3,13 +3,15 @@ import { readFileSync } from 'node:fs';
 import type { Browser, Page } from 'playwright';
 import type Anthropic from '@anthropic-ai/sdk';
 import { openContext, snapshot, resolveRef, resolveGroup, resolveText, resolvePosition, settle, stableOnReload, type Policy } from './browser.ts';
-import { validate, freeze, type Draft, type Pinned, type Plan, type Requirement } from './plan.ts';
+import { validate, freeze, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
+import { rulesText } from './rules.ts';
 import { runAgent, type AgentResult, type Budget, type Send, type Tool } from './agent.ts';
 
 export const SYSTEM = readFileSync(new URL('../prompts/explore.md', import.meta.url), 'utf8');
 const SNAPSHOT_CHARS = 24_000;
 const ACTION_TIMEOUT = 5_000;
 const SETTLE_TIMEOUT = 3_000;
+const MAX_QUESTIONS = 5;
 
 export type ExploreResult = AgentResult & { plan?: Plan; blocked: string[]; violations: string[] };
 type Task = { policy: Policy; startUrl: string; requirements: Requirement[] };
@@ -38,8 +40,11 @@ export function taskMessage(o: Task): string {
   return [
     `시작 URL: ${o.startUrl}`,
     `허용 origin: ${o.policy.origins.join(', ')} (쓰기 요청 ${o.policy.allowWrites ? '허용' : '차단'})`,
-    '요구사항:',
-    ...o.requirements.map(r => `- ${r.id}: ${r.text}`),
+    ...(o.requirements.length
+      ? ['요구사항 (먼저 계획하고, 남은 여유로 다른 기능도 탐색):', ...o.requirements.map(r => `- ${r.id}: ${r.text}`)]
+      : ['요구사항: 없음. 사이트를 탐색해 기능을 찾고 검사하세요.']),
+    '일반 규칙 목록 (inferred 근거로 인용할 수 있는 규칙):',
+    rulesText(),
   ].join('\n');
 }
 
@@ -48,7 +53,21 @@ export function exploreTools(page: Page, o: Task, violations: string[]): Tool[] 
   const pinned = new Map<string, Pinned>();
   // 탐색 중 본 snapshot 텍스트. constraint(화면 안내) 인용이 실제로 화면에 있었는지 확인한다.
   const seen: string[] = [];
+  const questions: Question[] = [];
   return [...browserTools(page, o.policy, pinned, violations, seen), {
+    def: { name: 'ask_user', strict: true, description: '정답이 업무 규칙에 달려 있고 화면만으로 알 수 없을 때 사용자에게 질문을 남긴다. 답을 기다리지 말고 다른 기능을 계속 탐색한다.',
+      input_schema: { type: 'object', additionalProperties: false, required: ['question', 'options'], properties: {
+        question: { type: 'string' }, options: { type: 'array', items: { type: 'string' }, description: '선택지 2개 이상' },
+        feature: { type: 'string', description: '이 질문에 걸린 기능 ID (F#). 계획의 features에 같은 ID로 적는다' } } } },
+    run: async ({ question, options, feature }: { question: string; options: string[]; feature?: string }) => {
+      if (!question.trim() || options.length < 2) return { text: '질문과 선택지 2개 이상이 필요합니다.', isError: true };
+      const id = `Q${questions.length + 1}`;
+      // 상한을 넘은 질문도 버리지 않고 "규칙 미확인"으로 남긴다. 사용자에게 보내는 질문은 상한까지만이다.
+      const overLimit = questions.filter(q => !q.overLimit).length >= MAX_QUESTIONS;
+      questions.push({ id, page: page.url(), question, options, ...(feature ? { feature } : {}), ...(overLimit ? { overLimit } : {}) });
+      return { text: `${id}로 남겼습니다${overLimit ? ` (질문 한도 ${MAX_QUESTIONS}개를 넘어 사용자에게 묻지 않고 "규칙 미확인"으로 기록)` : ''}. 답은 이번 실행 중에 오지 않습니다. 이 규칙에 의존하는 기대값은 쓰지 말고 다른 기능을 계속 탐색하세요.` };
+    },
+  }, {
     def: { name: 'submit_plan', description: '완성한 테스트 계획을 제출한다. 오류가 있으면 오류 목록이 돌아온다.', input_schema: DRAFT_SCHEMA },
     run: async (draft: Draft) => {
       if (violations.length) return { text: `정책 위반이 있어 계획을 받을 수 없다: ${violations.join(', ')}`, isError: true };
@@ -56,8 +75,10 @@ export function exploreTools(page: Page, o: Task, violations: string[]): Tool[] 
       try { errors = validate(draft, o.requirements, pinned, o.policy.origins, seen.join('\n')); } catch (e) {
         return { text: `계획 형식 오류: ${(e as Error).message}`, isError: true };
       }
+      const declared = new Set((draft.features ?? []).map(f => f.id));
+      for (const q of questions) if (q.feature && !declared.has(q.feature)) errors.push(`question ${q.id}: feature ${q.feature} is not in features`);
       if (errors.length) return { text: `계획을 고쳐서 다시 제출하세요:\n- ${errors.join('\n- ')}`, isError: true };
-      return { text: '계획을 받았습니다.', done: freeze(draft, o.requirements, pinned) };
+      return { text: '계획을 받았습니다.', done: freeze(draft, o.requirements, pinned, questions) };
     },
   }];
 }
@@ -147,17 +168,22 @@ const REASONS: Record<string, string> = {
 
 const source = {
   type: 'object', additionalProperties: false, required: ['kind'],
-  properties: { kind: { enum: ['requirement', 'constraint', 'observed', 'inferred'] }, id: { type: 'string' },
-    quote: { type: 'string', description: 'requirement: 요구사항 원문 인용 / constraint: 화면 안내·제약 원문 인용 / inferred: 근거가 된 일반 규칙 한 문장' } },
+  properties: { kind: { enum: ['requirement', 'constraint', 'observed', 'inferred'] }, id: { type: 'string', description: 'requirement의 요구사항 ID' },
+    rule: { type: 'string', description: 'inferred: 일반 규칙 목록의 규칙 ID' },
+    quote: { type: 'string', description: 'requirement: 요구사항 원문 인용 / constraint: 화면 안내·제약 원문 인용 / inferred: 이 검사에 규칙이 적용되는 이유' } },
 };
 const DRAFT_SCHEMA: Anthropic.Tool.InputSchema = {
   type: 'object', additionalProperties: false, required: ['scenarios', 'unplanned'],
   properties: {
+    features: { type: 'array', description: '탐색으로 찾은 기능. 요구사항에 없는 기능도 적는다', items: {
+      type: 'object', additionalProperties: false, required: ['id', 'name', 'page'],
+      properties: { id: { type: 'string', description: 'F1, F2 ...' }, name: { type: 'string' }, page: { type: 'string', description: '기능이 있는 페이지 URL' },
+        requirements: { type: 'array', items: { type: 'string' }, description: '관련 요구사항 ID (있으면)' } } } },
     scenarios: { type: 'array', items: {
       type: 'object', additionalProperties: false, required: ['id', 'title', 'covers', 'start', 'steps', 'checks'],
       properties: {
         id: { type: 'string', description: 'S1, S2 ...' }, title: { type: 'string' },
-        covers: { type: 'array', items: { type: 'string' } },
+        covers: { type: 'array', items: { type: 'string' }, description: '요구사항(R#) 또는 기능(F#) ID' },
         start: { type: 'object', additionalProperties: false, required: ['url'], properties: { url: { type: 'string' } } },
         steps: { type: 'array', items: {
           type: 'object', additionalProperties: false, required: ['id', 'op'],
@@ -168,15 +194,16 @@ const DRAFT_SCHEMA: Anthropic.Tool.InputSchema = {
           properties: { id: { type: 'string', description: 'S1.C1 ...' }, after: { type: 'string', description: '"start" 또는 이 시나리오의 단계 ID' },
             target: { type: 'string', description: 'read url이면 생략' },
             read: { enum: ['text', 'value', 'checked', 'visible', 'count', 'url', 'items'] },
-            op: { enum: ['equals', 'not_equals', 'contains', 'less', 'greater', 'all_equal', 'all_contain', 'any_equal', 'any_contain'] },
+            op: { enum: ['equals', 'not_equals', 'contains', 'less', 'greater', 'same_number', 'all_equal', 'all_contain', 'any_equal', 'any_contain'] },
             expected: { type: 'string', description: '고정 기대값. expected_from과 둘 중 하나' },
             expected_from: { type: 'string', description: '같은 시나리오의 앞선 검사 ID. 그 검사가 읽은 실제 값을 기대값으로 쓴다' },
+            offset: { type: 'integer', description: 'expected_from 값의 첫 숫자에 더할 수 (예: 증가 버튼 1번 = 1)' },
             source,
             precondition: { type: 'boolean', description: 'true면 시작 조건 확인. 실패하면 뒤 행동을 하지 않고 준비 실패로 남긴다' } } } },
       } } },
     unplanned: { type: 'array', items: {
       type: 'object', additionalProperties: false, required: ['requirement', 'reason'],
-      properties: { requirement: { type: 'string' }, reason: { type: 'string' } } } },
+      properties: { requirement: { type: 'string', description: '계획하지 못한 요구사항(R#) 또는 기능(F#) ID' }, reason: { type: 'string' } } } },
     observations: { type: 'array', description: '탐색 중 본 이상하거나 요구사항과 어긋나 보이는 점 (계획에 담지 못한 것 포함)', items: {
       type: 'object', additionalProperties: false, required: ['page', 'note'],
       properties: { page: { type: 'string' }, note: { type: 'string' } } } },

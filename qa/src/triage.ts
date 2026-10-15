@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Policy } from './browser.ts';
 import type { Plan } from './plan.ts';
+import { ruleOf } from './rules.ts';
 import { sequence } from './generate.ts';
 import { runPlan, type RunResult } from './run.ts';
 import type { ScenarioResult } from './reconcile.ts';
@@ -19,7 +20,7 @@ export type Class = 'passed' | 'passed_inferred' | 'passed_observed' | 'mismatch
 export type Quote = { file: string; text: string };
 export type Verdict = {
   id: string; scenario: string; kind: 'start' | 'act' | 'check';
-  /** 이 항목이 영향을 주는 요구사항. check는 출처 요구사항, start·act는 시나리오의 covers 전체. */
+  /** 이 항목이 영향을 주는 요구사항. check는 출처 요구사항, start·act는 시나리오의 covers 전체(기능 F#도 포함). 자율 검사의 기능은 시나리오 covers로 찾는다. */
   requirements: string[];
   source?: string;
   /** 실행 기록에서 본 결과 (예: mismatch, not_executed:target_changed:0, error) */
@@ -33,7 +34,10 @@ export type Verdict = {
   triageLog?: string;
   reproduction?: 'reproduced' | 'flaky' | 'reproduction_inconclusive';
   reproductionDetail?: string;
+  /** 단계별 결과 위에 붙이는 시스템 판정 (설계 3.3, 5장 6단계) */
+  system?: { level: SystemLevel; reason: string };
 };
+export type SystemLevel = 'bug_high' | 'bug_medium' | 'not_bug' | 'hold' | 'incomplete';
 
 /** 실행 기록만으로 하는 1차 분류. 실패 위치만으로 원인을 정하지 않고, 원인을 모르는 실패는 needs_triage로 둔다. */
 export function preclassify(plan: Plan, run: RunResult): Verdict[] {
@@ -185,6 +189,8 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
     `실행 기록: ${v.observed}`,
     `시작 화면: ${r.ready === false ? '기한 안에 멈추지 않음(로딩 중일 수 있음)' : '멈춘 뒤 기록'}, 선행조건 ${r.precondition}`,
     ...(comparison ? [`비교 기록: ${JSON.stringify(comparison)}`] : []),
+    // 일반 규칙 근거면 규칙 본문·적용 조건·정상 예외를 함께 준다. 예외에 해당하면 결함이 아니다.
+    ...(ruleOf(c?.source.rule) ? [`일반 규칙 ${c!.source.rule}: ${JSON.stringify(ruleOf(c!.source.rule))}`] : []),
     ...(v.error ? [`오류 원문: ${v.error}`] : []),
     '증거 파일 (*.start.aria.txt는 시작 직후, 나머지는 실패 시점):',
     ...[...files].map(([name, text]) => `--- ${name}\n${text.length > EVIDENCE_CHARS ? `${text.slice(0, EVIDENCE_CHARS)}\n(이후 생략: 생략된 부분 없이 판단할 수 없으면 uncertain)` : text}`),
@@ -230,6 +236,31 @@ export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir
   return again;
 }
 
+/**
+ * 시스템 판정. 실행·분류·재현이 끝나지 않은 항목은 판정하지 않고(incomplete) 사유를 남긴다. 끝난 항목은 반드시 판정한다.
+ * 확신 높음은 명시 근거(요구사항·화면 제약) 위반이 재현되고 AI 분류가 자동화 실패가 아님을 보였을 때만이다.
+ * 일반 규칙(inferred) 위반은 Q22 팀 확인 전까지 최대 확신 중간이다.
+ * shortcut: 업무 규칙 질문에 걸린 판단 보류와 UI 결함·개선 제안은 아직 없다. 질문은 plan.questions로 따로 보고한다.
+ */
+export function systemVerdict(plan: Plan, v: Verdict): NonNullable<Verdict['system']> {
+  const incomplete = (reason: string) => ({ level: 'incomplete' as const, reason });
+  if (v.class === 'passed' || v.class === 'passed_inferred' || v.class === 'passed_observed') return { level: 'not_bug', reason: '검사 통과' };
+  if (v.class === 'automation_failure') return { level: 'not_bug', reason: '자동화 실패로 분류(원래 결과는 보존)' };
+  if (v.class !== 'app_defect_candidate') return incomplete(({ invalid: '무효 시나리오', not_run: `실행 안 됨(원인 ${v.cause ?? '알 수 없음'})`,
+    uncertain_execution: '실행 여부 불명확', precondition_failed: '시작 조건 준비 실패', uncertain: 'AI 분류가 판단 불가',
+    mismatch: '분류 미완료', needs_triage: '분류 미완료' } as Partial<Record<Class, string>>)[v.class] ?? v.class);
+  // 값을 읽어 비교한 불일치만 판정한다. 대상 미해결·오류는 같은 실패가 재현돼도 결함 근거가 아니다.
+  if (v.kind === 'check' && v.observed !== 'mismatch') return incomplete(`실제 값을 읽지 못함(${v.observed})`);
+  if (v.reproduction === 'flaky') return { level: 'hold', reason: `재실행에서 재현 안 됨${v.reproductionDetail ? `: ${v.reproductionDetail}` : ''}` };
+  if (v.reproduction !== 'reproduced') return incomplete(`재현 판단 불가${v.reproductionDetail ? `: ${v.reproductionDetail}` : ''}`);
+  if (v.source === 'requirement' || v.source === 'constraint') return { level: 'bug_high', reason: `${v.source === 'requirement' ? '요구사항' : '화면 제약'} 위반, 재현됨, 증거 인용으로 자동화 실패 아님` };
+  if (v.source === 'observed') return incomplete('탐색 때 본 값과 시작 상태가 다름(결함 근거 아님)');
+  // 행동 실패(대상 사라짐 등)는 규칙 근거가 없다. 앱 변경인지 결함인지 사람이 볼 항목으로 둔다.
+  if (v.kind !== 'check') return { level: 'hold', reason: `행동 실패가 재현됨(${v.observed}). 의도된 변경인지 근거 없음` };
+  const c = plan.scenarios.flatMap(s => s.checks).find(x => x.id === v.id);
+  return { level: 'bug_medium', reason: `일반 규칙 ${c?.source.rule ?? '?'} 위반, 재현됨 (Q22 팀 확인 전 상한)` };
+}
+
 const isCandidate = (v: Verdict) => v.observed === 'mismatch' || v.class === 'app_defect_candidate';
 
 /** 같은 결과인지 비교하는 서명. 오류 문구의 숫자(시간 등)는 지우고 비교한다. */
@@ -248,7 +279,14 @@ function signature(r: ScenarioResult, v: Verdict, relative = false): string {
   return r.start;
 }
 
-export type Judgment = { file: string; verdicts: Verdict[]; requirements: { id: string; plan: string; classes: Partial<Record<Class, number>> }[] };
+export type Judgment = { file: string; verdicts: Verdict[]; requirements: { id: string; plan: string; classes: Partial<Record<Class, number>> }[];
+  /** 시스템 판정 집계. 요구사항 검사 · 자율 검사 · 준비 확인(선행조건)을 나눈다 */
+  system: Record<'requirement' | 'autonomous' | 'preparation', Partial<Record<SystemLevel, number>>>;
+  /** 기능(F#)별 계획 여부와 판정 집계(준비 확인 제외), 걸린 질문 */
+  features: { id: string; plan: 'planned' | 'unplanned' | 'missing'; system: Partial<Record<SystemLevel, number>>; questions: string[] }[];
+  /** 답을 받지 못한 업무 규칙 질문. 관련 기능은 판단 보류 */
+  pendingQuestions: Plan['questions'];
+};
 
 /**
  * 1차 분류 → AI 분류 → 재현을 거쳐 판정 파일을 쓴다. 단계마다 바로 저장하고, 이전 판정 파일은 덮어쓰지 않는다 (verdicts.json, verdicts-2.json …).
@@ -260,11 +298,26 @@ export async function judge(o: { plan: Plan; run: RunResult; send: Send; model: 
   while (existsSync(join(o.run.runDir, n === 1 ? 'verdicts.json' : `verdicts-${n}.json`))) n++;
   const file = join(o.run.runDir, n === 1 ? 'verdicts.json' : `verdicts-${n}.json`);
   const verdicts = preclassify(o.plan, o.run);
+  const checks = new Map(o.plan.scenarios.flatMap(s => s.checks.map(c => [c.id, c] as const)));
+  const reqIds = new Set(o.plan.requirements.map(r => r.id));
+  const groupOf = (v: Verdict) => checks.get(v.id)?.precondition ? 'preparation' as const
+    : v.requirements.some(r => reqIds.has(r)) ? 'requirement' as const : 'autonomous' as const;
+  const count = (vs: Verdict[]) => { const n: Partial<Record<SystemLevel, number>> = {}; for (const v of vs) if (v.system) n[v.system.level] = (n[v.system.level] ?? 0) + 1; return n; };
   const judgment = (stage: string): Judgment & { stage: string } => ({ file, stage, verdicts, requirements: o.run.requirements.map(r => {
     const classes: Partial<Record<Class, number>> = {};
     for (const v of verdicts) if (v.requirements.includes(r.id)) classes[v.class] = (classes[v.class] ?? 0) + 1;
     return { id: r.id, plan: r.plan, classes };
-  }) });
+  }),
+  system: { requirement: count(verdicts.filter(v => groupOf(v) === 'requirement')), autonomous: count(verdicts.filter(v => groupOf(v) === 'autonomous')),
+    preparation: count(verdicts.filter(v => groupOf(v) === 'preparation')) },
+  // M3 이전에 저장한 계획에는 features·questions가 없다.
+  features: (o.plan.features ?? []).map(f => {
+    const scenarios = new Set(o.plan.scenarios.filter(s => s.covers.includes(f.id)).map(s => s.id));
+    return { id: f.id, plan: scenarios.size ? 'planned' as const : o.plan.unplanned.some(u => u.requirement === f.id) ? 'unplanned' as const : 'missing' as const,
+      system: count(verdicts.filter(v => scenarios.has(v.scenario) && groupOf(v) !== 'preparation')),
+      questions: (o.plan.questions ?? []).filter(q => q.feature === f.id).map(q => q.id) };
+  }),
+  pendingQuestions: o.plan.questions ?? [] });
   const save = (stage: string) => writeFileSync(file, JSON.stringify(judgment(stage), null, 2));
   save('preclassified');
   await triage({ plan: o.plan, run: o.run, verdicts, send: o.send, model: o.model, budget: o.budget, maxItems: o.maxTriageItems,
@@ -278,6 +331,7 @@ export async function judge(o: { plan: Plan; run: RunResult; send: Send; model: 
       v.reproductionDetail = `재실행 실패: ${(e as Error).message.split('\n')[0]}`;
     }
   }
+  for (const v of verdicts) v.system = systemVerdict(o.plan, v);
   save('done');
   return judgment('done');
 }

@@ -1,7 +1,7 @@
 // ledger ↔ plan 대조. ledger가 판정의 기준이지만 ledger를 그대로 믿지 않는다.
 // 비교 결과는 고정된 plan의 기대값과 기록된 실제 값으로 다시 계산하고, 순서·중복·정책 위반이 있는 시나리오는 무효로 집계한다.
 // 코드에 있어도 실행되지 않은 검사는 not_run이다. 상태는 차원별로 나누고 분모에서 빼지 않는다.
-import { compareValues, type Plan, type Check } from './plan.ts';
+import { compareValues, expectedFrom, type Plan, type Check } from './plan.ts';
 import { sequence } from './generate.ts';
 
 export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; scenario?: string; id?: string; status?: string;
@@ -53,7 +53,7 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
       if (c.expected_from === undefined) return c.expected;
       // 값을 정상적으로 읽은 기록(통과·불일치)만 참조값이 된다. 미해결·오류 기록의 actual은 쓰지 않는다.
       const ref = get('check', c.expected_from);
-      return ref && (ref.status === 'passed' || ref.status === 'mismatch') && typeof ref.actual === 'string' ? ref.actual : undefined;
+      return ref && (ref.status === 'passed' || ref.status === 'mismatch') && typeof ref.actual === 'string' ? expectedFrom(c, ref.actual) : undefined;
     };
     const startEntry = get('start', s.id);
     const start = startEntry?.status === 'ok' || startEntry?.status === 'failed' ? startEntry.status : 'not_run';

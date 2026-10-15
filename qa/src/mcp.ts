@@ -15,13 +15,13 @@ const { values: a } = parseArgs({ options: {
   out: { type: 'string', default: 'plan.json' }, 'allow-writes': { type: 'boolean', default: false },
   headed: { type: 'boolean', default: false }, 'print-prompt': { type: 'boolean', default: false },
 } });
-if (!a.url || !a.requirements) {
-  console.error('사용법: node src/mcp.ts --url <시작 URL> --requirements <요구사항.json> [--origins a,b] [--out plan.json] [--allow-writes] [--headed] [--print-prompt]');
+if (!a.url) {
+  console.error('사용법: node src/mcp.ts --url <시작 URL> [--requirements <요구사항.json>] [--origins a,b] [--out plan.json] [--allow-writes] [--headed] [--print-prompt]');
   process.exit(2);
 }
 const startUrl = a.url;
 // Windows PowerShell 5.1의 utf8 저장은 BOM을 붙이므로 제거한다.
-const requirements: Requirement[] = JSON.parse(readFileSync(a.requirements, 'utf8').replace(/^﻿/, ''));
+const requirements: Requirement[] = a.requirements ? JSON.parse(readFileSync(a.requirements, 'utf8').replace(/^﻿/, '')) : [];  // 요구사항은 선택 입력(설계 3.3)
 const policy = { origins: a.origins ? a.origins.split(',') : [new URL(startUrl).origin], allowWrites: a['allow-writes'] };
 const task = { policy, startUrl, requirements };
 assertStartAllowed(task);

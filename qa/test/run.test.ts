@@ -32,7 +32,7 @@ const src = (id: string, quote: string) => ({ kind: 'requirement' as const, id, 
 
 function plan(): Plan {
   return {
-    version: 1, observations: [],
+    version: 1, observations: [], features: [], questions: [],
     requirements: [
       { id: 'R1', text: '담기를 누르면 장바구니 개수가 1 늘어난다' },
       { id: 'R2', text: '쿠폰 적용 창에서 확인을 누를 수 있다' },
@@ -56,7 +56,7 @@ function plan(): Plan {
         checks: [
           { id: 'S1.C1', after: 'start', target: 'T1', read: 'count', op: 'equals', expected: '30', source: { kind: 'observed' } },
           { id: 'S1.C2', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (1)', source: src('R1', '1 늘어난다') },
-          { id: 'S1.C3', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (5)', source: { kind: 'inferred', quote: '담기를 누르면 장바구니 개수가 표시된다' } },
+          { id: 'S1.C3', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (5)', source: { kind: 'inferred', rule: 'no-error-page', quote: '이 검사에 이 일반 규칙이 적용되는 이유를 적는다' } },
         ] },
       { id: 'S2', title: '사라진 버튼', covers: ['R2'], start: { url: `${origin}/modal.html` },
         steps: [{ id: 'S2.A1', op: 'click', target: 'T4' }],
@@ -192,9 +192,9 @@ test('reconcile: 계획도 unplanned도 아닌 요구사항은 missing이다', (
 });
 test('M2 실행: 준비 대기 뒤 시작 증거, 관측 참조·url·items 비교, 선행조건 실패는 멈춤', async () => {
   const shop = `${origin}/shop.html`;
-  const rule = { kind: 'inferred' as const, quote: '누른 카드의 이름이 열린 상세의 제목이 된다' };
+  const rule = { kind: 'inferred' as const, rule: 'no-error-page', quote: '이 검사에 이 일반 규칙이 적용되는 이유를 적는다' };
   const p: Plan = {
-    version: 1, observations: [],
+    version: 1, observations: [], features: [], questions: [],
     requirements: [{ id: 'R1', text: '카드를 누르면 그 상품의 상세가 열린다' }],
     targets: {
       T1: { target: { role: 'link', name: '^Orb Lamp$' }, group: false, url: shop },

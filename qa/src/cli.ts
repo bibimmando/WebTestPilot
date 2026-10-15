@@ -1,7 +1,7 @@
 // Claude API로 끝까지 실행: ① 탐색·계획(계획 모델) → ②③ spec 생성·실행·대조 → ④ 분류(분류 모델) → ⑤ 재현.
 // 모든 모델 호출이 하나의 비용 장부(--budget)를 공유하고, 한도를 넘을 호출은 보내지 않는다.
 //
-//   node src/cli.ts --url <시작 URL> --requirements <요구사항.json> --budget 10 [--name maison]
+//   node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] --budget 10 [--name maison]
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,8 +21,8 @@ const { values: a } = parseArgs({ options: {
   'plan-model': { type: 'string', default: 'claude-opus-5-5' }, 'triage-model': { type: 'string', default: 'claude-sonnet-5-5' },
   'max-turns': { type: 'string', default: '40' }, 'allow-writes': { type: 'boolean', default: false },
 } });
-if (!a.url || !a.requirements || !a.budget) {
-  console.error('사용법: node src/cli.ts --url <시작 URL> --requirements <요구사항.json> --budget <USD> [--name 이름]');
+if (!a.url || !a.budget) {
+  console.error('사용법: node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] --budget <USD> [--name 이름]');
   process.exit(2);
 }
 
@@ -43,7 +43,7 @@ const send: Send = async req => {
   }
 };
 
-const requirements: Requirement[] = JSON.parse(readFileSync(a.requirements, 'utf8').replace(/^﻿/, ''));
+const requirements: Requirement[] = a.requirements ? JSON.parse(readFileSync(a.requirements, 'utf8').replace(/^﻿/, '')) : [];  // 요구사항은 선택 입력(설계 3.3)
 const policy = { origins: a.origins ? a.origins.split(',') : [new URL(a.url).origin], allowWrites: a['allow-writes'] };
 const budget = new Budget(Number(a.budget));
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -70,8 +70,8 @@ try {
   timing.judge = Date.now() - t0 - timing.explore - timing.run;
   summary = { ...summary, run: { exitCode: run.exitCode, problems: run.problems,
     scenarios: run.scenarios.map(s => ({ id: s.id, valid: s.valid, start: s.start, ready: s.ready, precondition: s.precondition, steps: s.steps.map(x => x.status), checks: s.checks.map(c => c.status) })) },
-    verdicts: j.verdicts.map(v => ({ id: v.id, observed: v.observed, class: v.class, reproduction: v.reproduction })), requirements: j.requirements,
-    observations: e.plan.observations };
+    verdicts: j.verdicts.map(v => ({ id: v.id, observed: v.observed, class: v.class, reproduction: v.reproduction, system: v.system })), requirements: j.requirements,
+    system: j.system, features: j.features, questions: j.pendingQuestions, observations: e.plan.observations };
 } finally {
   await browser.close();
   save('calls.json', calls);

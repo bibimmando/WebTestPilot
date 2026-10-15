@@ -1,16 +1,17 @@
 // 계획 계약. 모델은 submit_plan으로 Draft를 내고, 하네스가 검증한 뒤 대상(T#)을 실제 Target으로 바꿔 Plan으로 고정한다.
 import type { Target } from './browser.ts';
+import { RULE_IDS, ruleOf } from './rules.ts';
 
 export type Requirement = { id: string; text: string };
 
 export type Step = { id: string; op: 'click' | 'fill' | 'select' | 'press'; target?: string; value?: string };
 export type Read = 'text' | 'value' | 'checked' | 'visible' | 'count' | 'url' | 'items';
-export type Op = 'equals' | 'not_equals' | 'contains' | 'less' | 'greater' | 'all_equal' | 'all_contain' | 'any_equal' | 'any_contain';
+export type Op = 'equals' | 'not_equals' | 'contains' | 'less' | 'greater' | 'same_number' | 'all_equal' | 'all_contain' | 'any_equal' | 'any_contain';
 /**
  * 비교 규칙의 근거. requirement = 요구사항 인용, constraint = 화면 안내·HTML 제약 인용(탐색 중 본 텍스트),
- * observed = 탐색 때 본 값(시작 시점의 기준·선행조건에만), inferred = 일반적인 웹 동작 추정(규칙 문장 필수).
+ * observed = 탐색 때 본 값(시작 시점의 기준·선행조건에만), inferred = 일반 규칙 목록(rules.ts)의 규칙 ID 인용(quote는 적용 조건 설명).
  */
-export type Source = { kind: 'requirement' | 'constraint' | 'observed' | 'inferred'; id?: string; quote?: string };
+export type Source = { kind: 'requirement' | 'constraint' | 'observed' | 'inferred'; id?: string; rule?: string; quote?: string };
 export type Check = {
   id: string; after: string;
   /** read url에는 없다 */
@@ -20,14 +21,21 @@ export type Check = {
   expected?: string;
   /** 관측 참조: 같은 시나리오에서 앞서 실행된 검사가 기록한 실제 값을 기대값으로 쓴다 (예: 클릭 전 카드 이름 = 상세 제목) */
   expected_from?: string;
+  /** 관측 참조에 더할 수 (예: 증가 버튼 1번이면 +1). 참조 값의 첫 숫자에 더한다 */
+  offset?: number;
   source: Source;
   /** 선행조건: 실패하면 뒤 행동을 멈추고 "준비 실패"로 남긴다 (결함 아님) */
   precondition?: boolean;
 };
+/** covers: 요구사항(R#) 또는 탐색으로 찾은 기능(F#) */
 export type Scenario = { id: string; title: string; covers: string[]; start: { url: string }; steps: Step[]; checks: Check[] };
+/** 탐색으로 찾은 기능. 요구사항에 없는 기능도 남긴다(자율 탐색). requirements는 관련 요구사항 ID */
+export type Feature = { id: string; name: string; page: string; requirements?: string[] };
+/** 탐색 중 ask_user로 남긴 업무 규칙 질문. 답을 기다리지 않는다. 답 받기는 M5·M7 */
+export type Question = { id: string; page: string; question: string; options: string[]; feature?: string; overLimit?: boolean };
 /** 탐색 중 관찰한 이상. 계획에 담지 못해도 보고서에 검토 대상으로 남긴다 */
 export type Observation = { page: string; note: string };
-export type Draft = { scenarios: Scenario[]; unplanned: { requirement: string; reason: string }[]; observations?: Observation[] };
+export type Draft = { features?: Feature[]; scenarios: Scenario[]; unplanned: { requirement: string; reason: string }[]; observations?: Observation[] };
 
 /** 탐색 중 pin 도구로 확정한 대상. group은 count·items 검사용으로 여러 요소를 허용한다. */
 export type Pinned = { target: Target; group: boolean; url: string };
@@ -35,25 +43,27 @@ export type Pinned = { target: Target; group: boolean; url: string };
 export type Plan = {
   version: 1;
   requirements: Requirement[];
+  features: Feature[];
   scenarios: Scenario[];
   unplanned: Draft['unplanned'];
   observations: Observation[];
+  questions: Question[];
   targets: Record<string, Pinned>;
 };
 
 const NEEDS_VALUE = new Set(['fill', 'select', 'press']);
 const OPS = ['click', 'fill', 'select', 'press'];
 const READS: Read[] = ['text', 'value', 'checked', 'visible', 'count', 'url', 'items'];
-const COMPARES: Op[] = ['equals', 'not_equals', 'contains', 'less', 'greater', 'all_equal', 'all_contain', 'any_equal', 'any_contain'];
+const COMPARES: Op[] = ['equals', 'not_equals', 'contains', 'less', 'greater', 'same_number', 'all_equal', 'all_contain', 'any_equal', 'any_contain'];
 const KINDS = ['requirement', 'constraint', 'observed', 'inferred'];
 /** 읽기 종류마다 쓸 수 있는 비교 */
 const ALLOWED: Record<Read, Op[]> = {
-  text: ['equals', 'not_equals', 'contains', 'less', 'greater'],
-  value: ['equals', 'not_equals', 'contains', 'less', 'greater'],
+  text: ['equals', 'not_equals', 'contains', 'less', 'greater', 'same_number'],
+  value: ['equals', 'not_equals', 'contains', 'less', 'greater', 'same_number'],
   url: ['equals', 'not_equals', 'contains'],
   checked: ['equals', 'not_equals'],
   visible: ['equals', 'not_equals'],
-  count: ['equals', 'not_equals', 'less', 'greater'],
+  count: ['equals', 'not_equals', 'less', 'greater', 'same_number'],
   items: ['all_equal', 'all_contain', 'any_equal', 'any_contain'],
 };
 
@@ -61,6 +71,14 @@ const ALLOWED: Record<Read, Op[]> = {
 export function numberIn(s: string): number {
   const m = s.match(/-?\d[\d,]*(?:\.\d+)?/);
   return m ? Number(m[0].replace(/,/g, '')) : NaN;
+}
+
+/** 관측 참조를 기대값으로 푼다. offset이 있으면 참조 값의 첫 숫자에 더한다. 풀 수 없으면 undefined. */
+export function expectedFrom(c: Check, ref: string | undefined): string | undefined {
+  if (ref === undefined || c.offset === undefined) return ref;
+  const n = numberIn(ref);
+  // 참조 문구 안의 숫자만 바꾼다: "장바구니 (0)" + 1 → "장바구니 (1)". shortcut: 천 단위 쉼표는 다시 붙이지 않는다.
+  return Number.isNaN(n) ? undefined : ref.replace(/-?\d[\d,]*(?:\.\d+)?/, String(n + c.offset));
 }
 
 /** 실행(fixture)과 대조(reconcile)가 같은 규칙으로 비교하도록 한 곳에 둔다. items의 실제 값은 JSON 배열 문자열이다. */
@@ -80,7 +98,8 @@ export function compareValues(op: Op, actual: string, expected: string): boolean
   if (op === 'contains') return actual.includes(expected);
   const a = numberIn(actual), e = numberIn(expected);
   if (Number.isNaN(a) || Number.isNaN(e)) return false;
-  return op === 'less' ? a < e : a > e;
+  // same_number: 문구 안의 숫자끼리 비교한다 ("7개 상품"과 목록 개수 7).
+  return op === 'less' ? a < e : op === 'greater' ? a > e : a === e;
 }
 
 /**
@@ -108,10 +127,18 @@ function shapeErrors(d: any): string[] {
       str(c?.id, `${cw}.id`); str(c?.after, `${cw}.after`);
       for (const k of ['target', 'expected', 'expected_from']) optStr(c?.[k], `${cw}.${k}`);
       oneOf(c?.read, READS, `${cw}.read`); oneOf(c?.op, COMPARES, `${cw}.op`); oneOf(c?.source?.kind, KINDS, `${cw}.source.kind`);
-      for (const k of ['id', 'quote']) optStr(c?.source?.[k], `${cw}.source.${k}`);
+      for (const k of ['id', 'rule', 'quote']) optStr(c?.source?.[k], `${cw}.source.${k}`);
       if (c?.precondition !== undefined && typeof c.precondition !== 'boolean') e.push(`${cw}.precondition must be a boolean`);
+      if (c?.offset !== undefined && !Number.isInteger(c.offset)) e.push(`${cw}.offset must be an integer`);
     });
   });
+  if (d.features !== undefined) {
+    if (!Array.isArray(d.features)) e.push('features must be an array');
+    else d.features.forEach((f: any, i: number) => {
+      str(f?.id, `features[${i}].id`); str(f?.name, `features[${i}].name`); str(f?.page, `features[${i}].page`);
+      if (f?.requirements !== undefined && !(Array.isArray(f.requirements) && f.requirements.every((r: unknown) => typeof r === 'string'))) e.push(`features[${i}].requirements must be string[]`);
+    });
+  }
   d.unplanned.forEach((u: any, i: number) => { str(u?.requirement, `unplanned[${i}].requirement`); str(u?.reason, `unplanned[${i}].reason`); });
   if (d.observations !== undefined) {
     if (!Array.isArray(d.observations)) e.push('observations must be an array');
@@ -136,12 +163,20 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
     seen.add(id);
   };
   const covered = new Set<string>();
+  const features = new Set<string>();
+  for (const f of draft.features ?? []) {
+    unique(f.id, /^F\d+$/, 'feature');
+    features.add(f.id);
+    for (const r of f.requirements ?? []) if (!reqs.has(r)) errors.push(`${f.id}: unknown requirement "${r}"`);
+  }
 
   for (const s of draft.scenarios) {
     unique(s.id, /^S\d+$/, 'scenario');
-    if (!s.covers.length) errors.push(`${s.id}: covers must list at least one requirement`);
+    if (!s.covers.length) errors.push(`${s.id}: covers must list at least one requirement (R#) or feature (F#)`);
+    // 기능 하나에 시나리오 하나: 여러 기능이 검사 하나에 편승하지 못하게 한다.
+    if (s.covers.filter(r => features.has(r)).length > 1) errors.push(`${s.id}: a scenario covers at most one feature (F#); split it`);
     for (const r of s.covers) {
-      if (!reqs.has(r)) errors.push(`${s.id}: unknown requirement "${r}"`);
+      if (!reqs.has(r) && !features.has(r)) errors.push(`${s.id}: unknown requirement or feature "${r}"`);
       covered.add(r);
     }
     if (!sameOrigin(s.start.url, origins)) errors.push(`${s.id}: start.url "${s.start.url}" is outside the allowed origins`);
@@ -172,17 +207,23 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
     }
     // covers는 "검사했다"는 주장이므로 각 요구사항을 실제로 인용한 검사가 있어야 한다.
     for (const r of s.covers) {
-      if (!s.checks.some(c => c.source.kind === 'requirement' && c.source.id === r)) errors.push(`${s.id}: covers ${r} but no check cites ${r} as its source`);
+      if (reqs.has(r) && !s.checks.some(c => c.source.kind === 'requirement' && c.source.id === r)) errors.push(`${s.id}: covers ${r} but no check cites ${r} as its source`);
+    }
+    // 기능을 다루는 시나리오는 그 기능을 규칙 근거로 검사해야 한다. 관찰값·선행조건·요구사항 인용 검사로 대신하지 않는다.
+    if (s.covers.some(r => features.has(r)) && !s.checks.some(c => !c.precondition && (c.source.kind === 'inferred' || c.source.kind === 'constraint'))) {
+      errors.push(`${s.id}: covers a feature but has no non-precondition check with an inferred rule or constraint basis`);
     }
   }
 
   for (const u of draft.unplanned) {
-    if (!reqs.has(u.requirement)) errors.push(`unplanned: unknown requirement "${u.requirement}"`);
+    if (!reqs.has(u.requirement) && !features.has(u.requirement)) errors.push(`unplanned: unknown requirement or feature "${u.requirement}"`);
     if (covered.has(u.requirement)) errors.push(`unplanned: "${u.requirement}" is also covered by a scenario`);
     if (!u.reason.trim()) errors.push(`unplanned: "${u.requirement}" needs a reason`);
     covered.add(u.requirement);
   }
   for (const r of requirements) if (!covered.has(r.id)) errors.push(`requirement ${r.id} is neither covered nor unplanned`);
+  // 찾았다고 적은 기능은 검사하거나 미계획 사유를 남긴다(분모 보존).
+  for (const f of features) if (!covered.has(f)) errors.push(`feature ${f} is neither covered nor unplanned`);
   return errors;
 
   /** startUrl을 주면, 시나리오 시작 상태에서 쓰는 대상이므로 그 URL에서 pin했어야 한다. */
@@ -203,6 +244,7 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
 
   function checkExpectation(c: Check, s: Scenario, order: string[]) {
     if ((c.expected === undefined) === (c.expected_from === undefined)) return errors.push(`${c.id}: give exactly one of expected or expected_from`);
+    if (c.offset !== undefined && c.expected_from === undefined) errors.push(`${c.id}: offset is only for expected_from`);
     if (c.expected_from !== undefined) {
       const at = order.indexOf(c.expected_from);
       if (at < 0 || at >= order.indexOf(c.id)) errors.push(`${c.id}: expected_from must name a check of the same scenario that runs before it`);
@@ -216,7 +258,7 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
     const e = c.expected!;
     if (c.read === 'count' && !/^\d+$/.test(e)) errors.push(`${c.id}: count expects a whole-number`);
     if ((c.read === 'checked' || c.read === 'visible') && !['true', 'false'].includes(e)) errors.push(`${c.id}: ${c.read} expects "true" or "false"`);
-    if ((c.op === 'less' || c.op === 'greater') && Number.isNaN(numberIn(e))) errors.push(`${c.id}: ${c.op} needs a number in expected`);
+    if ((c.op === 'less' || c.op === 'greater' || c.op === 'same_number') && Number.isNaN(numberIn(e))) errors.push(`${c.id}: ${c.op} needs a number in expected`);
     if (c.op.includes('contain') && !e.trim()) errors.push(`${c.id}: contains with an empty expected always passes`);
     // 탐색은 결함이 있을 수 있는 앱을 보고 하므로, 행동 뒤 결과를 지금 본 값으로 기대하면 결함을 정답으로 고정한다.
     if (c.source.kind === 'observed' && c.after !== 'start') {
@@ -228,8 +270,14 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
     const q = c.source.quote ?? '';
     const len = q.replace(/\s/g, '').length;
     if (c.source.kind === 'inferred') {
-      // shortcut: 규칙 문장의 의미는 검사하지 않아 관찰을 규칙처럼 적는 우회는 남는다. 관측 참조(expected_from)로 기대를 표현하도록 프롬프트가 유도한다.
-      if (len < 10) errors.push(`${c.id}: inferred needs source.quote stating the general rule it relies on (10+ characters)`);
+      // 일반 규칙은 고정된 목록에서만 고르고, 규칙마다 정한 비교 형태를 지켜야 한다. 관찰한 값을 규칙 ID만 붙여 정답으로 쓰는 우회를 막는다.
+      const rule = ruleOf(c.source.rule);
+      if (!rule) return errors.push(`${c.id}: inferred needs source.rule from the general rule list (${[...RULE_IDS].join(', ')})`);
+      if (len < 10) errors.push(`${c.id}: inferred needs source.quote explaining why rule ${rule.id} applies here (10+ characters)`);
+      if (rule.form === 'relation' && c.expected_from === undefined) errors.push(`${c.id}: rule ${rule.id} compares with a value read earlier; use expected_from`);
+      if (rule.offset && !c.offset) errors.push(`${c.id}: rule ${rule.id} needs offset (how many steps up or down from the value read earlier)`);
+      if (rule.form === 'bound' && c.op !== 'less' && c.op !== 'greater') errors.push(`${c.id}: rule ${rule.id} is a bound; use op less or greater`);
+      if (rule.form === 'items' && c.read !== 'items') errors.push(`${c.id}: rule ${rule.id} checks every item; use read items`);
       return;
     }
     if (c.source.kind === 'constraint') {
@@ -246,11 +294,11 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
 }
 
 /** 검증된 Draft를 실행 가능한 Plan으로 고정한다. 대화 기록과 객체를 공유하지 않도록 복사하고, 쓰이지 않은 pin은 버린다. */
-export function freeze(draft: Draft, requirements: Requirement[], pinned: Map<string, Pinned>): Plan {
+export function freeze(draft: Draft, requirements: Requirement[], pinned: Map<string, Pinned>, questions: Question[] = []): Plan {
   const used = new Set(draft.scenarios.flatMap(s => [...s.steps.map(st => st.target), ...s.checks.map(c => c.target)]));
   const targets = Object.fromEntries([...pinned].filter(([id]) => used.has(id)));
-  return structuredClone({ version: 1 as const, requirements, scenarios: draft.scenarios, unplanned: draft.unplanned,
-    observations: draft.observations ?? [], targets });
+  return structuredClone({ version: 1 as const, requirements, features: draft.features ?? [], scenarios: draft.scenarios, unplanned: draft.unplanned,
+    observations: draft.observations ?? [], questions, targets });
 }
 
 function sameOrigin(url: string, origins: string[]): boolean {

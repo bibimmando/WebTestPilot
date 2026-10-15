@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path';
 import { test as base, expect, type Page, type Locator } from '@playwright/test';
 import { ariaText, guardContext, settle, shapeChanged, toLocator, type AriaNode, type Policy } from './browser.ts';
-import { compareValues, type Plan, type Check } from './plan.ts';
+import { compareValues, expectedFrom, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
 if (!dir) throw new Error('QA_RUN_DIR가 없다. spec은 run.ts로 실행한다.');
@@ -113,7 +113,7 @@ export async function check(page: Page, checkId: string): Promise<void> {
   let first: Reading | undefined;
   let reads = 0;
   // 관측 참조: 참조한 검사가 값을 읽지 못했으면 비교할 기대값이 없다.
-  const expected = c.expected_from !== undefined ? actuals.get(c.expected_from) : c.expected;
+  const expected = c.expected_from !== undefined ? expectedFrom(c, actuals.get(c.expected_from)) : c.expected;
   try {
     if (expected === undefined) r = { status: 'unresolved', reason: `expected_from ${c.expected_from}의 실제 값 없음` };
     else {

@@ -71,7 +71,7 @@ export async function runPlan(o: { plan: Plan; policy: Policy; runDir: string; t
   return result;
 }
 
-const RUNTIME_SOURCES = ['fixture.ts', 'browser.ts', 'plan.ts'];
+const RUNTIME_SOURCES = ['fixture.ts', 'browser.ts', 'plan.ts', 'rules.ts'];
 const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
 
 /** 실행 코드에 키·토큰을 넘기지 않는다. */

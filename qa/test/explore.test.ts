@@ -214,3 +214,32 @@ test('새로고침하면 바뀌는 요소는 이름으로 고정할 수 없고, 
   assert.match(byName, /새로 열면 사라지는/);
   assert.match(byPosition, /"anchor":"\^Related\$","nth":0,"of":2/);
 });
+
+test('요구사항 없이: 일반 규칙 목록을 받고, 기능(F#) 계획과 업무 규칙 질문이 계획에 남는다', async () => {
+  let first = '';
+  const r = await run('/list.html', [], [
+    (msg) => { first = msg; return [{ name: 'ask_user', input: { question: '장바구니 수량에 상한이 있나요?', options: ['있다', '없다'], feature: 'F1' } },
+      ...[2, 3, 4, 5, 6].map(n => ({ name: 'ask_user', input: { question: `질문 ${n}`, options: ['예', '아니오'] } })),
+      { name: 'snapshot', input: {} }]; },
+    (_, all) => [
+      { name: 'pin', input: { ref: ref(all.at(-1)!, 'button "담기"', 16), group: false } },
+      { name: 'pin', input: { ref: ref(all.at(-1)!, '- banner'), group: false, text: '장바구니 (0)' } },
+    ],
+    () => [{ name: 'submit_plan', input: {
+      features: [{ id: 'F1', name: '장바구니 담기', page: origin + '/list.html' }],
+      scenarios: [{ id: 'S1', title: '담기', covers: ['F1'], start: { url: origin + '/list.html' },
+        steps: [{ id: 'S1.A1', op: 'click', target: 'T1' }],
+        checks: [
+          { id: 'S1.C1', after: 'start', target: 'T2', read: 'text', op: 'equals', expected: '장바구니 (0)', source: { kind: 'observed' }, precondition: true },
+          { id: 'S1.C2', after: 'S1.A1', target: 'T2', read: 'text', op: 'equals', expected_from: 'S1.C1', offset: 1, source: { kind: 'inferred', rule: 'step-by-one', quote: '이 검사에 이 일반 규칙이 적용되는 이유를 적는다' } },
+        ] }],
+      unplanned: [],
+    } satisfies Draft }],
+  ]);
+  assert.match(first, /요구사항: 없음/);
+  assert.match(first, /link-target/, '일반 규칙 목록이 과제에 들어간다');
+  assert.equal(r.stop, 'done', r.detail ?? '');
+  assert.deepEqual(r.plan!.features.map(f => f.id), ['F1']);
+  assert.deepEqual(r.plan!.questions[0], { id: 'Q1', page: origin + '/list.html', question: '장바구니 수량에 상한이 있나요?', options: ['있다', '없다'], feature: 'F1' });
+  assert.deepEqual(r.plan!.questions.map(q => q.overLimit ?? false), [false, false, false, false, false, true], '한도를 넘은 질문도 규칙 미확인으로 남긴다');
+});

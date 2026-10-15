@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type Anthropic from '@anthropic-ai/sdk';
 import { runPlan, type RunResult } from '../src/run.ts';
-import { checkQuotes, judge, preclassify } from '../src/triage.ts';
+import { checkQuotes, judge, preclassify, systemVerdict, type Verdict } from '../src/triage.ts';
 import { Budget, type Send } from '../src/agent.ts';
 import type { Plan } from '../src/plan.ts';
 
@@ -36,7 +36,7 @@ const src = (id: string, quote: string) => ({ kind: 'requirement' as const, id, 
 
 function plan(): Plan {
   return {
-    version: 1, observations: [],
+    version: 1, observations: [], features: [], questions: [],
     requirements: [
       { id: 'R1', text: '담기를 누르면 장바구니에 5개가 담긴다' },
       { id: 'R2', text: '쿠폰 적용 창에서 확인을 누를 수 있다' },
@@ -54,7 +54,7 @@ function plan(): Plan {
       { id: 'S1', title: '담기', covers: ['R1'], start: { url: `${origin}/list.html` },
         steps: [{ id: 'S1.A1', op: 'click', target: 'T2' }],
         checks: [
-          { id: 'S1.C1', after: 'start', target: 'T1', read: 'count', op: 'equals', expected: '30', source: { kind: 'inferred', quote: '목록은 처음 불러온 상품을 모두 보여 준다' } },
+          { id: 'S1.C1', after: 'start', target: 'T1', read: 'count', op: 'equals', expected: '30', source: { kind: 'inferred', rule: 'no-error-page', quote: '이 검사에 이 일반 규칙이 적용되는 이유를 적는다' } },
           { id: 'S1.C2', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (5)', source: src('R1', '5개가 담긴다') },
         ] },
       { id: 'S2', title: '사라진 버튼', covers: ['R2'], start: { url: `${origin}/modal.html` },
@@ -189,4 +189,19 @@ test('인용 검증: 실패 시점 증거 인용 필수, 짧은 인용과 없는
   assert.ok(checkQuotes(q('evidence/S2.A1.aria.txt', 'head'), files, own).some(e => e.includes('6자 이상')));
   assert.ok(checkQuotes(q('evidence/S2.A1.aria.txt', 'heading "결제"'), files, own).some(e => e.includes('그대로 있는')));
   assert.deepEqual(checkQuotes({ class: 'uncertain', quotes: [] }, files, own), []);
+});
+
+test('시스템 판정: 끝난 항목은 반드시 판정하고, 끝나지 않은 항목은 사유와 함께 미완료로 둔다', () => {
+  const p = plan();
+  const v = (extra: Partial<Verdict>): Verdict => ({ id: 'S1.C1', scenario: 'S1', kind: 'check', requirements: [], observed: 'mismatch', class: 'mismatch', ...extra });
+  const level = (extra: Partial<Verdict>) => systemVerdict(p, v(extra)).level;
+  assert.equal(level({ class: 'passed_inferred' }), 'not_bug');
+  assert.equal(level({ class: 'automation_failure' }), 'not_bug');
+  assert.equal(level({ class: 'app_defect_candidate', source: 'requirement', reproduction: 'reproduced' }), 'bug_high');
+  assert.equal(level({ class: 'app_defect_candidate', source: 'inferred', reproduction: 'reproduced' }), 'bug_medium', '일반 규칙은 최대 확신 중간');
+  assert.equal(level({ class: 'app_defect_candidate', source: 'requirement', reproduction: 'flaky' }), 'hold');
+  assert.equal(level({ class: 'app_defect_candidate', source: 'requirement', reproduction: 'reproduction_inconclusive' }), 'incomplete');
+  assert.equal(level({ class: 'app_defect_candidate', source: 'observed', reproduction: 'reproduced' }), 'incomplete');
+  // 기술적 미완료는 억지로 판정하지 않는다.
+  for (const c of ['mismatch', 'uncertain', 'uncertain_execution', 'precondition_failed', 'not_run', 'invalid'] as const) assert.equal(level({ class: c }), 'incomplete', c);
 });
