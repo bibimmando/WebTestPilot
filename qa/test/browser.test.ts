@@ -159,7 +159,10 @@ test('parseSnapshot은 이름·텍스트·부모·ownText를 읽는다', () => {
     '    - text: 사과',
     '    - button "담: \\"기\\"" [ref=e3]',
     '- paragraph [ref=e4]: "12"',
+    '- iframe [ref=e5]:',
+    '  - button "in" [ref=f1e2]',
   ].join('\n'));
+  assert.equal(m.get('f1e2')!.parent!.ref, 'e5');
   assert.equal(m.get('e3')!.name, '담: "기"');
   assert.equal(m.get('e3')!.parent!.ref, 'e2');
   assert.deepEqual(m.get('e2')!.ownText, ['사과']);

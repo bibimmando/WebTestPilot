@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>가입</title>
+<main>
+  <h1>회원 가입</h1>
+  <form method="post" action="/signup" novalidate>
+    <label>이메일 <input id="email" name="email"></label>
+    <label><input type="checkbox" id="terms"> 약관 동의</label>
+    <button>가입</button>
+    <p id="msg" role="status"></p>
+  </form>
+</main>
+<script>
+  document.querySelector('form').addEventListener('submit', e => {
+    const ok = /^[^@\s]+@[^@\s]+$/.test(document.getElementById('email').value);
+    if (!ok) { e.preventDefault(); document.getElementById('msg').textContent = '이메일 형식이 올바르지 않습니다'; }
+  });
+</script>

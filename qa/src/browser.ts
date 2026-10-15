@@ -39,18 +39,34 @@ export async function openContext(browser: Browser, policy: Policy): Promise<Gua
   return { context, blocked, violations };
 }
 
-/** 페이지 전체 또는 ref 영역의 접근성 snapshot. ref 번호는 전체·부분 snapshot에서 같다. */
-export function snapshot(page: Page, ref?: string): Promise<string> {
-  return (ref ? page.getByRef(ref) : page.locator('body')).ariaSnapshot({ mode: 'ai' });
+/** 페이지 전체 또는 ref 영역의 접근성 snapshot. ref 번호는 전체·부분 snapshot에서 같다. depth를 주면 그 깊이까지만 보여준다. */
+export function snapshot(page: Page, ref?: string, depth?: number): Promise<string> {
+  return (ref ? page.getByRef(ref) : page.locator('body')).ariaSnapshot({ mode: 'ai', ...(depth ? { depth } : {}) });
 }
 
-/** 계획에 저장하는 대상 설명. 문자열 코드가 아니라 데이터이며, 패턴은 정규식 source다. */
-export type Target = { role: string; name?: string; text?: string; within?: Target };
+/**
+ * count 검사용 그룹 대상. ref와 같은 역할의 요소들을 가장 가까운 이름 있는 상위 요소 안에서 모은다.
+ * 만든 locator가 ref 요소를 포함할 때만 성공한다.
+ */
+export async function resolveGroup(page: Page, ref: string): Promise<Resolved> {
+  const node = parseSnapshot(await snapshot(page)).get(ref);
+  if (!node) return { ok: false, ref, reason: 'unknown_ref' };
+  let up = node.parent;
+  while (up && typeof describe(up) === 'string') up = up.parent;
+  const target: Target = up ? { role: node.role, within: describe(up) as Target } : { role: node.role };
+  const loc = toLocator(page, target);
+  if (up && (await toLocator(page, target.within!).count()) !== 1) return { ok: false, ref, reason: 'ambiguous' };
+  if ((await loc.and(page.getByRef(ref)).count()) !== 1) return { ok: false, ref, reason: 'ambiguous' };
+  return { ok: true, ref, target };
+}
+
+/** 계획에 저장하는 대상 설명. 문자열 코드가 아니라 데이터이며, 패턴은 정규식 source다. role이 없으면 텍스트로 찾는다. */
+export type Target = { role?: string; name?: string; text?: string; within?: Target };
 
 export type Resolved =
   | { ok: true; ref: string; target: Target }
   | { ok: false; ref: string; reason: Reason };
-type Reason = 'unknown_ref' | 'unnamed' | 'value_only' | 'ambiguous';
+type Reason = 'unknown_ref' | 'unnamed' | 'value_only' | 'ambiguous' | 'text_not_found';
 
 type Node = { ref?: string; role: string; name?: string; text?: string; ownText: string[]; parent?: Node };
 
@@ -74,9 +90,32 @@ export async function resolveRef(page: Page, ref: string): Promise<Resolved> {
   }
 }
 
+/**
+ * ref가 붙지 않는 텍스트(그냥 span 안의 가격·개수 등)를, 그 텍스트를 직접 담은 ref 요소를 기준으로 고정한다.
+ * 숫자는 패턴으로 바꾸고, 페이지에서 유일하지 않으면 가까운 이름 있는 상위 요소로 범위를 좁힌다.
+ */
+export async function resolveText(page: Page, ref: string, text: string): Promise<Resolved> {
+  const node = parseSnapshot(await snapshot(page)).get(ref);
+  if (!node) return { ok: false, ref, reason: 'unknown_ref' };
+  if (!node.ownText.some(t => t.includes(text))) return { ok: false, ref, reason: 'text_not_found' };
+  const pattern = valuePattern(text);
+  if (!pattern) return { ok: false, ref, reason: 'value_only' };
+  const inRef = page.getByRef(ref).getByText(new RegExp(pattern));
+  if ((await inRef.count()) !== 1) return { ok: false, ref, reason: 'ambiguous' };
+  let target: Target = { text: pattern };
+  for (let up: Node | undefined = node, tries = 0; ; up = up?.parent) {
+    const loc = toLocator(page, target);
+    if ((await loc.count()) === 1 && (await loc.and(inRef).count()) === 1) return { ok: true, ref, target };
+    while (up && typeof describe(up) === 'string') up = up.parent;
+    if (!up || ++tries > 2) return { ok: false, ref, reason: 'ambiguous' };
+    target = { text: pattern, within: describe(up) as Target };
+  }
+}
+
 /** Target을 Playwright API 호출로 조립한다. 문자열을 코드로 실행하지 않는다. */
 export function toLocator(page: Page, t: Target): Locator {
   const scope: Page | Locator = t.within ? toLocator(page, t.within) : page;
+  if (t.role === undefined) return scope.getByText(new RegExp(t.text!));
   const loc = scope.getByRole(t.role as Parameters<Page['getByRole']>[0],
     t.name === undefined ? {} : { name: new RegExp(t.name) });
   return t.text === undefined ? loc : loc.filter({ hasText: new RegExp(t.text) });
@@ -102,7 +141,7 @@ export function valuePattern(label: string): string | null {
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
 // 줄 형식: `- role "name" [attr] [ref=e1]: text`. 이름·텍스트는 snapshot이 JSON 문자열로 따옴표를 쓴다.
-const LINE = /^(\s*)- ([a-z]+)(?: ("(?:[^"\\]|\\.)*"))?[^:]*?(?:\[ref=(e\d+)\])?(?::(?: (.*))?)?$/;
+const LINE = /^(\s*)- ([a-z]+)(?: ("(?:[^"\\]|\\.)*"))?[^:]*?(?:\[ref=([a-z0-9]+)\])?(?::(?: (.*))?)?$/;
 
 /** snapshot 텍스트를 ref → Node 맵으로 읽는다. `- text:` 줄은 부모의 ownText가 된다. */
 export function parseSnapshot(snap: string): Map<string, Node> {
