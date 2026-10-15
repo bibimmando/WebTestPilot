@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
-import { openContext, snapshot, resolveRef, toLocator, valuePattern, parseSnapshot } from '../src/browser.ts';
+import { openContext, snapshot, resolveRef, resolveText, resolveGroup, toLocator, valuePattern, parseSnapshot } from '../src/browser.ts';
 
 let browser: Browser | undefined;
 let server: Server | undefined;
@@ -92,6 +92,26 @@ test('구분할 수 없는 같은 요소는 순서로 고르지 않고 거부한
   const p = await page('<button>삭제</button><button>삭제</button>');
   const ref = refs(await snapshot(p), 'button "삭제"')[1];
   assert.deepEqual(await resolveRef(p, ref), { ok: false, ref, reason: 'ambiguous' });
+});
+
+test('텍스트 고정: ref 없는 span의 값을 찾고, 자식 버튼의 같은 텍스트는 거부한다', async () => {
+  const p = await page('<header>합계 <span>3</span>개</header><section aria-label="요약">합계 <button>합계 보기</button></section>');
+  const snap = await snapshot(p);
+  const ok = await resolveText(p, refOf(snap, '- banner'), '합계 3개');
+  assert.ok(ok.ok, JSON.stringify(ok) + '\n' + snap);
+  assert.equal(await toLocator(p, ok.target).textContent(), '합계 3개');
+  const r = await resolveText(p, refOf(snap, 'region "요약"'), '합계');
+  if (r.ok) assert.equal(await toLocator(p, r.target).and(p.getByRole('button')).count(), 0, JSON.stringify(r));
+});
+
+test('그룹 고정: 중첩 목록의 하위 항목이 섞이면 거부한다', async () => {
+  const flat = await page('<ul aria-label="상품"><li>a</li><li>b</li></ul>');
+  const okRef = refs(await snapshot(flat), '- listitem')[0];
+  const ok = await resolveGroup(flat, okRef);
+  assert.ok(ok.ok && (await toLocator(flat, ok.target).count()) === 2, JSON.stringify(ok));
+  const nested = await page('<ul aria-label="메뉴"><li>a<ul><li>a1</li><li>a2</li></ul></li><li>b</li></ul>');
+  const r = await resolveGroup(nested, refs(await snapshot(nested), '- listitem')[0]);
+  assert.ok(!r.ok, JSON.stringify(r));
 });
 
 test('없는 ref는 거부한다', async () => {

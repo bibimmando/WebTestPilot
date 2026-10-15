@@ -69,6 +69,39 @@ test('count 검사는 그룹 대상과 정수 기대값이 필요하고, 그룹�
   assert.ok(errorsOf(d => { d.scenarios[0].steps[0].target = 'T3'; }).some(e => e.includes('is a group')));
 });
 
+test('모양이 틀린 입력은 타입 표기와 상관없이 거부한다', () => {
+  assert.ok(errorsOf(d => { (d.scenarios[0].steps[0] as any).op = 'noop'; }).some(e => e.includes('op must be one of')));
+  assert.ok(errorsOf(d => { (d.scenarios[0].checks[0] as any).read = 'html'; }).some(e => e.includes('read must be one of')));
+  assert.ok(errorsOf(d => { (d.scenarios[0].checks[0].source as any).kind = 'trust_me'; }).some(e => e.includes('kind must be one of')));
+  assert.deepEqual(validate({} as Draft, reqs, pins, [origin]), ['plan must have scenarios[] and unplanned[]']);
+});
+
+test('항상 참인 검사와 의미 없는 인용을 거부한다', () => {
+  assert.ok(errorsOf(d => { Object.assign(d.scenarios[0].checks[0], { op: 'contains', expected: ' ' }); }).some(e => e.includes('always passes')));
+  assert.ok(errorsOf(d => { d.scenarios[0].checks[0].source.quote = ' '; }).some(e => e.includes('2+ characters')));
+});
+
+test('covers에 넣은 요구사항은 그것을 인용한 검사가 있어야 한다', () => {
+  const errors = errorsOf(d => { d.scenarios[0].checks[0].source = { kind: 'observed' }; });
+  assert.ok(errors.some(e => e.includes('covers R1 but no check cites R1')), errors.join('\n'));
+});
+
+test('시작 상태에서 쓰는 대상은 시작 페이지에서 pin했어야 한다', () => {
+  const other = new Map(pins);
+  other.set('T2', { ...pins.get('T2')!, url: origin + '/other' });
+  const d = good();
+  d.scenarios[0].checks[0].after = 'start';
+  assert.ok(validate(d, reqs, other, [origin]).some(e => e.includes('not on the start page')));
+  assert.deepEqual(validate(good(), reqs, other, [origin]), [], '행동 뒤의 검사는 다른 페이지에서 pin해도 된다');
+});
+
+test('freeze는 제출 입력과 객체를 공유하지 않는다', () => {
+  const d = good();
+  const plan = freeze(d, reqs, pins);
+  d.scenarios[0].checks[0].expected = '999';
+  assert.equal(plan.scenarios[0].checks[0].expected, '2');
+});
+
 test('ID 형식과 중복, 값이 필요한 단계를 검사한다', () => {
   assert.ok(errorsOf(d => { d.scenarios[0].steps[0].id = 'A1'; }).some(e => e.includes('must match')));
   assert.ok(errorsOf(d => { d.scenarios[0].checks[0].id = 'S1.A1'; }).some(e => e.includes('duplicate') || e.includes('must match')));

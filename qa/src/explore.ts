@@ -6,45 +6,57 @@ import { openContext, snapshot, resolveRef, resolveGroup, resolveText, type Poli
 import { validate, freeze, type Draft, type Pinned, type Plan, type Requirement } from './plan.ts';
 import { runAgent, type AgentResult, type Budget, type Send, type Tool } from './agent.ts';
 
-const SYSTEM = readFileSync(new URL('../prompts/explore.md', import.meta.url), 'utf8');
+export const SYSTEM = readFileSync(new URL('../prompts/explore.md', import.meta.url), 'utf8');
 const SNAPSHOT_CHARS = 24_000;
 const ACTION_TIMEOUT = 5_000;
 
 export type ExploreResult = AgentResult & { plan?: Plan; blocked: string[]; violations: string[] };
+type Task = { policy: Policy; startUrl: string; requirements: Requirement[] };
 
-export async function explore(o: {
-  browser: Browser; policy: Policy; startUrl: string; requirements: Requirement[];
-  send: Send; model: string; budget: Budget; maxTurns: number;
-}): Promise<ExploreResult> {
+export async function explore(o: Task & { browser: Browser; send: Send; model: string; budget: Budget; maxTurns: number }): Promise<ExploreResult> {
+  assertStartAllowed(o);
   const { context, blocked, violations } = await openContext(o.browser, o.policy);
   try {
     const page = await context.newPage();
     await page.goto(o.startUrl);
-    const pinned = new Map<string, Pinned>();
-    const tools = browserTools(page, o.policy, pinned, violations);
-    tools.push({
-      def: { name: 'submit_plan', description: '완성한 테스트 계획을 제출한다. 오류가 있으면 오류 목록이 돌아온다.', input_schema: DRAFT_SCHEMA },
-      run: async (draft: Draft) => {
-        if (violations.length) return { text: `정책 위반이 있어 계획을 받을 수 없다: ${violations.join(', ')}`, isError: true };
-        let errors: string[];
-        try { errors = validate(draft, o.requirements, pinned, o.policy.origins); } catch (e) {
-          return { text: `계획 형식 오류: ${(e as Error).message}`, isError: true };
-        }
-        if (errors.length) return { text: `계획을 고쳐서 다시 제출하세요:\n- ${errors.join('\n- ')}`, isError: true };
-        return { text: '계획을 받았습니다.', done: freeze(draft, o.requirements, pinned) };
-      },
-    });
-    const user = [
-      `시작 URL: ${o.startUrl}`,
-      `허용 origin: ${o.policy.origins.join(', ')} (쓰기 요청 ${o.policy.allowWrites ? '허용' : '차단'})`,
-      '요구사항:',
-      ...o.requirements.map(r => `- ${r.id}: ${r.text}`),
-    ].join('\n');
-    const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools, user, budget: o.budget, maxTurns: o.maxTurns });
+    const tools = exploreTools(page, o, violations);
+    const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools, user: taskMessage(o), budget: o.budget, maxTurns: o.maxTurns });
     return { ...result, plan: result.result as Plan | undefined, blocked, violations };
   } finally {
     await context.close();
   }
+}
+
+/** 시작 URL도 navigate와 같은 origin 정책을 따른다. */
+export function assertStartAllowed(o: Task): void {
+  if (!o.policy.origins.includes(new URL(o.startUrl).origin)) throw new Error(`시작 URL이 허용 origin 밖: ${o.startUrl}`);
+}
+
+/** 첫 사용자 메시지: 시작 URL, 권한, 요구사항. */
+export function taskMessage(o: Task): string {
+  return [
+    `시작 URL: ${o.startUrl}`,
+    `허용 origin: ${o.policy.origins.join(', ')} (쓰기 요청 ${o.policy.allowWrites ? '허용' : '차단'})`,
+    '요구사항:',
+    ...o.requirements.map(r => `- ${r.id}: ${r.text}`),
+  ].join('\n');
+}
+
+/** 탐색 도구 전체. API 루프(explore)와 개발용 MCP 서버(mcp.ts)가 같은 도구를 쓴다. 계획이 통과하면 done에 Plan이 담긴다. */
+export function exploreTools(page: Page, o: Task, violations: string[]): Tool[] {
+  const pinned = new Map<string, Pinned>();
+  return [...browserTools(page, o.policy, pinned, violations), {
+    def: { name: 'submit_plan', description: '완성한 테스트 계획을 제출한다. 오류가 있으면 오류 목록이 돌아온다.', input_schema: DRAFT_SCHEMA },
+    run: async (draft: Draft) => {
+      if (violations.length) return { text: `정책 위반이 있어 계획을 받을 수 없다: ${violations.join(', ')}`, isError: true };
+      let errors: string[];
+      try { errors = validate(draft, o.requirements, pinned, o.policy.origins); } catch (e) {
+        return { text: `계획 형식 오류: ${(e as Error).message}`, isError: true };
+      }
+      if (errors.length) return { text: `계획을 고쳐서 다시 제출하세요:\n- ${errors.join('\n- ')}`, isError: true };
+      return { text: '계획을 받았습니다.', done: freeze(draft, o.requirements, pinned) };
+    },
+  }];
 }
 
 function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, violations: string[]): Tool[] {

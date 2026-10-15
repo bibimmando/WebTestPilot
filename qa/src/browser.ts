@@ -49,7 +49,8 @@ export function snapshot(page: Page, ref?: string, depth?: number): Promise<stri
  * 만든 locator가 ref 요소를 포함할 때만 성공한다.
  */
 export async function resolveGroup(page: Page, ref: string): Promise<Resolved> {
-  const node = parseSnapshot(await snapshot(page)).get(ref);
+  const nodes = parseSnapshot(await snapshot(page));
+  const node = nodes.get(ref);
   if (!node) return { ok: false, ref, reason: 'unknown_ref' };
   let up = node.parent;
   while (up && typeof describe(up) === 'string') up = up.parent;
@@ -57,6 +58,9 @@ export async function resolveGroup(page: Page, ref: string): Promise<Resolved> {
   const loc = toLocator(page, target);
   if (up && (await toLocator(page, target.within!).count()) !== 1) return { ok: false, ref, reason: 'ambiguous' };
   if ((await loc.and(page.getByRef(ref)).count()) !== 1) return { ok: false, ref, reason: 'ambiguous' };
+  // 중첩 목록·표의 다른 열이 섞이지 않도록, 모은 수가 같은 부모 아래 같은 역할의 형제 수와 같아야 한다.
+  const siblings = [...nodes.values()].filter(n => n.parent === node.parent && n.role === node.role).length;
+  if ((await loc.count()) !== siblings) return { ok: false, ref, reason: 'ambiguous' };
   return { ok: true, ref, target };
 }
 
@@ -95,13 +99,21 @@ export async function resolveRef(page: Page, ref: string): Promise<Resolved> {
  * 숫자는 패턴으로 바꾸고, 페이지에서 유일하지 않으면 가까운 이름 있는 상위 요소로 범위를 좁힌다.
  */
 export async function resolveText(page: Page, ref: string, text: string): Promise<Resolved> {
-  const node = parseSnapshot(await snapshot(page)).get(ref);
+  const nodes = parseSnapshot(await snapshot(page));
+  const node = nodes.get(ref);
   if (!node) return { ok: false, ref, reason: 'unknown_ref' };
-  if (!node.ownText.some(t => t.includes(text))) return { ok: false, ref, reason: 'text_not_found' };
+  // 텍스트는 자식 줄(`- text: …`)이나 같은 줄(`- banner [ref=e2]: …`)에 나온다.
+  if (![node.text ?? '', ...node.ownText].some(t => t.includes(text))) return { ok: false, ref, reason: 'text_not_found' };
   const pattern = valuePattern(text);
   if (!pattern) return { ok: false, ref, reason: 'value_only' };
   const inRef = page.getByRef(ref).getByText(new RegExp(pattern));
   if ((await inRef.count()) !== 1) return { ok: false, ref, reason: 'ambiguous' };
+  // 찾은 요소가 ref를 가진 자식(버튼 등)이면 그 자식의 텍스트이지 ref가 직접 담은 텍스트가 아니다.
+  for (const child of nodes.values()) {
+    if (child.parent === node && child.ref && (await inRef.and(page.getByRef(child.ref)).count()) > 0) {
+      return { ok: false, ref, reason: 'ambiguous' };
+    }
+  }
   let target: Target = { text: pattern };
   for (let up: Node | undefined = node, tries = 0; ; up = up?.parent) {
     const loc = toLocator(page, target);
