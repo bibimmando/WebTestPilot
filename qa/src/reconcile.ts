@@ -6,14 +6,19 @@ import { sequence } from './generate.ts';
 
 export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; scenario?: string; id?: string; status?: string;
   actual?: string; expected?: string; count?: number; reason?: string; error?: string; blocked?: string[]; violations?: string[];
-  ready?: boolean; evidence?: string[] };
+  ready?: boolean; evidence?: string[];
+  /** act: 행동 직전에 관측한 대상의 접근성 표현·화면 위치(또는 누른 키), 행동 직전 URL, 실패한 행동의 직전 증거, 직후 증거를 찍는 데 걸린 시간 */
+  pressed?: { aria?: string; box?: { x: number; y: number; width: number; height: number } | null; key?: string };
+  urlBefore?: string; url?: string; before?: string[]; afterCaptureMs?: number;
+  /** check: 다시 읽은 횟수·기다린 시간·첫 읽기 */
+  reads?: number; waitedMs?: number; first?: { status: string; actual?: string } };
 
 export type StepResult = { id: string; status: 'ok' | 'not_executed' | 'uncertain_execution' | 'not_run'; reason?: string; error?: string;
-  count?: number; evidence?: string[] };
+  count?: number; evidence?: string[]; pressed?: Entry['pressed']; urlBefore?: string; url?: string; before?: string[] };
 export type CheckStatus = 'passed' | 'mismatch' | 'unresolved' | 'error' | 'not_run';
 /** expected는 관측 참조면 참조한 검사의 실제 값으로 푼 값이다 (없으면 비어 있다). */
 export type CheckResult = { id: string; status: CheckStatus; source: string; precondition?: boolean; expected?: string; actual?: string; count?: number;
-  reason?: string; error?: string; evidence?: string[] };
+  reason?: string; error?: string; evidence?: string[]; reads?: number; waitedMs?: number; first?: Entry['first'] };
 export type ScenarioResult = {
   id: string; valid: boolean; invalid: string[];
   start: 'ok' | 'failed' | 'not_run'; ready?: boolean; startEvidence?: string[];
@@ -66,7 +71,7 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
       const e = get('act', st.id);
       if (e && !STEP.has(e.status ?? '')) flag(`${st.id}: 알 수 없는 상태 ${e.status}`);
       const status = e && STEP.has(e.status ?? '') ? e.status as StepResult['status'] : 'not_run';
-      return { id: st.id, status, ...pick(e, 'reason', 'error', 'count', 'evidence') };
+      return { id: st.id, status, ...pick(e, 'reason', 'error', 'count', 'evidence', 'pressed', 'urlBefore', 'url', 'before') };
     });
     // 멈춘 행동 뒤에 기록이 더 있으면 헬퍼 계약이 깨진 것이다.
     const stoppedAt = steps.findIndex(x => x.status === 'not_executed' || x.status === 'uncertain_execution');
@@ -85,7 +90,7 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
       }
       const expected = expectedOf(c);
       return { id: c.id, status, source: c.source.kind, ...(c.precondition ? { precondition: true } : {}), ...(expected === undefined ? {} : { expected }),
-        ...pick(e, 'actual', 'count', 'reason', 'error', 'evidence') };
+        ...pick(e, 'actual', 'count', 'reason', 'error', 'evidence', 'reads', 'waitedMs', 'first') };
     });
     // 선행조건이 통과하지 못하면 fixture가 멈춘다. 그 뒤 행동 기록이 있으면 헬퍼 계약이 깨진 것이다.
     const pre = s.checks.filter(c => c.precondition);

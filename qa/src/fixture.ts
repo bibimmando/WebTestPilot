@@ -63,6 +63,8 @@ export async function start(page: Page, scenarioId: string): Promise<void> {
 /**
  * 계획된 행동 하나. 대상이 유일하지 않거나 행동할 수 없으면 not_executed, 행동 중 오류가 나면 실행 여부를 알 수 없으므로
  * uncertain_execution으로 남기고 시나리오를 멈춘다. 재시도하지 않는다.
+ * 행동 직전·직후 화면(접근성 snapshot·스크린샷)과 행동 직전에 관측한 대상(접근성 표현·화면 위치)을 남긴다.
+ * "앱이 반응하지 않았다"와 "자동화가 다른 것을 눌렀다"를 분류에서 가르기 위해서다.
  */
 export async function act(page: Page, stepId: string): Promise<void> {
   const st = steps.get(stepId);
@@ -88,6 +90,11 @@ export async function act(page: Page, stepId: string): Promise<void> {
     if (e instanceof Stopped) throw e;
     throw await stop('not_executed', { reason: 'not_actionable', error: brief(e) });
   }
+  const urlBefore = page.url();
+  const before = await capture(page, `${stepId}.before`);
+  // shortcut: 관측과 실제 행동은 locator를 따로 평가하므로, 그 사이 재렌더링으로 다른 요소가 눌릴 수 있다. 행동 시점 trace 연결이 필요해지면 바꾼다.
+  const pressed = loc ? { aria: clip(await loc.ariaSnapshot().catch(e => `읽기 실패: ${brief(e)}`)), box: await loc.boundingBox().catch(() => null) }
+    : { key: st.value };
   // shortcut: 숫자 입력칸의 문자열·없는 옵션처럼 미전달이 확실한 실패도 uncertain으로 센다. 값별 사전 검증이 필요해지면 추가한다.
   try {
     if (st.op === 'click') await loc!.click({ timeout: TIMEOUT });
@@ -95,9 +102,16 @@ export async function act(page: Page, stepId: string): Promise<void> {
     else if (st.op === 'select') await loc!.selectOption({ label: st.value! }, { timeout: TIMEOUT });
     else await (loc ? loc.press(st.value!, { timeout: TIMEOUT }) : page.keyboard.press(st.value!));
   } catch (e) {
-    throw await stop('uncertain_execution', { error: brief(e) });
+    throw await stop('uncertain_execution', { error: brief(e), urlBefore, pressed, before: before.evidence });
   }
-  log({ kind: 'act', id: stepId, status: 'ok', url: page.url() });
+  // 직후 화면은 기다리지 않고 바로 찍는다. 기다리면 뒤 검사의 시작이 늦어져 결과가 바뀐다. 찍는 데 걸린 시간은 남긴다.
+  // capture는 예외를 던지지 않으므로 행동 성공 기록이 증거 수집 때문에 사라지지 않는다.
+  const t = Date.now();
+  const after = await capture(page, `${stepId}.after`);
+  const afterCaptureMs = Date.now() - t;
+  const captureErrors = [...(before.captureErrors ?? []), ...(after.captureErrors ?? [])];
+  log({ kind: 'act', id: stepId, status: 'ok', urlBefore, url: page.url(), pressed, afterCaptureMs, evidence: [...before.evidence, ...after.evidence],
+    ...(captureErrors.length ? { captureErrors } : {}) });
 }
 
 /**
@@ -112,6 +126,7 @@ export async function check(page: Page, checkId: string): Promise<void> {
   let r: Reading;
   let first: Reading | undefined;
   let reads = 0;
+  let started = Date.now();
   // 관측 참조: 참조한 검사가 값을 읽지 못했으면 비교할 기대값이 없다.
   const expected = c.expected_from !== undefined ? expectedFrom(c, actuals.get(c.expected_from)) : c.expected;
   try {
@@ -119,6 +134,7 @@ export async function check(page: Page, checkId: string): Promise<void> {
     else {
       const loc = c.target === undefined ? undefined : toLocator(page, plan.targets[c.target].target);
       const deadline = Date.now() + TIMEOUT;
+      started = Date.now();
       for (;;) {
         r = loc && await shapeChanged(page, plan.targets[c.target!].target)
           ? { status: 'unresolved', reason: '순서로 고정한 영역의 요소 수가 바뀜' } : await read(page, loc, c, expected);
@@ -133,7 +149,8 @@ export async function check(page: Page, checkId: string): Promise<void> {
     throw e;
   }
   if (r.actual !== undefined) actuals.set(checkId, r.actual);
-  log({ kind: 'check', id: checkId, ...r, expected, op: c.op, read: c.read, reads,
+  // 몇 번, 얼마 동안 다시 읽었는지 남긴다. "너무 일찍 읽었다"와 "기다려도 그대로였다"를 분류에서 가른다.
+  log({ kind: 'check', id: checkId, ...r, expected, op: c.op, read: c.read, reads, waitedMs: Date.now() - started,
     ...(reads > 1 ? { first: { status: first!.status, actual: first!.actual } } : {}), url: page.url(),
     ...(r.status === 'passed' ? {} : await capture(page, checkId)) });
   if (c.precondition && r.status !== 'passed') throw new Stopped(`${checkId} 선행조건 ${r.status}`);
@@ -166,4 +183,7 @@ async function read(page: Page, loc: Locator | undefined, c: Check, expected: st
   return done(String(await loc.isVisible()), count);
 }
 
+/** 분류 입력이 커지지 않도록 대상 표현을 자른다. 원본 화면은 evidence에 있다. */
+const clip = (s: string) => s.length > 2000 ? `${s.slice(0, 2000)}
+(이후 생략)` : s;
 const brief = (e: unknown) => String((e as Error)?.message ?? e).split('\n')[0];

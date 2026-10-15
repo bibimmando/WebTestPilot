@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type Anthropic from '@anthropic-ai/sdk';
 import { runPlan, type RunResult } from '../src/run.ts';
-import { checkQuotes, judge, preclassify, systemVerdict, type Verdict } from '../src/triage.ts';
+import { actionsUpTo, checkQuotes, judge, preclassify, systemVerdict, type Verdict } from '../src/triage.ts';
 import { Budget, type Send } from '../src/agent.ts';
 import type { Plan } from '../src/plan.ts';
 
@@ -106,6 +106,15 @@ test('분류·재현: 재현되는 불일치, AI가 인용으로 분류한 사�
   const j = await judge({ plan: p, run, send, model: 'claude-sonnet-5-5', budget, reproduceDir: dir('judge-repro'), timeoutMs: 1500 });
   const v = Object.fromEntries(j.verdicts.map(x => [x.id, x]));
 
+  // 분류 입력에 행동 전후 증거·누른 요소·재시도 기록이 들어간다.
+  const msg = send.firstMessages.find(m => m.includes('실패한 항목 S1.C2'))!;
+  assert.ok(msg.includes('--- evidence/S1.A1.before.aria.txt') && msg.includes('--- evidence/S1.A1.after.aria.txt'), msg.slice(0, 2000));
+  const actions = JSON.parse(msg.match(/행동 기록: (.*)/)![1]);
+  assert.match(actions[0].pressed.aria, /담기/);
+  assert.ok(actions[0].pressed.box && actions[0].urlBefore, JSON.stringify(actions));
+  const comparison = JSON.parse(msg.match(/비교 기록: (.*)/)![1]);
+  assert.ok(comparison.reads > 1 && comparison.waitedMs > 0, JSON.stringify(comparison));
+
   assert.equal(v['S1.C1'].class, 'passed_inferred');
   // 불일치도 AI 분류에 보낸다. 분류하지 못하면 mismatch로 남고 재현은 그대로 한다.
   assert.deepEqual([v['S1.C2'].observed, v['S1.C2'].class, v['S1.C2'].reproduction], ['mismatch', 'mismatch', 'reproduced']);
@@ -204,4 +213,21 @@ test('시스템 판정: 끝난 항목은 반드시 판정하고, 끝나지 않�
   assert.equal(level({ class: 'app_defect_candidate', source: 'observed', reproduction: 'reproduced' }), 'incomplete');
   // 기술적 미완료는 억지로 판정하지 않는다.
   for (const c of ['mismatch', 'uncertain', 'uncertain_execution', 'precondition_failed', 'not_run', 'invalid'] as const) assert.equal(level({ class: c }), 'incomplete', c);
+});
+
+test('행동 기록: 입력 원문은 넘기지 않고, 그 항목 직전까지의 행동만 최근 10개로 준다', () => {
+  const steps = Array.from({ length: 12 }, (_, i) => ({ id: `S9.A${i + 1}`, op: 'click' as const, target: 'T1' }));
+  steps[0] = { id: 'S9.A1', op: 'fill', target: 'T1', value: 'secret-password' } as any;
+  steps[11] = { ...steps[11], op: 'press', value: 'Enter' } as any;
+  const s = { id: 'S9', title: 't', covers: [], start: { url: 'http://x/' }, steps,
+    checks: [{ id: 'S9.C1', after: 'S9.A3', target: 'T1', read: 'text' as const, op: 'equals' as const, expected: 'x', source: { kind: 'observed' as const } }] };
+  const r = { id: 'S9', valid: true, invalid: [], start: 'ok' as const, precondition: 'none' as const, blocked: [], violations: [], checks: [],
+    steps: steps.map(st => ({ id: st.id, status: 'ok' as const })) };
+  const v = (id: string, kind: 'check' | 'act'): Verdict => ({ id, scenario: 'S9', kind, requirements: [], observed: 'mismatch', class: 'mismatch' });
+  const forCheck = actionsUpTo(s, v('S9.C1', 'check'), r);
+  assert.deepEqual(forCheck.map(a => a.id), ['S9.A1', 'S9.A2', 'S9.A3'], '검사 뒤의 행동은 주지 않는다');
+  assert.ok(!JSON.stringify(forCheck).includes('secret-password') && (forCheck[0] as any).valueLength === 15);
+  const forLast = actionsUpTo(s, v('S9.A12', 'act'), r);
+  assert.equal(forLast.length, 10);
+  assert.equal((forLast.at(-1) as any).value, 'Enter', '누른 키는 그대로 준다');
 });

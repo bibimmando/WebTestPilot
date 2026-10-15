@@ -111,7 +111,7 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
     }
     const s = o.plan.scenarios.find(x => x.id === v.scenario)!;
     const r = o.run.scenarios.find(x => x.id === v.scenario)!;
-    const { files, own } = evidenceFor(o.run.runDir, v, r);
+    const { files, own } = evidenceFor(o.run.runDir, v, r, o.plan);
     let accepted: { class: Class; reason: string; quotes: Quote[] } | undefined;
     const classify: Tool = {
       def: { name: 'classify', description: '실패 한 건의 분류와 근거 인용을 제출한다.', strict: true, input_schema: {
@@ -144,13 +144,35 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
   }
 }
 
-/** 이 항목에 쓸 수 있는 증거: 실패 시점 snapshot(own)과 같은 시나리오의 시작 snapshot. 다른 시나리오의 증거는 주지 않는다. */
-function evidenceFor(runDir: string, v: Verdict, r: ScenarioResult): { files: Map<string, string>; own: Set<string> } {
+/**
+ * 이 항목에 쓸 수 있는 증거: 실패 시점 snapshot(own), 같은 시나리오의 시작 snapshot, 그리고 관련 행동의 직전·직후 snapshot
+ * (검사면 그 검사 직전 행동, 행동이면 그 행동의 직전). 다른 시나리오의 증거는 주지 않는다.
+ */
+function evidenceFor(runDir: string, v: Verdict, r: ScenarioResult, plan: Plan): { files: Map<string, string>; own: Set<string> } {
+  const step = v.kind === 'act' ? r.steps.find(x => x.id === v.id) : undefined;
   const ownPaths = (v.kind === 'start' ? r.startEvidence ?? []
-    : v.kind === 'act' ? r.steps.find(x => x.id === v.id)?.evidence ?? []
+    : v.kind === 'act' ? (step?.evidence ?? []).filter(p => !p.includes('.before.'))
     : r.checks.find(x => x.id === v.id)?.evidence ?? []).filter(p => p.endsWith('.txt'));
-  const paths = [...new Set([...ownPaths, ...(r.startEvidence ?? [])])].filter(p => p.endsWith('.txt') && existsSync(join(runDir, p)));
+  const after = v.kind === 'check' ? plan.scenarios.flatMap(s => s.checks).find(c => c.id === v.id)?.after : undefined;
+  const actionPaths = v.kind === 'act' ? step?.before ?? (step?.evidence ?? []).filter(p => p.includes('.before.'))
+    : after && after !== 'start' ? r.steps.find(x => x.id === after)?.evidence ?? [] : [];
+  const paths = [...new Set([...ownPaths, ...(r.startEvidence ?? []), ...actionPaths])].filter(p => p.endsWith('.txt') && existsSync(join(runDir, p)));
   return { files: new Map(paths.map(p => [p, readFileSync(join(runDir, p), 'utf8')])), own: new Set(ownPaths.filter(p => paths.includes(p))) };
+}
+
+/**
+ * 실패 항목까지의 행동 기록(최근 10개). 검사면 그 검사 직전 행동까지, 행동이면 그 행동까지.
+ * fill의 입력 원문은 넘기지 않는다(비밀번호·토큰일 수 있다). 길이만 준다.
+ */
+export function actionsUpTo(s: Plan['scenarios'][number], v: Verdict, r: ScenarioResult) {
+  const last = v.kind === 'act' ? v.id : v.kind === 'check' ? s.checks.find(c => c.id === v.id)?.after : 'start';
+  const upTo = last === 'start' ? 0 : s.steps.findIndex(st => st.id === last) + 1;
+  return s.steps.slice(0, upTo).slice(-10).map(st => {
+    const res = r.steps.find(x => x.id === st.id);
+    const value = st.value === undefined ? {} : st.op === 'fill' ? { valueLength: st.value.length } : { value: st.value };
+    return { id: st.id, op: st.op, ...value, status: res?.status ?? 'not_run',
+      pressed: res?.pressed ?? null, urlBefore: res?.urlBefore ?? null, urlAfter: res?.url ?? null };
+  });
 }
 
 export function checkQuotes(input: { class: string; quotes: Quote[] }, files: Map<string, string>, own: Set<string>): string[] {
@@ -180,6 +202,7 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
   // 관측 참조면 expected는 참조한 검사가 실제로 읽은 값이고, 무엇을 참조했는지(expectedFrom)도 함께 넘긴다.
   const comparison = c && res ? { read: c.read, op: c.op, expected: res.expected ?? null, ...(c.expected_from ? { expectedFrom: c.expected_from } : {}),
     actual: res.actual ?? null, matchedElements: res.count ?? null, after: c.after, expectationBasis: c.source.kind,
+    reads: res.reads ?? null, waitedMs: res.waitedMs ?? null, ...(res.first ? { firstRead: res.first } : {}),
     ...(res.reason ? { reason: res.reason } : {}), evidenceFiles: res.evidence ?? [] } : undefined;
   return [
     '요구사항:', ...plan.requirements.filter(q => s.covers.includes(q.id)).map(q => `- ${q.id}: ${q.text}`),
@@ -189,10 +212,12 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
     `실행 기록: ${v.observed}`,
     `시작 화면: ${r.ready === false ? '기한 안에 멈추지 않음(로딩 중일 수 있음)' : '멈춘 뒤 기록'}, 선행조건 ${r.precondition}`,
     ...(comparison ? [`비교 기록: ${JSON.stringify(comparison)}`] : []),
+    // 이 항목까지 실제로 한 행동: 누른 요소의 접근성 표현·화면 위치, 행동 전후 URL. 자동화가 다른 것을 눌렀는지 가르는 근거다.
+    `행동 기록: ${JSON.stringify(actionsUpTo(s, v, r))}`,
     // 일반 규칙 근거면 규칙 본문·적용 조건·정상 예외를 함께 준다. 예외에 해당하면 결함이 아니다.
     ...(ruleOf(c?.source.rule) ? [`일반 규칙 ${c!.source.rule}: ${JSON.stringify(ruleOf(c!.source.rule))}`] : []),
     ...(v.error ? [`오류 원문: ${v.error}`] : []),
-    '증거 파일 (*.start.aria.txt는 시작 직후, 나머지는 실패 시점):',
+    '증거 파일 (*.start는 시작 직후, *.before·*.after는 그 행동의 직전·직후, 나머지는 실패 시점):',
     ...[...files].map(([name, text]) => `--- ${name}\n${text.length > EVIDENCE_CHARS ? `${text.slice(0, EVIDENCE_CHARS)}\n(이후 생략: 생략된 부분 없이 판단할 수 없으면 uncertain)` : text}`),
   ].join('\n');
 }
