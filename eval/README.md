@@ -6,6 +6,7 @@
 |---|---|
 | `plans/` | 고정 계획 3개(목록·모달·폼)와 출처(`meta.json`). 정상 개발 fixture에서 Codex CLI로 만들었다 |
 | `variants/bug-1/` | 같은 URL로 버그를 심은 페이지와 정답지 `bugs.json`. 없는 파일은 정상 앱(`qa/test/fixtures`)에서 준다 |
+| `variants/bug-2/` | M2 구조(아이콘 수량 버튼·열 때마다 바뀌는 관련 상품·필터 초기화)의 버그 변형과 정답지. 고정 계획 없이 새 탐색(Q47 확인)에만 쓴다 |
 | `run.mts` | 앱을 8765 포트로 띄우고 계획을 2·3단계로 끝까지 실행한 뒤 정답지와 비교 |
 | `results/` | 실행별 `summary.json` (Git 제외). 실행 폴더 자체는 `qa/runs/eval-*`에 남는다 |
 

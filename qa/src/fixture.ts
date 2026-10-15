@@ -1,11 +1,10 @@
 // ③ 실행 헬퍼. 생성된 spec은 start·act·check만 부르고, 연산·대상·입력값·기대값은 모두 고정된 plan.json에서 읽는다.
 // 모든 결과는 즉시 ledger.jsonl에 쓴다. 판정은 테스트 통과 여부가 아니라 ledger와 plan의 대조(reconcile.ts)로 한다.
-import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test as base, expect, type Page, type Locator } from '@playwright/test';
-import { ariaText, guardContext, toLocator, type AriaNode, type Policy } from './browser.ts';
-import type { Plan, Check } from './plan.ts';
+import { ariaText, guardContext, settle, shapeChanged, toLocator, type AriaNode, type Policy } from './browser.ts';
+import { compareValues, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
 if (!dir) throw new Error('QA_RUN_DIR가 없다. spec은 run.ts로 실행한다.');
@@ -15,6 +14,8 @@ const TIMEOUT = Number(process.env.QA_TIMEOUT_MS ?? 5000);
 
 const steps = new Map(plan.scenarios.flatMap(s => s.steps.map(st => [st.id, st] as const)));
 const checks = new Map(plan.scenarios.flatMap(s => s.checks.map(c => [c.id, c] as const)));
+/** 이 실행에서 검사가 읽은 실제 값. 관측 참조(expected_from)가 앞선 검사의 값을 기대값으로 쓴다. */
+const actuals = new Map<string, string>();
 
 /** 실패 시점의 접근성 snapshot과 스크린샷을 evidence/에 남기고 실행 폴더 기준 경로를 돌려준다. 수집 실패는 결과를 바꾸지 않고 따로 기록한다. */
 async function capture(page: Page, id: string): Promise<{ evidence: string[]; captureErrors?: string[] }> {
@@ -51,12 +52,12 @@ export async function start(page: Page, scenarioId: string): Promise<void> {
     log({ kind: 'start', scenario: scenarioId, status: 'failed', error: brief(e) });
     throw e;
   }
-  // 시작 직후 상태의 지문. 재실행이 같은 시작 상태에서 출발했는지 비교한다.
+  // SPA는 load 뒤에 내용을 그리므로 화면이 멈출 때까지 기다린 뒤 시작 증거를 찍는다. 시작 상태의 확인은 선행조건 검사가 한다.
+  const ready = await settle(page, TIMEOUT);
   const aria = await page.locator('body').ariaSnapshot();
   mkdirSync(join(dir!, 'evidence'), { recursive: true });
   writeFileSync(join(dir!, 'evidence', `${scenarioId}.start.aria.txt`), aria);
-  log({ kind: 'start', scenario: scenarioId, status: 'ok', url: page.url(), startHash: createHash('sha256').update(page.url() + '\n' + aria).digest('hex'),
-    evidence: [`evidence/${scenarioId}.start.aria.txt`] });
+  log({ kind: 'start', scenario: scenarioId, status: 'ok', url: page.url(), ready, evidence: [`evidence/${scenarioId}.start.aria.txt`] });
 }
 
 /**
@@ -77,7 +78,7 @@ export async function act(page: Page, stepId: string): Promise<void> {
     if (loc) {
       await loc.first().waitFor({ state: 'attached', timeout: TIMEOUT }).catch(() => {});
       const count = await loc.count();
-      if (count !== 1) throw await stop('not_executed', { reason: 'target_changed', count });
+      if (count !== 1 || await shapeChanged(page, plan.targets[st.target!].target)) throw await stop('not_executed', { reason: 'target_changed', count });
       // 효과 없이 행동 가능 여부만 확인한다.
       if (st.op === 'click') await loc.click({ trial: true, timeout: TIMEOUT });
       else if (st.op === 'fill' && !(await loc.isEditable())) throw new Error('not editable');
@@ -103,6 +104,7 @@ export async function act(page: Page, stepId: string): Promise<void> {
  * 계획된 검사 하나. 비동기 화면을 위해 기한까지 다시 읽어 "기한 안의 최종 상태"를 비교한다.
  * 첫 읽기 값도 남겨, 처음엔 틀렸다가 맞게 바뀐 경우를 나중에 구분할 수 있게 한다.
  * 불일치·대상 미해결은 시나리오를 멈추지 않고 soft 실패로 표시한다. 읽기 중 예외는 error로 남기고 시나리오를 멈춘다.
+ * 선행조건 검사가 통과하지 못하면 준비 실패이므로 뒤 행동을 하지 않고 멈춘다.
  */
 export async function check(page: Page, checkId: string): Promise<void> {
   const c = checks.get(checkId);
@@ -110,44 +112,58 @@ export async function check(page: Page, checkId: string): Promise<void> {
   let r: Reading;
   let first: Reading | undefined;
   let reads = 0;
+  // 관측 참조: 참조한 검사가 값을 읽지 못했으면 비교할 기대값이 없다.
+  const expected = c.expected_from !== undefined ? actuals.get(c.expected_from) : c.expected;
   try {
-    const loc = toLocator(page, plan.targets[c.target].target);
-    const deadline = Date.now() + TIMEOUT;
-    for (;;) {
-      r = await read(loc, c);
-      first ??= r;
-      reads++;
-      if (r.status === 'passed' || Date.now() >= deadline) break;
-      await page.waitForTimeout(100);
+    if (expected === undefined) r = { status: 'unresolved', reason: `expected_from ${c.expected_from}의 실제 값 없음` };
+    else {
+      const loc = c.target === undefined ? undefined : toLocator(page, plan.targets[c.target].target);
+      const deadline = Date.now() + TIMEOUT;
+      for (;;) {
+        r = loc && await shapeChanged(page, plan.targets[c.target!].target)
+          ? { status: 'unresolved', reason: '순서로 고정한 영역의 요소 수가 바뀜' } : await read(page, loc, c, expected);
+        first ??= r;
+        reads++;
+        if (r.status === 'passed' || Date.now() >= deadline) break;
+        await page.waitForTimeout(100);
+      }
     }
   } catch (e) {
     log({ kind: 'check', id: checkId, status: 'error', error: brief(e), reads, url: page.url(), ...(await capture(page, checkId)) });
     throw e;
   }
-  log({ kind: 'check', id: checkId, ...r, expected: c.expected, op: c.op, read: c.read, reads,
+  if (r.actual !== undefined) actuals.set(checkId, r.actual);
+  log({ kind: 'check', id: checkId, ...r, expected, op: c.op, read: c.read, reads,
     ...(reads > 1 ? { first: { status: first!.status, actual: first!.actual } } : {}), url: page.url(),
-    ...(r!.status === 'passed' ? {} : await capture(page, checkId)) });
-  expect.soft(r.status, `${checkId}: ${c.read} ${c.op} ${JSON.stringify(c.expected)}, 실제 ${JSON.stringify(r.actual ?? null)}`).toBe('passed');
+    ...(r.status === 'passed' ? {} : await capture(page, checkId)) });
+  if (c.precondition && r.status !== 'passed') throw new Stopped(`${checkId} 선행조건 ${r.status}`);
+  expect.soft(r.status, `${checkId}: ${c.read} ${c.op} ${JSON.stringify(expected ?? null)}, 실제 ${JSON.stringify(r.actual ?? null)}`).toBe('passed');
 }
 
 /** ledger에 이미 기록하고 멈출 때 쓰는 예외. */
 class Stopped extends Error {}
 
-type Reading = { status: 'passed' | 'mismatch' | 'unresolved'; actual?: string; count?: number };
+type Reading = { status: 'passed' | 'mismatch' | 'unresolved'; actual?: string; count?: number; reason?: string };
 
-async function read(loc: Locator, c: Check): Promise<Reading> {
+async function read(page: Page, loc: Locator | undefined, c: Check, expected: string): Promise<Reading> {
+  const done = (actual: string, count?: number): Reading =>
+    ({ status: compareValues(c.op, actual, expected) ? 'passed' : 'mismatch', actual, ...(count === undefined ? {} : { count }) });
+  if (!loc) return done(page.url());
   const count = await loc.count();
-  let actual: string;
-  if (c.read === 'count') actual = String(count);
-  else if (c.read === 'visible' && count === 0) actual = 'false';
-  else if (count !== 1) return { status: 'unresolved', count };
+  if (c.read === 'count') return done(String(count), count);
   // 탐색 때 모델이 본 접근성 snapshot과 같은 기준으로 읽는다. innerText는 CSS 대소문자 변환이, textContent는 숨긴 텍스트가 섞인다.
-  else if (c.read === 'text') actual = ariaText(await loc.ariaSnapshotJSON({ mode: 'ai' }) as AriaNode[]);
-  else if (c.read === 'value') actual = await loc.inputValue();
-  else if (c.read === 'checked') actual = String(await loc.isChecked());
-  else actual = String(await loc.isVisible());
-  const ok = c.op === 'equals' ? actual === c.expected : actual.includes(c.expected);
-  return { status: ok ? 'passed' : 'mismatch', actual, count };
+  const text = async (l: Locator) => ariaText(await l.ariaSnapshotJSON({ mode: 'ai' }) as AriaNode[]);
+  if (c.read === 'items') {
+    const items: string[] = [];
+    for (const l of await loc.all()) items.push(await text(l));
+    return done(JSON.stringify(items), count);
+  }
+  if (c.read === 'visible' && count === 0) return done('false', count);
+  if (count !== 1) return { status: 'unresolved', count };
+  if (c.read === 'text') return done(await text(loc), count);
+  if (c.read === 'value') return done(await loc.inputValue(), count);
+  if (c.read === 'checked') return done(String(await loc.isChecked()), count);
+  return done(String(await loc.isVisible()), count);
 }
 
 const brief = (e: unknown) => String((e as Error)?.message ?? e).split('\n')[0];

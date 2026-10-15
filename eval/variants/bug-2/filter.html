@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>목록 필터</title></head>
+<body>
+<main>
+  <h1>상품</h1>
+  <div role="group" aria-label="카테고리">
+    <button data-c="조명">조명</button><button data-c="가구">가구</button><button data-c="도자기">도자기</button>
+    <button id="reset">초기화</button>
+  </div>
+  <p id="count"></p>
+  <ul id="list"></ul>
+</main>
+<script>
+  const items = [['Orb Lamp', '조명'], ['Arc Lamp', '조명'], ['Harvest Table', '가구'], ['Oak Stool', '가구'], ['Stone Vase', '도자기'], ['Clay Bowl', '도자기'], ['Desk Lamp', '조명']];
+  const show = c => {
+    const shown = items.filter(([, k]) => !c || k === c);
+    document.getElementById('list').innerHTML = shown.map(([n, k]) => `<li><span>${n}</span> · <span>${k}</span></li>`).join('');
+    document.getElementById('count').textContent = `${shown.length}개 상품`;
+  };
+  document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => show(b.dataset.c));
+  let last; document.querySelectorAll('[data-c]').forEach(b => b.addEventListener('click', () => { last = b.dataset.c; }));
+  document.getElementById('reset').onclick = () => show(last);
+  show();
+</script>
+</body>
+</html>

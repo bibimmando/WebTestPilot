@@ -1,0 +1,26 @@
+{
+  "description": "M2 개발 fixture(qa/test/fixtures의 product·filter)에 버그를 심은 변형. 이 파일은 정답지이며 계획·실행·분류 모델 입력에 넣지 않는다.",
+  "bugs": [
+    {
+      "id": "B1",
+      "page": "product.html",
+      "summary": "관련 상품 링크가 적힌 상품이 아닌 다른 상품(Harvest Table, 그 자신이면 Oak Stool) 상세로 간다",
+      "violates": "관련 상품을 누르면 그 상품의 상세가 열린다",
+      "inScope": true
+    },
+    {
+      "id": "B2",
+      "page": "product.html",
+      "summary": "수량 감소 버튼이 1에서도 눌리고 0·음수로 내려간다",
+      "violates": "수량은 1보다 작아질 수 없다",
+      "inScope": true
+    },
+    {
+      "id": "B3",
+      "page": "filter.html",
+      "summary": "초기화가 마지막 카테고리 필터를 다시 적용해 전체 목록이 돌아오지 않는다",
+      "violates": "초기화를 누르면 모든 상품이 다시 보인다",
+      "inScope": true
+    }
+  ]
+}

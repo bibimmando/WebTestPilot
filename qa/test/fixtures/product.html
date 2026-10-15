@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>상품</title>
+<style>.qty{display:flex;gap:8px;align-items:center} button svg{width:12px;height:12px}</style></head>
+<body>
+<main id="app"><p>불러오는 중…</p></main>
+<script>
+  // 늦게 그리는 상품 상세. 수량은 이름 없는 아이콘 버튼, 관련 상품은 열 때마다 바뀐다.
+  const all = ['Orb Lamp', 'Arc Lamp', 'Harvest Table', 'Stone Vase', 'Linen Throw', 'Oak Stool'];
+  const item = new URLSearchParams(location.search).get('item') || 'Orb Lamp';
+  const n = Number(localStorage.getItem('visits') ?? 0);
+  localStorage.setItem('visits', n + 1);
+  const others = all.filter(x => x !== item);
+  const related = [others[(n * 2) % others.length], others[(n * 2 + 1) % others.length]];
+  const icon = d => `<svg viewBox="0 0 10 10"><path d="${d}" stroke="black"/></svg>`;
+  setTimeout(() => {
+    document.getElementById('app').innerHTML = `
+      <h1>${item}</h1>
+      <p>₩120,000</p>
+      <div><div>수량</div>
+        <div class="qty"><button id="minus" disabled>${icon('M1 5H9')}</button><div id="q">1</div><button id="plus">${icon('M1 5H9M5 1V9')}</button></div>
+      </div>
+      <section><h2>함께 보면 좋은 상품</h2><ul>${related.map(x => `<li><a href="?item=${encodeURIComponent(x)}">${x}</a></li>`).join('')}</ul></section>`;
+    const q = document.getElementById('q'), minus = document.getElementById('minus');
+    const set = v => { q.textContent = v; minus.disabled = v <= 1; };
+    document.getElementById('plus').onclick = () => set(+q.textContent + 1);
+    minus.onclick = () => set(Math.max(1, +q.textContent - 1));
+  }, 500);
+</script>
+</body>
+</html>

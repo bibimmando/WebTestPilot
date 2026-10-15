@@ -1,21 +1,25 @@
 // ledger ↔ plan 대조. ledger가 판정의 기준이지만 ledger를 그대로 믿지 않는다.
 // 비교 결과는 고정된 plan의 기대값과 기록된 실제 값으로 다시 계산하고, 순서·중복·정책 위반이 있는 시나리오는 무효로 집계한다.
 // 코드에 있어도 실행되지 않은 검사는 not_run이다. 상태는 차원별로 나누고 분모에서 빼지 않는다.
-import type { Plan, Check } from './plan.ts';
+import { compareValues, type Plan, type Check } from './plan.ts';
 import { sequence } from './generate.ts';
 
 export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; scenario?: string; id?: string; status?: string;
   actual?: string; expected?: string; count?: number; reason?: string; error?: string; blocked?: string[]; violations?: string[];
-  startHash?: string; evidence?: string[] };
+  ready?: boolean; evidence?: string[] };
 
 export type StepResult = { id: string; status: 'ok' | 'not_executed' | 'uncertain_execution' | 'not_run'; reason?: string; error?: string;
   count?: number; evidence?: string[] };
 export type CheckStatus = 'passed' | 'mismatch' | 'unresolved' | 'error' | 'not_run';
-export type CheckResult = { id: string; status: CheckStatus; source: string; expected: string; actual?: string; count?: number;
-  error?: string; evidence?: string[] };
+/** expected는 관측 참조면 참조한 검사의 실제 값으로 푼 값이다 (없으면 비어 있다). */
+export type CheckResult = { id: string; status: CheckStatus; source: string; precondition?: boolean; expected?: string; actual?: string; count?: number;
+  reason?: string; error?: string; evidence?: string[] };
 export type ScenarioResult = {
   id: string; valid: boolean; invalid: string[];
-  start: 'ok' | 'failed' | 'not_run'; startHash?: string; startEvidence?: string[]; steps: StepResult[]; checks: CheckResult[];
+  start: 'ok' | 'failed' | 'not_run'; ready?: boolean; startEvidence?: string[];
+  /** 선행조건 검사 결과: 없음(시작 조건 미선언) · 모두 통과 · 실패 */
+  precondition: 'none' | 'met' | 'failed';
+  steps: StepResult[]; checks: CheckResult[];
   blocked: string[]; violations: string[];
 };
 /** checks의 invalid는 무효 시나리오에 속해 결과를 믿을 수 없는 검사 수다. */
@@ -44,6 +48,13 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
     });
     const get = (kind: string, id: string) => records.find(e => e.kind === kind && (kind === 'start' ? e.scenario : e.id) === id);
 
+    // 관측 참조는 ledger에 기록된 기대값을 믿지 않고, 참조한 검사의 기록된 실제 값으로 다시 푼다.
+    const expectedOf = (c: Check) => {
+      if (c.expected_from === undefined) return c.expected;
+      // 값을 정상적으로 읽은 기록(통과·불일치)만 참조값이 된다. 미해결·오류 기록의 actual은 쓰지 않는다.
+      const ref = get('check', c.expected_from);
+      return ref && (ref.status === 'passed' || ref.status === 'mismatch') && typeof ref.actual === 'string' ? ref.actual : undefined;
+    };
     const startEntry = get('start', s.id);
     const start = startEntry?.status === 'ok' || startEntry?.status === 'failed' ? startEntry.status : 'not_run';
     if (start !== 'ok' && records.length > (startEntry ? 1 : 0)) flag('시작하지 못했는데 뒤 기록이 있음');
@@ -67,16 +78,26 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
       if (e) {
         status = CHECK.has(e.status ?? '') ? e.status as CheckStatus : 'error';
         if (status === 'passed' || status === 'mismatch') {
-          const recomputed = compare(c, e.actual);
+          const recomputed = compare(c, e.actual, expectedOf(c));
           if (recomputed !== status) flag(`${c.id}: 기록된 ${e.status}와 다시 계산한 ${recomputed}가 다름`);
           status = recomputed;
         }
       }
-      return { id: c.id, status, source: c.source.kind, expected: c.expected,
-        ...pick(e, 'actual', 'count', 'error', 'evidence') };
+      const expected = expectedOf(c);
+      return { id: c.id, status, source: c.source.kind, ...(c.precondition ? { precondition: true } : {}), ...(expected === undefined ? {} : { expected }),
+        ...pick(e, 'actual', 'count', 'reason', 'error', 'evidence') };
     });
+    // 선행조건이 통과하지 못하면 fixture가 멈춘다. 그 뒤 행동 기록이 있으면 헬퍼 계약이 깨진 것이다.
+    const pre = s.checks.filter(c => c.precondition);
+    const failedPre = pre.find(c => checks.find(x => x.id === c.id)!.status !== 'passed' && get('check', c.id));
+    if (failedPre) {
+      const at = expected.indexOf(`check:${failedPre.id}`);
+      if (records.length > at + 1) flag(`선행조건 ${failedPre.id}가 통과하지 못했는데 뒤 기록이 있음`);
+    }
+    const precondition = !pre.length ? 'none' : failedPre ? 'failed'
+      : pre.every(c => checks.find(x => x.id === c.id)!.status === 'passed') ? 'met' : 'failed';
 
-    return { id: s.id, valid: invalid.length === 0, invalid, start, ...(startEntry?.startHash ? { startHash: startEntry.startHash } : {}),
+    return { id: s.id, valid: invalid.length === 0, invalid, start, precondition, ...(startEntry?.ready !== undefined ? { ready: startEntry.ready } : {}),
       ...(startEntry?.evidence ? { startEvidence: startEntry.evidence } : {}), steps, checks, blocked: policy.flatMap(e => e.blocked ?? []), violations };
   });
 
@@ -106,8 +127,8 @@ function pick<K extends keyof Entry>(e: Entry | undefined, ...keys: K[]): Partia
   return Object.fromEntries(keys.filter(k => e?.[k] !== undefined).map(k => [k, e![k]])) as Partial<Pick<Entry, K>>;
 }
 
-/** 고정된 plan의 연산·기대값으로 비교를 다시 계산한다. 실제 값이 없으면 비교할 수 없다. */
-function compare(c: Check, actual: string | undefined): CheckStatus {
-  if (typeof actual !== 'string') return 'error';
-  return (c.op === 'equals' ? actual === c.expected : actual.includes(c.expected)) ? 'passed' : 'mismatch';
+/** 고정된 plan의 연산·기대값으로 비교를 다시 계산한다. 실제 값이나 기대값이 없으면 비교할 수 없다. */
+function compare(c: Check, actual: string | undefined, expected: string | undefined): CheckStatus {
+  if (typeof actual !== 'string' || expected === undefined) return 'error';
+  return compareValues(c.op, actual, expected) ? 'passed' : 'mismatch';
 }

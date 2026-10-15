@@ -8,6 +8,7 @@ import { runPlan } from '../src/run.ts';
 import { specFor, sequence } from '../src/generate.ts';
 import { reconcile, type Entry } from '../src/reconcile.ts';
 import type { Plan } from '../src/plan.ts';
+import { preclassify } from '../src/triage.ts';
 
 let server: Server | undefined;
 let origin = '';
@@ -31,7 +32,7 @@ const src = (id: string, quote: string) => ({ kind: 'requirement' as const, id, 
 
 function plan(): Plan {
   return {
-    version: 1,
+    version: 1, observations: [],
     requirements: [
       { id: 'R1', text: '담기를 누르면 장바구니 개수가 1 늘어난다' },
       { id: 'R2', text: '쿠폰 적용 창에서 확인을 누를 수 있다' },
@@ -55,7 +56,7 @@ function plan(): Plan {
         checks: [
           { id: 'S1.C1', after: 'start', target: 'T1', read: 'count', op: 'equals', expected: '30', source: { kind: 'observed' } },
           { id: 'S1.C2', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (1)', source: src('R1', '1 늘어난다') },
-          { id: 'S1.C3', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (5)', source: { kind: 'heuristic', quote: '담기를 누르면 장바구니 개수가 표시된다' } },
+          { id: 'S1.C3', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (5)', source: { kind: 'inferred', quote: '담기를 누르면 장바구니 개수가 표시된다' } },
         ] },
       { id: 'S2', title: '사라진 버튼', covers: ['R2'], start: { url: `${origin}/modal.html` },
         steps: [{ id: 'S2.A1', op: 'click', target: 'T4' }],
@@ -188,4 +189,70 @@ test('reconcile: 계획도 unplanned도 아닌 요구사항은 missing이다', (
   const p = plan();
   p.unplanned = [];
   assert.equal(reconcile(p, []).requirements[3].plan, 'missing');
+});
+test('M2 실행: 준비 대기 뒤 시작 증거, 관측 참조·url·items 비교, 선행조건 실패는 멈춤', async () => {
+  const shop = `${origin}/shop.html`;
+  const rule = { kind: 'inferred' as const, quote: '누른 카드의 이름이 열린 상세의 제목이 된다' };
+  const p: Plan = {
+    version: 1, observations: [],
+    requirements: [{ id: 'R1', text: '카드를 누르면 그 상품의 상세가 열린다' }],
+    targets: {
+      T1: { target: { role: 'link', name: '^Orb Lamp$' }, group: false, url: shop },
+      T2: { target: { role: 'heading' }, group: false, url: `${shop}?item=Orb%20Lamp` },
+      T3: { target: { role: 'link' }, group: true, url: shop },
+      T4: { target: { role: 'heading', name: '^없는 제목$' }, group: false, url: shop },
+    },
+    scenarios: ['', '#bug'].map((q, i) => ({
+      id: `S${i + 1}`, title: q ? '결함 버전' : '정상', covers: ['R1'], start: { url: shop + q },
+      steps: [{ id: `S${i + 1}.A1`, op: 'click' as const, target: 'T1' }],
+      checks: [
+        { id: `S${i + 1}.C1`, after: 'start', target: 'T3', read: 'count' as const, op: 'equals' as const, expected: '3', source: { kind: 'observed' as const }, precondition: true },
+        { id: `S${i + 1}.C2`, after: 'start', target: 'T1', read: 'text' as const, op: 'contains' as const, expected: 'Lamp', source: { kind: 'observed' as const } },
+        { id: `S${i + 1}.C3`, after: 'start', target: 'T3', read: 'items' as const, op: 'any_equal' as const, expected: 'Harvest Table', source: { kind: 'observed' as const } },
+        { id: `S${i + 1}.C4`, after: `S${i + 1}.A1`, target: 'T2', read: 'text' as const, op: 'equals' as const, expected_from: `S${i + 1}.C2`, source: src('R1', '그 상품의 상세가 열린다') },
+        { id: `S${i + 1}.C5`, after: `S${i + 1}.A1`, read: 'url' as const, op: 'contains' as const, expected: 'item=', source: rule },
+      ],
+    })),
+    unplanned: [],
+  };
+  p.scenarios.push({ id: 'S3', title: '준비 실패', covers: ['R1'], start: { url: shop }, steps: [{ id: 'S3.A1', op: 'click', target: 'T1' }],
+    checks: [
+      { id: 'S3.C1', after: 'start', target: 'T4', read: 'visible', op: 'equals', expected: 'true', source: { kind: 'observed' }, precondition: true },
+      { id: 'S3.C2', after: 'S3.A1', target: 'T2', read: 'visible', op: 'equals', expected: 'true', source: src('R1', '상세가 열린다') },
+    ] });
+  const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir('m2'), timeoutMs: 2000 });
+  const log = readFileSync(`${r.runDir}/playwright.log`, 'utf8');
+  assert.deepEqual(r.problems, [], log);
+  const [ok, bug, pre] = r.scenarios;
+  assert.equal(ok.ready, true, '시작 증거는 화면이 멈춘 뒤 찍는다');
+  assert.ok(readFileSync(`${r.runDir}/${ok.startEvidence![0]}`, 'utf8').includes('Orb Lamp'), '시작 증거가 로딩 화면이 아니다');
+  assert.deepEqual(ok.checks.map(c => c.status), ['passed', 'passed', 'passed', 'passed', 'passed'], JSON.stringify(ok.checks));
+  assert.equal(ok.checks[3].expected, 'Orb Lamp', '관측 참조는 앞선 검사의 실제 값으로 풀린다');
+  assert.equal(ok.precondition, 'met');
+  assert.deepEqual(bug.checks.map(c => c.status), ['passed', 'passed', 'passed', 'mismatch', 'passed']);
+  assert.deepEqual([bug.checks[3].expected, bug.checks[3].actual], ['Orb Lamp', 'Harvest Table']);
+  assert.deepEqual([pre.precondition, pre.valid, pre.steps[0].status, pre.checks[1].status], ['failed', true, 'not_run', 'not_run']);
+  const v = Object.fromEntries(preclassify(p, r).map(x => [x.id, x]));
+  assert.deepEqual([v['S3.C1'].class, v['S3.C2'].class, v['S3.C2'].cause], ['precondition_failed', 'not_run', 'S3.C1'], '준비 실패는 결함 후보가 아니다');
+  assert.equal(v['S2.C4'].class, 'mismatch');
+});
+
+test('reconcile·1차 분류: 관측 참조는 정상적으로 읽은 값만 쓰고, 실행 안 된 선행조건은 준비 실패가 아니다', () => {
+  const p = plan();
+  const s = p.scenarios[0];
+  s.checks = [
+    { id: 'S1.C1', after: 'start', target: 'T3', read: 'text', op: 'contains', expected: '장바구니', source: { kind: 'observed' }, precondition: true },
+    { id: 'S1.C2', after: 'start', target: 'T1', read: 'count', op: 'greater', expected: '0', source: { kind: 'observed' }, precondition: true },
+    { id: 'S1.C3', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected_from: 'S1.C1', source: src('R1', '1 늘어난다') },
+  ];
+  const ledger = (refStatus: string) => [
+    e('start', 'S1', { status: 'ok' }), e('check', 'S1.C1', { status: refStatus, actual: 'BAD' }), e('check', 'S1.C2', { status: 'passed', actual: '30' }),
+    e('act', 'S1.A1', { status: 'ok' }), e('check', 'S1.C3', { status: 'passed', actual: 'BAD' }), policyOk('S1')];
+  const forged = reconcile(p, ledger('unresolved')).scenarios[0];
+  assert.equal(forged.checks[2].status, 'error', '미해결 기록의 actual로 관측 참조를 통과시키지 않는다');
+  assert.equal(reconcile(p, ledger('passed')).scenarios[0].checks[2].status, 'passed');
+
+  const startFailed = reconcile(p, [e('start', 'S1', { status: 'failed' }), policyOk('S1')]);
+  const v = preclassify({ ...p, scenarios: [s] }, { runDir: '', exitCode: 1, problems: [], requirements: [], scenarios: [startFailed.scenarios[0]] });
+  assert.deepEqual(v.filter(x => x.kind === 'check').map(x => x.class), ['not_run', 'not_run', 'not_run'], JSON.stringify(v));
 });

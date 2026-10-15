@@ -69,8 +69,9 @@ try {
   const j = await judge({ plan: e.plan, run, send, model: a['triage-model']!, budget, reproduceDir: join(out, 'repro') });
   timing.judge = Date.now() - t0 - timing.explore - timing.run;
   summary = { ...summary, run: { exitCode: run.exitCode, problems: run.problems,
-    scenarios: run.scenarios.map(s => ({ id: s.id, valid: s.valid, start: s.start, steps: s.steps.map(x => x.status), checks: s.checks.map(c => c.status) })) },
-    verdicts: j.verdicts.map(v => ({ id: v.id, observed: v.observed, class: v.class, reproduction: v.reproduction })), requirements: j.requirements };
+    scenarios: run.scenarios.map(s => ({ id: s.id, valid: s.valid, start: s.start, ready: s.ready, precondition: s.precondition, steps: s.steps.map(x => x.status), checks: s.checks.map(c => c.status) })) },
+    verdicts: j.verdicts.map(v => ({ id: v.id, observed: v.observed, class: v.class, reproduction: v.reproduction })), requirements: j.requirements,
+    observations: e.plan.observations };
 } finally {
   await browser.close();
   save('calls.json', calls);

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>shop</title></head>
+<body>
+<main id="app"><p>불러오는 중…</p></main>
+<script>
+  // 늦게 그리는 SPA: load 뒤 0.6초에 내용을 그린다. #bug이면 카드 링크가 모두 같은 상품으로 간다.
+  const q = new URLSearchParams(location.search);
+  const items = ['Orb Lamp', 'Arc Lamp', 'Harvest Table'];
+  setTimeout(() => {
+    const app = document.getElementById('app');
+    if (q.get('item')) { app.innerHTML = `<h1>${q.get('item')}</h1><p>상세</p>`; return; }
+    app.innerHTML = '<h1>상품</h1><ul>' + items.map(name => {
+      const to = location.hash === '#bug' ? 'Harvest Table' : name;
+      return `<li><a href="?item=${encodeURIComponent(to)}">${name}</a></li>`;
+    }).join('') + '</ul>';
+  }, 600);
+</script>
+</body>
+</html>

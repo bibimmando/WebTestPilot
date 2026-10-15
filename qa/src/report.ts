@@ -29,7 +29,7 @@ export type Report = {
   /** 페이지 × 문제 단위 항목. 같은 페이지·조건의 반복 발견과 재현은 한 항목의 관측 회차로 합친다 */
   items: ReportItem[];
   /** 실제로 완료한 검사 수. 사이트 정상 보장이 아니다. 관찰값·추정 근거의 통과는 따로 센다 */
-  passed: { checks: number; heuristicChecks: number; observedChecks: number };
+  passed: { checks: number; inferredChecks: number; observedChecks: number };
   /** 행동 실행 결과 집계 */
   actions: { planned: number; attempted: number; completed: number; uncertain: number; notExecutedByReason: Record<string, number> };
 };
@@ -43,7 +43,7 @@ export type ReportItem = {
   title: string;
   /** 사실 원본. 보고서 AI는 이 값을 바꾸지 않는다 */
   expected?: string;
-  expectationBasis?: { kind: 'requirement' | 'constraint' | 'observed' | 'heuristic'; requirementId?: string; quote?: string };
+  expectationBasis?: { kind: 'requirement' | 'constraint' | 'observed' | 'inferred'; requirementId?: string; quote?: string };
   steps: string[];
   startCondition: string;
   /** 관측 회차: 최초 발견과 추가 재현, 화면 조건별 발생을 구분한다 (방향성 9장·Q62) */

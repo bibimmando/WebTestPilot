@@ -200,3 +200,17 @@ test('가격을 모르는 모델은 호출하지 않는다', async () => {
   assert.equal(r.stop, 'budget');
   assert.equal(send.seen.length, 0);
 });
+
+test('새로고침하면 바뀌는 요소는 이름으로 고정할 수 없고, 라벨 영역 안 순서로는 고정한다', async () => {
+  let byName = '', byPosition = '';
+  await run('/related.html', [{ id: 'R1', text: '관련 상품을 누르면 그 상품의 상세가 열린다' }], [
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [
+      { name: 'pin', input: { ref: ref(snap, 'link'), group: false } },
+      { name: 'pin', input: { ref: ref(snap, 'link'), group: false, position: true } },
+    ],
+    (_, all) => { [byName, byPosition] = all.at(-1)!.split('\n').length ? [all.at(-1)!, all.at(-1)!] : ['', '']; return null; },
+  ]);
+  assert.match(byName, /새로 열면 사라지는/);
+  assert.match(byPosition, /"anchor":"\^Related\$","nth":0,"of":2/);
+});

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>related</title></head>
+<body>
+<main>
+  <h1>Orb Lamp</h1>
+  <section><h2>Related</h2><ul id="rel"></ul></section>
+</main>
+<script>
+  // 열 때마다 다른 관련 상품 2개를 보여 준다 (무작위 추천 대신 결정적으로 돌린다).
+  const all = ['Arc Lamp', 'Harvest Table', 'Stone Vase', 'Linen Throw', 'Oak Stool'];
+  const n = Number(localStorage.getItem('visits') ?? 0);
+  localStorage.setItem('visits', n + 1);
+  document.getElementById('rel').innerHTML = [0, 1].map(i => all[(n * 2 + i) % all.length])
+    .map(name => `<li><a href="?item=${encodeURIComponent(name)}">${name}</a></li>`).join('');
+</script>
+</body>
+</html>

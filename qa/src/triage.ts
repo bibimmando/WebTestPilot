@@ -13,7 +13,8 @@ const SYSTEM = readFileSync(new URL('../prompts/triage.md', import.meta.url), 'u
 const EVIDENCE_CHARS = 30_000;
 const MIN_QUOTE = 6;
 
-export type Class = 'passed' | 'passed_heuristic' | 'passed_observed' | 'mismatch' | 'not_run' | 'invalid' | 'uncertain_execution'
+export type Class = 'passed' | 'passed_inferred' | 'passed_observed' | 'mismatch' | 'not_run' | 'invalid' | 'uncertain_execution'
+  | 'precondition_failed'
   | 'needs_triage' | 'app_defect_candidate' | 'automation_failure' | 'uncertain';
 export type Quote = { file: string; text: string };
 export type Verdict = {
@@ -63,9 +64,14 @@ export function preclassify(plan: Plan, run: RunResult): Verdict[] {
         const res = r.checks.find(y => y.id === x.id)!;
         const base = { id: c.id, scenario: s.id, kind: 'check' as const, ...origin(c), ...(res.error ? { error: res.error } : {}) };
         // 근거가 약한 통과는 따로 센다. 관찰값 근거의 통과는 시작 상태 확인이지 기능 검사 통과가 아니다.
-        if (res.status === 'passed') out.push({ ...base, observed: 'passed', class: c.source.kind === 'heuristic' ? 'passed_heuristic' : c.source.kind === 'observed' ? 'passed_observed' : 'passed' });
-        else if (res.status === 'mismatch') out.push({ ...base, observed: 'mismatch', class: 'mismatch' });
+        if (res.status === 'passed') out.push({ ...base, observed: 'passed', class: c.source.kind === 'inferred' ? 'passed_inferred' : c.source.kind === 'observed' ? 'passed_observed' : 'passed' });
+        // 선행조건 실패는 검사할 상태를 만들지 못한 것이다. 결함 후보로 세지 않고 뒤 항목의 원인으로 남긴다.
         else if (res.status === 'not_run') out.push({ ...base, observed: 'not_run', class: 'not_run', cause: cause ?? '알 수 없음' });
+        else if (c.precondition) {
+          cause ??= c.id;
+          out.push({ ...base, observed: `precondition:${[res.status, res.count].filter(v => v !== undefined).join(':')}`, class: 'precondition_failed' });
+        }
+        else if (res.status === 'mismatch') out.push({ ...base, observed: 'mismatch', class: 'mismatch' });
         else {
           if (res.status === 'error') cause ??= c.id;
           out.push({ ...base, observed: [res.status, res.count].filter(v => v !== undefined).join(':'), class: 'needs_triage' });
@@ -167,14 +173,17 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
   // 검사는 기대·실제·읽기 방식·시점을 필드로 넘긴다. 문장 요약만 주면 읽기 방식 차이 같은 자동화 원인을 가리기 어렵다.
   const c = v.kind === 'check' ? s.checks.find(x => x.id === v.id)! : undefined;
   const res = c ? r.checks.find(x => x.id === c.id) : undefined;
-  const comparison = c && res ? { read: c.read, op: c.op, expected: c.expected, actual: res.actual ?? null, matchedElements: res.count ?? null,
-    after: c.after, expectationBasis: c.source.kind, evidenceFiles: res.evidence ?? [] } : undefined;
+  // 관측 참조면 expected는 참조한 검사가 실제로 읽은 값이고, 무엇을 참조했는지(expectedFrom)도 함께 넘긴다.
+  const comparison = c && res ? { read: c.read, op: c.op, expected: res.expected ?? null, ...(c.expected_from ? { expectedFrom: c.expected_from } : {}),
+    actual: res.actual ?? null, matchedElements: res.count ?? null, after: c.after, expectationBasis: c.source.kind,
+    ...(res.reason ? { reason: res.reason } : {}), evidenceFiles: res.evidence ?? [] } : undefined;
   return [
     '요구사항:', ...plan.requirements.filter(q => s.covers.includes(q.id)).map(q => `- ${q.id}: ${q.text}`),
     `시나리오 ${s.id}: ${s.title}`,
     `실패한 항목 ${v.id}: ${JSON.stringify(item)}`,
     ...(targetId ? [`대상 ${targetId}: ${JSON.stringify(plan.targets[targetId])} (탐색 때 유일하게 찾은 요소)`] : []),
     `실행 기록: ${v.observed}`,
+    `시작 화면: ${r.ready === false ? '기한 안에 멈추지 않음(로딩 중일 수 있음)' : '멈춘 뒤 기록'}, 선행조건 ${r.precondition}`,
     ...(comparison ? [`비교 기록: ${JSON.stringify(comparison)}`] : []),
     ...(v.error ? [`오류 원문: ${v.error}`] : []),
     '증거 파일 (*.start.aria.txt는 시작 직후, 나머지는 실패 시점):',
@@ -184,8 +193,9 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
 
 /**
  * 결함 후보(원래 불일치이거나 AI가 결함 후보로 본 항목)의 시나리오를 최초 실행 폴더에 고정된 plan·정책으로 한 번 재실행한다.
- * 실행 코드가 최초와 다르거나, 재실행이 무효이거나, 시작 상태 지문이 다르면 reproduction_inconclusive.
- * shortcut: 시작 지문은 URL과 화면(접근성 snapshot)만 본다. 서버 상태가 다른 경우는 앱별 시작 fixture를 만들 때 포함한다.
+ * 실행 코드가 최초와 다르거나, 재실행이 무효이거나, 재실행에서 선행조건(시작 조건)이 통과하지 못하면 reproduction_inconclusive.
+ * 화면 전체 지문은 쓰지 않는다: 목록 순서·추천처럼 매번 바뀌는 영역 때문에 같은 시작 상태도 다르게 보인다.
+ * 선행조건이 없는 시나리오는 시작 URL만 같다는 뜻이므로 결과에 그렇게 적는다.
  */
 export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir: string; timeoutMs?: number }): Promise<RunResult | undefined> {
   // 원래 불일치는 AI 분류 결과와 상관없이 재현한다. 자동화 문제로 분류돼도 재현 여부는 별도 정보다.
@@ -204,10 +214,16 @@ export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir
     const inconclusive = (detail: string) => { v.reproduction = 'reproduction_inconclusive'; v.reproductionDetail = detail; };
     if (changed.length) { inconclusive(`실행 코드가 최초와 다름: ${changed.join(', ')}`); continue; }
     if (!second.valid) { inconclusive(`재실행 무효: ${second.invalid.join('; ')}`); continue; }
-    if (!first.startHash || first.startHash !== second.startHash) { inconclusive('시작 화면이 최초 실행과 다름'); continue; }
-    const before = signature(first, v);
-    const after = signature(second, v);
-    if (after === before) v.reproduction = 'reproduced';
+    if (second.precondition === 'failed') { inconclusive('재실행에서 선행조건(시작 조건)이 통과하지 못함'); continue; }
+    const relative = plan.scenarios.flatMap(s => s.checks).find(c => c.id === v.id)?.expected_from !== undefined;
+    const before = signature(first, v, relative);
+    const after = signature(second, v, relative);
+    if (after === before) {
+      v.reproduction = 'reproduced';
+      const c2 = second.checks.find(x => x.id === v.id);
+      v.reproductionDetail = [second.precondition === 'none' ? '시작 조건 미선언(URL만 확인)' : '',
+        relative && c2 ? `관측 참조 재실행: 기대 ${JSON.stringify(c2.expected ?? null)}, 실제 ${JSON.stringify(c2.actual ?? null)}` : ''].filter(Boolean).join('; ') || undefined;
+    }
     else if (after === 'passed' || after === 'ok') { v.reproduction = 'flaky'; v.reproductionDetail = `재실행 결과: ${after}`; }
     else inconclusive(`재실행 결과가 다름: ${after}`);
   }
@@ -217,10 +233,12 @@ export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir
 const isCandidate = (v: Verdict) => v.observed === 'mismatch' || v.class === 'app_defect_candidate';
 
 /** 같은 결과인지 비교하는 서명. 오류 문구의 숫자(시간 등)는 지우고 비교한다. */
-function signature(r: ScenarioResult, v: Verdict): string {
+function signature(r: ScenarioResult, v: Verdict, relative = false): string {
   const err = (e?: string) => (e ?? '').replace(/\d+/g, '#');
   if (v.kind === 'check') {
     const c = r.checks.find(x => x.id === v.id)!;
+    // 관측 참조 검사는 참조한 값(예: 바뀌는 추천 카드 이름)이 회차마다 달라도 같은 규칙이 다시 깨지면 같은 결과다. 값은 detail에 남긴다.
+    if (relative) return c.status === 'passed' ? 'passed' : `${c.status}|${c.count ?? ''}|${err(c.error)}`;
     return c.status === 'passed' ? 'passed' : `${c.status}|${c.actual ?? ''}|${c.count ?? ''}|${err(c.error)}`;
   }
   if (v.kind === 'act') {

@@ -36,7 +36,7 @@ const src = (id: string, quote: string) => ({ kind: 'requirement' as const, id, 
 
 function plan(): Plan {
   return {
-    version: 1,
+    version: 1, observations: [],
     requirements: [
       { id: 'R1', text: '담기를 누르면 장바구니에 5개가 담긴다' },
       { id: 'R2', text: '쿠폰 적용 창에서 확인을 누를 수 있다' },
@@ -54,7 +54,7 @@ function plan(): Plan {
       { id: 'S1', title: '담기', covers: ['R1'], start: { url: `${origin}/list.html` },
         steps: [{ id: 'S1.A1', op: 'click', target: 'T2' }],
         checks: [
-          { id: 'S1.C1', after: 'start', target: 'T1', read: 'count', op: 'equals', expected: '30', source: { kind: 'heuristic', quote: '목록은 처음 불러온 상품을 모두 보여 준다' } },
+          { id: 'S1.C1', after: 'start', target: 'T1', read: 'count', op: 'equals', expected: '30', source: { kind: 'inferred', quote: '목록은 처음 불러온 상품을 모두 보여 준다' } },
           { id: 'S1.C2', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (5)', source: src('R1', '5개가 담긴다') },
         ] },
       { id: 'S2', title: '사라진 버튼', covers: ['R2'], start: { url: `${origin}/modal.html` },
@@ -106,7 +106,7 @@ test('분류·재현: 재현되는 불일치, AI가 인용으로 분류한 사�
   const j = await judge({ plan: p, run, send, model: 'claude-sonnet-5-5', budget, reproduceDir: dir('judge-repro'), timeoutMs: 1500 });
   const v = Object.fromEntries(j.verdicts.map(x => [x.id, x]));
 
-  assert.equal(v['S1.C1'].class, 'passed_heuristic');
+  assert.equal(v['S1.C1'].class, 'passed_inferred');
   // 불일치도 AI 분류에 보낸다. 분류하지 못하면 mismatch로 남고 재현은 그대로 한다.
   assert.deepEqual([v['S1.C2'].observed, v['S1.C2'].class, v['S1.C2'].reproduction], ['mismatch', 'mismatch', 'reproduced']);
   assert.match(JSON.stringify(v['S1.C2'].triage), /분류 미완료: no_submit/);
@@ -155,7 +155,7 @@ test('AI 분류가 끝나지 않으면 uncertain으로 남기고 이유를 기�
 test('1차 분류: 무효 시나리오와 실행 불명확 행동은 AI에 보내지 않는다', () => {
   const p = plan();
   const scenario = (id: string, extra: Partial<RunResult['scenarios'][number]>) => ({
-    id, valid: true, invalid: [], start: 'ok' as const, steps: [], checks: [], blocked: [], violations: [], ...extra });
+    id, valid: true, invalid: [], start: 'ok' as const, precondition: 'none' as const, steps: [], checks: [], blocked: [], violations: [], ...extra });
   const run = {
     runDir: '', exitCode: 1, problems: [], requirements: [],
     scenarios: [
@@ -173,7 +173,7 @@ test('1차 분류: 무효 시나리오와 실행 불명확 행동은 AI에 보�
   assert.deepEqual([v['S3.C1'].class, v['S3.C1'].observed], ['needs_triage', 'unresolved:2']);
 
   const errored = { ...run, scenarios: [scenario('S1', { steps: [{ id: 'S1.A1', status: 'not_run' }], checks: [
-    { id: 'S1.C1', status: 'error', error: 'locator.count: Target closed', source: 'heuristic', expected: '30' },
+    { id: 'S1.C1', status: 'error', error: 'locator.count: Target closed', source: 'inferred', expected: '30' },
     { id: 'S1.C2', status: 'not_run', source: 'requirement', expected: '장바구니 (5)' }] }), run.scenarios[1], run.scenarios[2]] } satisfies RunResult;
   const w = Object.fromEntries(preclassify(p, errored).map(x => [x.id, x]));
   assert.deepEqual([w['S1.C1'].class, w['S1.C1'].error], ['needs_triage', 'locator.count: Target closed']);

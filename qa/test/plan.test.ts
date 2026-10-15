@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validate, freeze, type Draft, type Pinned, type Requirement } from '../src/plan.ts';
+import { validate, freeze, compareValues, numberIn, type Draft, type Pinned, type Requirement } from '../src/plan.ts';
 
 const origin = 'http://app.test';
 const reqs: Requirement[] = [
@@ -91,11 +91,11 @@ test('관찰값은 시작 시점 검사의 근거로만 쓰고, 행동 뒤 결�
   assert.ok(after.some(e => e.includes('S1.C2') && e.includes('observed value')), after.join('\n'));
   const atStart = errorsOf(d => { d.scenarios[0].checks.push({ ...d.scenarios[0].checks[0], id: 'S1.C2', after: 'start', source: { kind: 'observed' } }); });
   assert.ok(!atStart.some(e => e.includes('observed value')), atStart.join('\n'));
-  const guess = errorsOf(d => { d.scenarios[0].checks.push({ ...d.scenarios[0].checks[0], id: 'S1.C2', source: { kind: 'heuristic', quote: '증가 버튼은 수량을 하나 늘린다' } }); });
+  const guess = errorsOf(d => { d.scenarios[0].checks.push({ ...d.scenarios[0].checks[0], id: 'S1.C2', source: { kind: 'inferred', quote: '증가 버튼은 수량을 하나 늘린다' } }); });
   assert.deepEqual(guess, []);
-  // 추정 근거는 규칙 문장이 있어야 한다. 관찰값에 이름만 heuristic으로 붙이는 우회를 막는다.
-  const bare = errorsOf(d => { d.scenarios[0].checks.push({ ...d.scenarios[0].checks[0], id: 'S1.C2', source: { kind: 'heuristic' } }); });
-  assert.ok(bare.some(e => e.includes('heuristic needs source.quote')), bare.join('\n'));
+  // 추정 근거는 규칙 문장이 있어야 한다. 관찰값에 이름만 inferred로 붙이는 우회를 막는다.
+  const bare = errorsOf(d => { d.scenarios[0].checks.push({ ...d.scenarios[0].checks[0], id: 'S1.C2', source: { kind: 'inferred' } }); });
+  assert.ok(bare.some(e => e.includes('inferred needs source.quote')), bare.join('\n'));
 });
 
 test('시작 상태에서 쓰는 대상은 시작 페이지에서 pin했어야 한다', () => {
@@ -119,4 +119,65 @@ test('ID 형식과 중복, 값이 필요한 단계를 검사한다', () => {
   assert.ok(errorsOf(d => { d.scenarios[0].checks[0].id = 'S1.A1'; }).some(e => e.includes('duplicate') || e.includes('must match')));
   assert.ok(errorsOf(d => { d.scenarios[0].steps.push({ id: 'S1.A2', op: 'fill', target: 'T2' }); }).some(e => e.includes('needs a value')));
   assert.ok(errorsOf(d => { d.scenarios[0].checks = []; }).some(e => e.includes('at least one check')));
+});
+
+test('관측 참조는 같은 시나리오에서 먼저 실행되는 검사만 가리키고, 비교 규칙의 근거가 따로 있어야 한다', () => {
+  const name = { id: 'S1.C0', after: 'start', target: 'T2', read: 'text' as const, op: 'equals' as const, expected: '1', source: { kind: 'observed' as const } };
+  const rel = { id: 'S1.C2', after: 'S1.A1', target: 'T2', read: 'text' as const, op: 'equals' as const, expected_from: 'S1.C0',
+    source: { kind: 'inferred' as const, quote: '누른 카드의 이름이 열린 상세의 제목이 된다' } };
+  assert.deepEqual(errorsOf(d => { d.scenarios[0].checks.push(name, rel); }), []);
+  // 뒤에 실행되는 검사·자기 자신·다른 시나리오 검사는 참조할 수 없다.
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push({ ...name, after: 'S1.A1' }, { ...rel, expected_from: 'S1.C9' }); })
+    .some(e => e.includes('runs before it')));
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push(name, { ...rel, expected_from: 'S1.C2' }); }).some(e => e.includes('runs before it')));
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push(name, { ...rel, source: { kind: 'observed' } }); }).some(e => e.includes('rule basis')));
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push(name, { ...rel, expected: 'x' }); }).some(e => e.includes('exactly one')));
+});
+
+test('읽기 종류별로 대상·비교를 제한한다: url은 대상 없음, items는 그룹과 목록 조건만, less·greater는 숫자', () => {
+  const url = { id: 'S1.C2', after: 'S1.A1', read: 'url' as const, op: 'contains' as const, expected: '/p/',
+    source: { kind: 'inferred' as const, quote: '상품을 누르면 상세 주소로 이동한다' } };
+  assert.deepEqual(errorsOf(d => { d.scenarios[0].checks.push(url); }), []);
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push({ ...url, target: 'T2' }); }).some(e => e.includes('takes no target')));
+  const items = { ...url, target: 'T3', read: 'items' as const, op: 'all_contain' as const, expected: 'Lighting' };
+  assert.deepEqual(errorsOf(d => { d.scenarios[0].checks.push(items); }), []);
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push({ ...items, op: 'equals' }); }).some(e => e.includes('allows op')));
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push({ ...items, target: 'T2' }); }).some(e => e.includes('must be pinned as a group')));
+  assert.ok(errorsOf(d => { Object.assign(d.scenarios[0].checks[0], { op: 'greater', expected: '많이' }); }).some(e => e.includes('needs a number')));
+});
+
+test('화면 제약 근거는 탐색 중 본 텍스트를 인용해야 한다', () => {
+  const draft = good();
+  draft.scenarios[0].checks.push({ id: 'S1.C2', after: 'S1.A1', target: 'T2', read: 'value', op: 'less', expected: '11',
+    source: { kind: 'constraint', quote: '최대 10개' } });
+  assert.deepEqual(validate(draft, reqs, pins, [origin], '수량 (최대 10개까지)'), []);
+  assert.ok(validate(draft, reqs, pins, [origin], '수량').some(e => e.includes('not seen during exploration')));
+});
+
+test('비교 규칙: 숫자 비교는 첫 숫자로, 목록 조건은 빈 목록을 통과시키지 않는다', () => {
+  assert.equal(numberIn('$1,450.50'), 1450.5);
+  assert.ok(compareValues('greater', '장바구니 (3)', '2'));
+  assert.ok(!compareValues('less', '가격 없음', '2'));
+  assert.ok(compareValues('all_contain', '["Lighting A","Lighting B"]', 'Lighting'));
+  assert.ok(!compareValues('all_contain', '["Lighting A","Ceramics B"]', 'Lighting'));
+  assert.ok(compareValues('any_equal', '["a","b"]', 'b'));
+  assert.ok(!compareValues('all_equal', '[]', 'a'));
+  assert.ok(compareValues('not_equals', 'a', 'b'));
+});
+
+test('선행조건은 시작 상태 확인에만 쓰고, 기능 검사를 선행조건으로 숨길 수 없다', () => {
+  const ready = { id: 'S1.C2', after: 'start', target: 'T3', read: 'count' as const, op: 'greater' as const, expected: '0',
+    source: { kind: 'observed' as const }, precondition: true };
+  assert.deepEqual(errorsOf(d => { d.scenarios[0].checks.push(ready); }), []);
+  assert.ok(errorsOf(d => { d.scenarios[0].checks[0].precondition = true; }).some(e => e.includes('precondition is only')), '행동 뒤 요구사항 검사');
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push({ ...ready, after: 'S1.A1', source: { kind: 'inferred', quote: '목록은 비어 있지 않아야 한다는 일반 규칙' } }); })
+    .some(e => e.includes('precondition is only')));
+});
+
+test('관측 참조로 항상 통과하는 검사를 막는다: 같은 시점·같은 대상 재비교, 빈 값 포함 비교', () => {
+  const first = { id: 'S1.C2', after: 'S1.A1', target: 'T2', read: 'value' as const, op: 'equals' as const, expected: '2', source: { kind: 'requirement' as const, id: 'R1', quote: '1 증가한다' } };
+  const same = { ...first, id: 'S1.C3', expected: undefined, expected_from: 'S1.C2', source: { kind: 'inferred' as const, quote: '같은 칸은 같은 값을 보여 준다는 일반 규칙' } };
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push(first, same); }).some(e => e.includes('always passes')));
+  assert.ok(!compareValues('contains', '아무 값', ''));
+  assert.ok(!compareValues('any_contain', '["a"]', ' '));
 });

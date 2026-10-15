@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
-import { openContext, snapshot, resolveRef, resolveText, resolveGroup, toLocator, valuePattern, parseSnapshot, ariaText, type AriaNode } from '../src/browser.ts';
+import { openContext, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, type AriaNode } from '../src/browser.ts';
 
 let browser: Browser | undefined;
 let server: Server | undefined;
@@ -211,4 +211,56 @@ test('ariaText는 모델이 본 텍스트와 같다: 숨긴 텍스트 제외, CS
   const seen = snap.split('\n').find(l => l.includes('button') && l.includes('담기') && !l.includes('listitem'))!;
   assert.ok(seen.includes(await read('d')), `실행에서 읽은 버튼 텍스트(${await read('d')})가 탐색 snapshot(${seen})과 같아야 한다`);
   assert.match(snap, /Textiles/, '모델이 보는 YAML snapshot도 같은 텍스트');
+});
+
+test('그룹 안 순서: 고유한 라벨 옆의 이름 없는 아이콘 버튼과 숫자 값을 고정하고, 값이 바뀌어도 같은 요소를 찾는다', async () => {
+  const qty = `<div><div>Quantity</div><div><button disabled><svg width="9" height="9"></svg></button><span>1</span>
+    <button onclick="const s=this.previousElementSibling; s.textContent=+s.textContent+1; this.parentElement.firstElementChild.disabled=false">
+    <svg width="9" height="9"></svg></button></div></div><p>Price $120</p>`;
+  const p = await page(qty);
+  const snap = await snapshot(p);
+  const plus = refs(snap, '- button [ref=').at(-1)!;
+  const r = await resolveRef(p, plus);
+  assert.ok(r.ok, JSON.stringify(r) + '\n' + snap);
+  assert.deepEqual(r.target, { role: 'button', anchor: '^Quantity$', nth: 1, of: 2 });
+  // ref 없는 숫자 텍스트는 담은 요소의 ref와 text로 고정한다.
+  const value = await resolveText(p, refs(snap, '- generic [ref=').at(-1)!, '1');
+  assert.ok(value.ok && value.target.anchor === '^Quantity$', JSON.stringify(value) + '\n' + snap);
+  await toLocator(p, r.target).click();
+  assert.equal(await toLocator(p, value.target).textContent(), '2', '값이 바뀌어도 같은 칸을 읽는다');
+  assert.equal(await shapeChanged(p, r.target), false);
+  await p.evaluate(() => document.querySelector('button')!.remove());
+  assert.equal(await shapeChanged(p, r.target), true, '그룹 모양이 바뀌면 순서가 다른 요소를 가리킬 수 있다');
+
+  // 숫자가 블록 요소(자기 ref가 있는 값)여도 같은 방식으로 고정한다.
+  const block = await page(qty.replace('<span>1</span>', '<div>1</div>'));
+  const bs = await snapshot(block);
+  const bv = await resolveRef(block, refOf(bs, ': "1"'));
+  assert.ok(bv.ok && bv.target.anchor === '^Quantity$', JSON.stringify(bv) + '\n' + bs);
+
+  // 같은 라벨이 둘이면 기준점이 될 수 없다.
+  const twice = await page(qty + qty);
+  const s2 = await snapshot(twice);
+  const again = await resolveRef(twice, refs(s2, '- button [ref=').at(-1)!);
+  assert.deepEqual([again.ok, !again.ok && again.reason], [false, 'unnamed']);
+});
+
+test('그룹 안 순서: 실행 때 라벨이 중복되면 모양 변화로 보고, 숫자 칸이 숫자가 아니게 돼도 같은 칸을 읽는다', async () => {
+  const p = await page(`<div><div>수량</div><div><button><svg width="9" height="9"></svg></button><span id="q">1</span><button><svg width="9" height="9"></svg></button></div></div>`);
+  const snap = await snapshot(p);
+  const value = await resolveText(p, refs(snap, '- generic [ref=').at(-1)!, '1');
+  assert.ok(value.ok, JSON.stringify(value) + '\n' + snap);
+  await p.evaluate(() => { document.getElementById('q')!.textContent = 'NaN'; });
+  assert.equal(await toLocator(p, value.target).textContent(), 'NaN', '값이 깨져도 읽어서 불일치로 비교할 수 있어야 한다');
+  assert.equal(await shapeChanged(p, value.target), false);
+  await p.evaluate(() => document.body.insertAdjacentHTML('beforeend', '<div><div>수량</div><div><span>9</span></div></div>'));
+  assert.equal(await shapeChanged(p, value.target), true, '같은 라벨 영역이 하나 더 생기면 어느 영역인지 모른다');
+});
+
+test('그룹 고정: 목록 컨테이너를 고르면 그 안의 항목들을 그룹으로 본다', async () => {
+  const p = await page('<h1>상품</h1><ul><li>a</li><li>b</li><li>c</li></ul>');
+  const snap = await snapshot(p);
+  const r = await resolveGroup(p, refOf(snap, '- list'));
+  assert.ok(r.ok, JSON.stringify(r) + '\n' + snap);
+  assert.equal(await toLocator(p, r.target).count(), 3);
 });
