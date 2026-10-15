@@ -86,6 +86,18 @@ test('covers에 넣은 요구사항은 그것을 인용한 검사가 있어야 �
   assert.ok(errors.some(e => e.includes('covers R1 but no check cites R1')), errors.join('\n'));
 });
 
+test('관찰값은 시작 시점 검사의 근거로만 쓰고, 행동 뒤 결과의 기대값 근거로는 거부한다', () => {
+  const after = errorsOf(d => { d.scenarios[0].checks.push({ ...d.scenarios[0].checks[0], id: 'S1.C2', source: { kind: 'observed' } }); });
+  assert.ok(after.some(e => e.includes('S1.C2') && e.includes('observed value')), after.join('\n'));
+  const atStart = errorsOf(d => { d.scenarios[0].checks.push({ ...d.scenarios[0].checks[0], id: 'S1.C2', after: 'start', source: { kind: 'observed' } }); });
+  assert.ok(!atStart.some(e => e.includes('observed value')), atStart.join('\n'));
+  const guess = errorsOf(d => { d.scenarios[0].checks.push({ ...d.scenarios[0].checks[0], id: 'S1.C2', source: { kind: 'heuristic', quote: '증가 버튼은 수량을 하나 늘린다' } }); });
+  assert.deepEqual(guess, []);
+  // 추정 근거는 규칙 문장이 있어야 한다. 관찰값에 이름만 heuristic으로 붙이는 우회를 막는다.
+  const bare = errorsOf(d => { d.scenarios[0].checks.push({ ...d.scenarios[0].checks[0], id: 'S1.C2', source: { kind: 'heuristic' } }); });
+  assert.ok(bare.some(e => e.includes('heuristic needs source.quote')), bare.join('\n'));
+});
+
 test('시작 상태에서 쓰는 대상은 시작 페이지에서 pin했어야 한다', () => {
   const other = new Map(pins);
   other.set('T2', { ...pins.get('T2')!, url: origin + '/other' });

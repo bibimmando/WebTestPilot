@@ -54,7 +54,7 @@ function plan(): Plan {
       { id: 'S1', title: '담기', covers: ['R1'], start: { url: `${origin}/list.html` },
         steps: [{ id: 'S1.A1', op: 'click', target: 'T2' }],
         checks: [
-          { id: 'S1.C1', after: 'start', target: 'T1', read: 'count', op: 'equals', expected: '30', source: { kind: 'heuristic' } },
+          { id: 'S1.C1', after: 'start', target: 'T1', read: 'count', op: 'equals', expected: '30', source: { kind: 'heuristic', quote: '목록은 처음 불러온 상품을 모두 보여 준다' } },
           { id: 'S1.C2', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (5)', source: src('R1', '5개가 담긴다') },
         ] },
       { id: 'S2', title: '사라진 버튼', covers: ['R2'], start: { url: `${origin}/modal.html` },
@@ -68,23 +68,31 @@ function plan(): Plan {
   };
 }
 
-// 가짜 분류 모델: 첫 답은 증거에 없는 문장을 인용하고, 거부되면 시작 snapshot의 실제 줄을 인용한다.
-function fakeTriage(): Send & { calls: number } {
+// 가짜 분류 모델. 항목마다 다르게 답한다.
+// - S2.A1(사라진 버튼): 첫 답은 시작 snapshot만 인용해 거부되고, 다시 실패 시점 snapshot을 인용한다.
+// - S3.C1(불일치): 자동화 실패로 분류한다. 원래 불일치는 남아야 한다.
+// - 그 밖(S1.C2 불일치): 분류하지 않고 끝낸다. 분류 못 한 불일치는 mismatch로 남아야 한다.
+function fakeTriage(): Send & { calls: number; firstMessages: string[] } {
   const send = async (req: Anthropic.MessageCreateParamsNonStreaming) => {
     send.calls++;
+    const first = String(req.messages[0].content);
+    if (req.messages.length === 1) send.firstMessages.push(first);
     const last = req.messages.at(-1)!;
     const rejected = Array.isArray(last.content) && last.content.some(b => b.type === 'tool_result' && b.is_error);
-    // 거부 전: 시작 snapshot의 줄만 인용 (실패 시점 증거 인용이 없어서 거부됨). 거부 후: 실패 시점 snapshot을 인용.
-    const file = rejected ? 'evidence/S2.A1.aria.txt' : 'evidence/S2.start.aria.txt';
+    const classify = (input: Record<string, unknown>) => ({ stop_reason: 'tool_use', content: [{ type: 'tool_use', id: `t${send.calls}`, name: 'classify', input }] });
+    const answer = first.includes('실패한 항목 S2.A1')
+      ? classify({ class: 'app_defect_candidate', reason: '시작 화면에 계획한 버튼이 없다',
+        quotes: [{ file: rejected ? 'evidence/S2.A1.aria.txt' : 'evidence/S2.start.aria.txt', text: 'button "쿠폰 적용"' }] })
+      : first.includes('실패한 항목 S3.C1')
+        ? classify({ class: 'automation_failure', reason: '값이 응답 타이밍에 따라 바뀐다', quotes: [{ file: 'evidence/S3.C1.aria.txt', text: 'heading "결과 확인"' }] })
+        : { stop_reason: 'end_turn', content: [{ type: 'text', text: '판단하지 않음' }] };
     return {
-      id: 'm', type: 'message', role: 'assistant', model: req.model, stop_reason: 'tool_use', stop_sequence: null,
-      content: [{ type: 'tool_use', id: `t${send.calls}`, name: 'classify', input: {
-        class: 'app_defect_candidate', reason: '시작 화면에 계획한 버튼이 없다',
-        quotes: [{ file, text: 'button "쿠폰 적용"' }] } }],
+      id: 'm', type: 'message', role: 'assistant', model: req.model, stop_sequence: null, ...answer,
       usage: { input_tokens: 500, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
     } as unknown as Anthropic.Message;
   };
   send.calls = 0;
+  send.firstMessages = [] as string[];
   return send;
 }
 
@@ -99,23 +107,28 @@ test('분류·재현: 재현되는 불일치, AI가 인용으로 분류한 사�
   const v = Object.fromEntries(j.verdicts.map(x => [x.id, x]));
 
   assert.equal(v['S1.C1'].class, 'passed_heuristic');
-  assert.deepEqual([v['S1.C2'].class, v['S1.C2'].reproduction], ['mismatch', 'reproduced']);
+  // 불일치도 AI 분류에 보낸다. 분류하지 못하면 mismatch로 남고 재현은 그대로 한다.
+  assert.deepEqual([v['S1.C2'].observed, v['S1.C2'].class, v['S1.C2'].reproduction], ['mismatch', 'mismatch', 'reproduced']);
+  assert.match(JSON.stringify(v['S1.C2'].triage), /분류 미완료: no_submit/);
 
   assert.equal(v['S2.A1'].observed, 'not_executed:target_changed:0');
   assert.equal(v['S2.A1'].class, 'app_defect_candidate');
   assert.deepEqual(v['S2.A1'].triage, { reason: '시작 화면에 계획한 버튼이 없다', quotes: [{ file: 'evidence/S2.A1.aria.txt', text: 'button "쿠폰 적용"' }] });
-  assert.equal(send.calls, 2, '실패 시점 증거를 인용하지 않은 답은 거부되고 한 번 더 답한다');
+  assert.equal(send.calls, 4, 'S1.C2 1번 + S2.A1 2번(첫 답 거부) + S3.C1 1번');
   assert.ok(existsSync(`${run.runDir}/triage/S2.A1.json`), 'AI 분류 대화 기록을 남긴다');
   assert.equal(v['S2.A1'].reproduction, 'reproduced');
   assert.deepEqual([v['S2.C1'].class, v['S2.C1'].cause], ['not_run', 'S2.A1']);
 
-  assert.deepEqual([v['S3.C1'].class, v['S3.C1'].reproduction], ['mismatch', 'flaky']);
+  // 자동화 실패로 분류돼도 원래 불일치는 남고 재현도 한다.
+  assert.deepEqual([v['S3.C1'].observed, v['S3.C1'].class, v['S3.C1'].reproduction], ['mismatch', 'automation_failure', 'flaky']);
+  const s3Message = send.firstMessages.find(m => m.includes('실패한 항목 S3.C1'))!;
+  assert.match(s3Message, /비교 기록: \{"read":"text","op":"equals","expected":"짝수","actual":"홀수"/, '기대·실제·읽기 방식을 필드로 전달');
 
   assert.ok(existsSync(`${run.runDir}/verdicts.json`));
   assert.ok(existsSync(`${run.runDir}/evidence/S2.A1.aria.txt`) && existsSync(`${run.runDir}/evidence/S2.A1.png`));
   assert.ok(budget.spent > 0);
   assert.deepEqual(j.requirements.map(r => [r.id, r.classes]), [
-    ['R1', { mismatch: 1 }], ['R2', { app_defect_candidate: 1, not_run: 1 }], ['R3', { mismatch: 1 }],
+    ['R1', { mismatch: 1 }], ['R2', { app_defect_candidate: 1, not_run: 1 }], ['R3', { automation_failure: 1 }],
   ]);
 });
 
@@ -134,6 +147,9 @@ test('AI 분류가 끝나지 않으면 uncertain으로 남기고 이유를 기�
   const again = await judge({ plan: p, run, send: fakeTriage(), model: 'claude-sonnet-5-5', budget: new Budget(0.0001),
     reproduceDir: dir('triage-fail-repro2'), timeoutMs: 1000 });
   assert.ok(j.file.endsWith('verdicts.json') && again.file.endsWith('verdicts-2.json'), '이전 판정 파일을 덮어쓰지 않는다');
+  assert.deepEqual([j.verdicts.find(x => x.id === 'S2.A1')!.triageLog, again.verdicts.find(x => x.id === 'S2.A1')!.triageLog],
+    ['triage/S2.A1.json', 'triage-2/S2.A1.json'], '분류 대화도 판정 회차별로 남는다');
+  assert.ok(existsSync(`${run.runDir}/triage/S2.A1.json`) && existsSync(`${run.runDir}/triage-2/S2.A1.json`));
 });
 
 test('1차 분류: 무효 시나리오와 실행 불명확 행동은 AI에 보내지 않는다', () => {

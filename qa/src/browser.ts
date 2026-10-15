@@ -54,7 +54,7 @@ export function snapshot(page: Page, ref?: string, depth?: number): Promise<stri
  * 만든 locator가 ref 요소를 포함할 때만 성공한다.
  */
 export async function resolveGroup(page: Page, ref: string): Promise<Resolved> {
-  const nodes = parseSnapshot(await snapshot(page));
+  const nodes = parseSnapshot(await tree(page));
   const node = nodes.get(ref);
   if (!node) return { ok: false, ref, reason: 'unknown_ref' };
   let up = node.parent;
@@ -84,7 +84,7 @@ type Node = { ref?: string; role: string; name?: string; text?: string; ownText:
  * 만든 locator가 ref와 같은 요소 하나만 가리킬 때만 성공한다.
  */
 export async function resolveRef(page: Page, ref: string): Promise<Resolved> {
-  const node = parseSnapshot(await snapshot(page)).get(ref);
+  const node = parseSnapshot(await tree(page)).get(ref);
   if (!node) return { ok: false, ref, reason: 'unknown_ref' };
   const base = describe(node);
   if (typeof base === 'string') return { ok: false, ref, reason: base };
@@ -104,10 +104,10 @@ export async function resolveRef(page: Page, ref: string): Promise<Resolved> {
  * 숫자는 패턴으로 바꾸고, 페이지에서 유일하지 않으면 가까운 이름 있는 상위 요소로 범위를 좁힌다.
  */
 export async function resolveText(page: Page, ref: string, text: string): Promise<Resolved> {
-  const nodes = parseSnapshot(await snapshot(page));
+  const nodes = parseSnapshot(await tree(page));
   const node = nodes.get(ref);
   if (!node) return { ok: false, ref, reason: 'unknown_ref' };
-  // 텍스트는 자식 줄(`- text: …`)이나 같은 줄(`- banner [ref=e2]: …`)에 나온다.
+  // 텍스트는 자식 텍스트 조각이나 요소 자신의 text로 나온다.
   if (![node.text ?? '', ...node.ownText].some(t => t.includes(text))) return { ok: false, ref, reason: 'text_not_found' };
   const pattern = valuePattern(text);
   if (!pattern) return { ok: false, ref, reason: 'value_only' };
@@ -130,6 +130,7 @@ export async function resolveText(page: Page, ref: string, text: string): Promis
 }
 
 /** Target을 Playwright API 호출로 조립한다. 문자열을 코드로 실행하지 않는다. */
+// shortcut: Target에 프레임 경로가 없어 iframe 안 요소는 페이지 범위 locator로 찾지 못한다. 필요해지면 Target에 프레임을 추가한다(M2 이후).
 export function toLocator(page: Page, t: Target): Locator {
   const scope: Page | Locator = t.within ? toLocator(page, t.within) : page;
   if (t.role === undefined) return scope.getByText(new RegExp(t.text!));
@@ -157,29 +158,38 @@ export function valuePattern(label: string): string | null {
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
-// 줄 형식: `- role "name" [attr] [ref=e1]: text`. 이름·텍스트는 snapshot이 JSON 문자열로 따옴표를 쓴다.
-const LINE = /^(\s*)- ([a-z]+)(?: ("(?:[^"\\]|\\.)*"))?[^:]*?(?:\[ref=([a-z0-9]+)\])?(?::(?: (.*))?)?$/;
+/** ariaSnapshotJSON의 노드. 텍스트 조각은 문자열로 온다. 모델에게 보여 주는 YAML snapshot과 같은 트리·ref다. */
+export type AriaNode = string | { role: string; name?: string; text?: string; ref?: string; children?: AriaNode[] };
 
-/** snapshot 텍스트를 ref → Node 맵으로 읽는다. `- text:` 줄은 부모의 ownText가 된다. */
-export function parseSnapshot(snap: string): Map<string, Node> {
+/** 대상 고정용 구조화 snapshot. YAML 문자열을 파싱하지 않아 줄 형식(따옴표·속성) 변화에 영향받지 않는다. */
+function tree(page: Page): Promise<AriaNode[]> {
+  return page.locator('body').ariaSnapshotJSON({ mode: 'ai' }) as Promise<AriaNode[]>;
+}
+
+/** 구조화 snapshot을 ref → Node 맵으로 읽는다. 텍스트 조각은 부모의 ownText가 된다. */
+export function parseSnapshot(nodes: AriaNode[]): Map<string, Node> {
   const byRef = new Map<string, Node>();
-  const stack: { indent: number; node: Node }[] = [];
-  for (const line of snap.split('\n')) {
-    const m = line.match(LINE);
-    if (!m) continue;
-    const [, space, role, name, ref, rest] = m;
-    while (stack.length && stack.at(-1)!.indent >= space.length) stack.pop();
-    const parent = stack.at(-1)?.node;
-    const text = rest === undefined || rest === '' ? undefined : unquote(rest);
-    if (role === 'text') { if (parent && text) parent.ownText.push(text); continue; }
-    const node: Node = { ref, role, name: name ? unquote(name) : undefined, text, ownText: [], parent };
-    if (ref) byRef.set(ref, node);
-    stack.push({ indent: space.length, node });
-  }
+  const walk = (list: AriaNode[], parent?: Node) => {
+    for (const n of list) {
+      if (typeof n === 'string' || n.role === 'text') {
+        const t = typeof n === 'string' ? n : n.text;
+        if (parent && t) parent.ownText.push(t);
+        continue;
+      }
+      const node: Node = { ref: n.ref, role: n.role, name: n.name, text: n.text, ownText: [], parent };
+      if (n.ref) byRef.set(n.ref, node);
+      walk(n.children ?? [], node);
+    }
+  };
+  walk(nodes);
   return byRef;
 }
 
-function unquote(s: string): string {
-  if (!s.startsWith('"')) return s;
-  try { return JSON.parse(s); } catch { return s.slice(1, -1); }
+/**
+ * 모델이 snapshot(ai 모드)에서 본 것과 같은 기준의 텍스트. 숨긴 요소는 빠지고 CSS 대소문자 변환은 적용되지 않는다.
+ * 이름이 있는 요소(링크·버튼·제목)는 snapshot에 이름으로 보이므로 이름을, 이름이 없는 요소는 자기 텍스트나 자손 텍스트를 읽는다.
+ */
+export function ariaText(nodes: AriaNode[]): string {
+  return nodes.map(n => typeof n === 'string' ? n : n.name ?? n.text ?? (n.children?.length ? ariaText(n.children) : ''))
+    .join(' ').replace(/\s+/g, ' ').trim();
 }

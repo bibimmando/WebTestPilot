@@ -37,6 +37,7 @@ function plan(): Plan {
       { id: 'R2', text: '쿠폰 적용 창에서 확인을 누를 수 있다' },
       { id: 'R3', text: '이메일을 넣고 가입하면 가입 요청을 보낸다' },
       { id: 'R4', text: '주문 내역은 마이페이지에 남는다' },
+      { id: 'R5', text: '카테고리 표시는 Textiles이다' },
     ],
     targets: {
       T1: { target: { role: 'listitem' }, group: true, url: `${origin}/list.html` },
@@ -46,6 +47,7 @@ function plan(): Plan {
       T5: { target: { role: 'textbox', name: '^이메일$' }, group: false, url: `${origin}/form.html` },
       T6: { target: { role: 'button', name: '^가입$' }, group: false, url: `${origin}/form.html` },
       T7: { target: { role: 'heading', name: '^가입 완료$' }, group: false, url: `${origin}/form.html` },
+      T8: { target: { role: 'paragraph', text: '^Textiles$' }, group: false, url: `${origin}/styled.html` },
     },
     scenarios: [
       { id: 'S1', title: '담기', covers: ['R1'], start: { url: `${origin}/list.html` },
@@ -53,7 +55,7 @@ function plan(): Plan {
         checks: [
           { id: 'S1.C1', after: 'start', target: 'T1', read: 'count', op: 'equals', expected: '30', source: { kind: 'observed' } },
           { id: 'S1.C2', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (1)', source: src('R1', '1 늘어난다') },
-          { id: 'S1.C3', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (5)', source: { kind: 'heuristic' } },
+          { id: 'S1.C3', after: 'S1.A1', target: 'T3', read: 'text', op: 'equals', expected: '장바구니 (5)', source: { kind: 'heuristic', quote: '담기를 누르면 장바구니 개수가 표시된다' } },
         ] },
       { id: 'S2', title: '사라진 버튼', covers: ['R2'], start: { url: `${origin}/modal.html` },
         steps: [{ id: 'S2.A1', op: 'click', target: 'T4' }],
@@ -61,6 +63,9 @@ function plan(): Plan {
       { id: 'S3', title: '가입 요청', covers: ['R3'], start: { url: `${origin}/form.html` },
         steps: [{ id: 'S3.A1', op: 'fill', target: 'T5', value: 'a@b.c' }, { id: 'S3.A2', op: 'click', target: 'T6' }],
         checks: [{ id: 'S3.C1', after: 'S3.A2', target: 'T7', read: 'visible', op: 'equals', expected: 'false', source: src('R3', '가입 요청을 보낸다') }] },
+      // CSS text-transform으로 대문자로 보이지만 DOM 텍스트(모델이 본 값)는 Textiles다. 첫 실측의 오탐 원인 회귀.
+      { id: 'S4', title: '표시 변환', covers: ['R5'], start: { url: `${origin}/styled.html` }, steps: [],
+        checks: [{ id: 'S4.C1', after: 'start', target: 'T8', read: 'text', op: 'equals', expected: 'Textiles', source: src('R5', 'Textiles') }] },
     ],
     unplanned: [{ requirement: 'R4', reason: '로그인 필요' }],
   };
@@ -82,7 +87,8 @@ test('실행: 통과·불일치·대상 사라짐·쓰기 차단을 ledger로 �
   const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir('mixed'), timeoutMs: 1500 });
   const log = readFileSync(`${r.runDir}/playwright.log`, 'utf8');
   assert.deepEqual(r.problems, [], log);
-  const [s1, s2, s3] = r.scenarios;
+  const [s1, s2, s3, s4] = r.scenarios;
+  assert.deepEqual(s4.checks.map(c => [c.status, c.actual]), [['passed', 'Textiles']]);
 
   assert.equal(s1.start, 'ok', log);
   assert.deepEqual(s1.checks.map(c => [c.id, c.status, c.actual]), [
@@ -99,12 +105,13 @@ test('실행: 통과·불일치·대상 사라짐·쓰기 차단을 ledger로 �
   assert.deepEqual(writes, []);
 
   const n = (o: Partial<Record<string, number>>) => ({ passed: 0, mismatch: 0, unresolved: 0, error: 0, not_run: 0, invalid: 0, ...o });
-  assert.deepEqual(r.scenarios.map(s => [s.id, s.valid]), [['S1', true], ['S2', true], ['S3', true]], JSON.stringify(r.scenarios.map(s => s.invalid)));
+  assert.deepEqual(r.scenarios.map(s => [s.id, s.valid]), [['S1', true], ['S2', true], ['S3', true], ['S4', true]], JSON.stringify(r.scenarios.map(s => s.invalid)));
   assert.deepEqual(r.requirements.map(q => [q.id, q.plan, q.checks]), [
     ['R1', 'planned', n({ passed: 1 })],
     ['R2', 'planned', n({ not_run: 1 })],
     ['R3', 'planned', n({ passed: 1 })],
     ['R4', 'unplanned', n({})],
+    ['R5', 'planned', n({ passed: 1 })],
   ]);
   assert.notEqual(r.exitCode, 0, 'mismatch와 실패한 행동이 있으면 playwright 종료 코드도 실패');
   const manifest = JSON.parse(readFileSync(`${r.runDir}/manifest.json`, 'utf8'));

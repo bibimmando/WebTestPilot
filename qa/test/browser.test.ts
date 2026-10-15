@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
-import { openContext, snapshot, resolveRef, resolveText, resolveGroup, toLocator, valuePattern, parseSnapshot } from '../src/browser.ts';
+import { openContext, snapshot, resolveRef, resolveText, resolveGroup, toLocator, valuePattern, parseSnapshot, ariaText, type AriaNode } from '../src/browser.ts';
 
 let browser: Browser | undefined;
 let server: Server | undefined;
@@ -114,6 +114,14 @@ test('그룹 고정: 중첩 목록의 하위 항목이 섞이면 거부한다', 
   assert.ok(!r.ok, JSON.stringify(r));
 });
 
+test('클릭할 수 있는 링크와 콜론이 든 이름(YAML에서 따옴표로 감싸지는 줄)도 고정한다', async () => {
+  const p = await page('<nav><a href="/products">Shop: All</a></nav>');
+  const snap = await snapshot(p);
+  assert.match(snap, /'link "Shop: All" \[ref=\w+\] \[cursor=pointer\]'/, '이 회귀가 지키는 줄 형태가 바뀌었다');
+  const r = await resolveRef(p, refOf(snap, 'link "Shop: All"'));
+  assert.deepEqual(r, { ok: true, ref: r.ref, target: { role: 'link', name: '^Shop: All$' } });
+});
+
 test('없는 ref는 거부한다', async () => {
   const p = await page('<button>확인</button>');
   assert.deepEqual(await resolveRef(p, 'e999'), { ok: false, ref: 'e999', reason: 'unknown_ref' });
@@ -172,19 +180,35 @@ test('valuePattern은 숫자만 임의 값으로 바꾸고 숫자뿐이면 null'
   assert.equal(valuePattern('3,000 ₩'), null);
 });
 
-test('parseSnapshot은 이름·텍스트·부모·ownText를 읽는다', () => {
+test('parseSnapshot은 구조화 snapshot에서 이름·텍스트·부모·ownText를 읽는다', () => {
+  // ariaSnapshotJSON 형태. 텍스트 조각은 문자열 자식이다.
   const m = parseSnapshot([
-    '- list [ref=e1]:',
-    '  - listitem [ref=e2]:',
-    '    - text: 사과',
-    '    - button "담: \\"기\\"" [ref=e3]',
-    '- paragraph [ref=e4]: "12"',
-    '- iframe [ref=e5]:',
-    '  - button "in" [ref=f1e2]',
-  ].join('\n'));
+    { role: 'list', ref: 'e1', children: [{ role: 'listitem', ref: 'e2', children: ['사과', { role: 'button', name: '담: "기"', ref: 'e3' }] }] },
+    { role: 'paragraph', ref: 'e4', text: '12' },
+    { role: 'iframe', ref: 'e5', children: [{ role: 'button', name: 'in', ref: 'f1e2' }] },
+    { role: 'link', name: 'Shop: All', ref: 'f2e48' },
+  ]);
   assert.equal(m.get('f1e2')!.parent!.ref, 'e5');
+  assert.equal(m.get('f2e48')!.name, 'Shop: All');
   assert.equal(m.get('e3')!.name, '담: "기"');
   assert.equal(m.get('e3')!.parent!.ref, 'e2');
   assert.deepEqual(m.get('e2')!.ownText, ['사과']);
   assert.equal(m.get('e4')!.text, '12');
+});
+
+test('ariaText는 모델이 본 텍스트와 같다: 숨긴 텍스트 제외, CSS 변환 미적용, 이름 있는 요소는 이름', async () => {
+  const p = await page([
+    '<p id=a style="text-transform:uppercase">Textiles<span hidden> secret</span></p>',
+    '<ul><li id=b>사과 <b>1,100원</b> <button>담기</button></li></ul>',
+    '<a id=c href="/cart" aria-label="View cart"><img alt="Bag" src="data:,"></a>',
+    '<button id=d><span aria-hidden="true">+</span> 담기</button>',
+  ].join(''));
+  const read = async (id: string) => ariaText(await p.locator('#' + id).ariaSnapshotJSON({ mode: 'ai' }) as AriaNode[]);
+  assert.equal(await read('a'), 'Textiles');
+  assert.equal(await read('b'), '사과 1,100원 담기', '이름 없는 목록 항목은 자손 텍스트');
+  assert.equal(await read('c'), 'View cart', '자식이 있어도 이름 있는 링크는 이름');
+  const snap = await snapshot(p);
+  const seen = snap.split('\n').find(l => l.includes('button') && l.includes('담기') && !l.includes('listitem'))!;
+  assert.ok(seen.includes(await read('d')), `실행에서 읽은 버튼 텍스트(${await read('d')})가 탐색 snapshot(${seen})과 같아야 한다`);
+  assert.match(snap, /Textiles/, '모델이 보는 YAML snapshot도 같은 텍스트');
 });

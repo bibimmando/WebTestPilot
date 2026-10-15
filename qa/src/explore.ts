@@ -126,7 +126,8 @@ const REASONS: Record<string, string> = {
 
 const source = {
   type: 'object', additionalProperties: false, required: ['kind'],
-  properties: { kind: { enum: ['requirement', 'observed', 'heuristic'] }, id: { type: 'string' }, quote: { type: 'string' } },
+  properties: { kind: { enum: ['requirement', 'observed', 'heuristic'] }, id: { type: 'string' },
+    quote: { type: 'string', description: 'requirement: 요구사항 원문 인용 / heuristic: 근거가 된 일반 규칙 한 문장' } },
 };
 const DRAFT_SCHEMA: Anthropic.Tool.InputSchema = {
   type: 'object', additionalProperties: false, required: ['scenarios', 'unplanned'],

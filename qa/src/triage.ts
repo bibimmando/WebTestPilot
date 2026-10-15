@@ -13,7 +13,7 @@ const SYSTEM = readFileSync(new URL('../prompts/triage.md', import.meta.url), 'u
 const EVIDENCE_CHARS = 30_000;
 const MIN_QUOTE = 6;
 
-export type Class = 'passed' | 'passed_heuristic' | 'mismatch' | 'not_run' | 'invalid' | 'uncertain_execution'
+export type Class = 'passed' | 'passed_heuristic' | 'passed_observed' | 'mismatch' | 'not_run' | 'invalid' | 'uncertain_execution'
   | 'needs_triage' | 'app_defect_candidate' | 'automation_failure' | 'uncertain';
 export type Quote = { file: string; text: string };
 export type Verdict = {
@@ -28,6 +28,8 @@ export type Verdict = {
   /** not_run이면 시나리오를 멈춘 항목 */
   cause?: string;
   triage?: { reason: string; quotes: Quote[] } | { error: string };
+  /** 분류 대화 기록 (실행 폴더 기준 경로) */
+  triageLog?: string;
   reproduction?: 'reproduced' | 'flaky' | 'reproduction_inconclusive';
   reproductionDetail?: string;
 };
@@ -60,7 +62,8 @@ export function preclassify(plan: Plan, run: RunResult): Verdict[] {
         const c = s.checks.find(y => y.id === x.id)!;
         const res = r.checks.find(y => y.id === x.id)!;
         const base = { id: c.id, scenario: s.id, kind: 'check' as const, ...origin(c), ...(res.error ? { error: res.error } : {}) };
-        if (res.status === 'passed') out.push({ ...base, observed: 'passed', class: c.source.kind === 'heuristic' ? 'passed_heuristic' : 'passed' });
+        // 근거가 약한 통과는 따로 센다. 관찰값 근거의 통과는 시작 상태 확인이지 기능 검사 통과가 아니다.
+        if (res.status === 'passed') out.push({ ...base, observed: 'passed', class: c.source.kind === 'heuristic' ? 'passed_heuristic' : c.source.kind === 'observed' ? 'passed_observed' : 'passed' });
         else if (res.status === 'mismatch') out.push({ ...base, observed: 'mismatch', class: 'mismatch' });
         else if (res.status === 'not_run') out.push({ ...base, observed: 'not_run', class: 'not_run', cause: cause ?? '알 수 없음' });
         else {
@@ -77,16 +80,23 @@ const origin = (c: Plan['scenarios'][number]['checks'][number]) =>
   ({ source: c.source.kind, requirements: c.source.kind === 'requirement' && c.source.id ? [c.source.id] : [] });
 
 /**
- * needs_triage 항목마다 별도 대화로 AI가 분류한다. 인용은 제공한 증거 파일에 그대로 있어야 하고,
- * 실패 시점 증거가 있으면 그중 하나 이상을 인용해야 한다. 대화 기록은 triage/에 남긴다.
+ * needs_triage와 mismatch 항목마다 별도 대화로 AI가 분류한다. 결정적인 자동화 오류(예: 읽기 방식 차이)도
+ * 재현되므로 mismatch도 분류한다. 분류는 원래 비교 결과(observed) 위에 덧붙이며 지우지 않는다.
+ * 인용은 제공한 증거 파일에 그대로 있어야 하고, 실패 시점 증거가 있으면 그중 하나 이상을 인용해야 한다.
+ * 분류하지 못한 mismatch는 mismatch로 남겨 재현 대상에 둔다. 대화 기록은 triage/에 남긴다.
  */
 export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[]; send: Send; model: string; budget: Budget;
-  maxItems?: number; onUpdate?: () => void }): Promise<void> {
+  maxItems?: number; onUpdate?: () => void; logDir?: string }): Promise<void> {
+  // 판정 회차마다 다른 폴더에 대화를 남긴다. 다시 판정해도 이전 분류의 대화·사용량이 덮이지 않는다.
+  const logDir = o.logDir ?? 'triage';
   let used = 0;
-  for (const v of o.verdicts.filter(x => x.class === 'needs_triage')) {
+  const unclassified = (v: Verdict, error: string) => {
+    v.class = v.observed === 'mismatch' ? 'mismatch' : 'uncertain';
+    v.triage = { error };
+  };
+  for (const v of o.verdicts.filter(x => x.class === 'needs_triage' || x.class === 'mismatch')) {
     if (used++ >= (o.maxItems ?? 20)) {
-      v.class = 'uncertain';
-      v.triage = { error: '분류 항목 수 한도 초과' };
+      unclassified(v, '분류 항목 수 한도 초과');
       continue;
     }
     const s = o.plan.scenarios.find(x => x.id === v.scenario)!;
@@ -110,15 +120,15 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
       },
     };
     const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools: [classify],
-      user: triageMessage(o.plan, s, v, files), budget: o.budget, maxTurns: 3, maxTokens: 4000 });
-    mkdirSync(join(o.run.runDir, 'triage'), { recursive: true });
-    writeFileSync(join(o.run.runDir, 'triage', `${v.id}.json`), JSON.stringify({ stop: result.stop, detail: result.detail, turns: result.turns }, null, 2));
+      user: triageMessage(o.plan, s, v, files, r), budget: o.budget, maxTurns: 3, maxTokens: 4000 });
+    mkdirSync(join(o.run.runDir, logDir), { recursive: true });
+    v.triageLog = `${logDir}/${v.id}.json`;
+    writeFileSync(join(o.run.runDir, v.triageLog), JSON.stringify({ stop: result.stop, detail: result.detail, turns: result.turns }, null, 2));
     if (accepted) {
       v.class = accepted.class;
       v.triage = { reason: accepted.reason, quotes: accepted.quotes };
     } else {
-      v.class = 'uncertain';
-      v.triage = { error: `분류 미완료: ${result.stop}${result.detail ? ` (${result.detail})` : ''}` };
+      unclassified(v, `분류 미완료: ${result.stop}${result.detail ? ` (${result.detail})` : ''}`);
     }
     o.onUpdate?.();
   }
@@ -149,17 +159,23 @@ export function checkQuotes(input: { class: string; quotes: Quote[] }, files: Ma
   return errors;
 }
 
-function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, files: Map<string, string>): string {
+function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, files: Map<string, string>, r: ScenarioResult): string {
   const item = v.kind === 'start' ? { start: s.start }
     : v.kind === 'act' ? s.steps.find(x => x.id === v.id)
     : s.checks.find(x => x.id === v.id);
   const targetId = (item as { target?: string } | undefined)?.target;
+  // 검사는 기대·실제·읽기 방식·시점을 필드로 넘긴다. 문장 요약만 주면 읽기 방식 차이 같은 자동화 원인을 가리기 어렵다.
+  const c = v.kind === 'check' ? s.checks.find(x => x.id === v.id)! : undefined;
+  const res = c ? r.checks.find(x => x.id === c.id) : undefined;
+  const comparison = c && res ? { read: c.read, op: c.op, expected: c.expected, actual: res.actual ?? null, matchedElements: res.count ?? null,
+    after: c.after, expectationBasis: c.source.kind, evidenceFiles: res.evidence ?? [] } : undefined;
   return [
-    '요구사항:', ...plan.requirements.filter(r => s.covers.includes(r.id)).map(r => `- ${r.id}: ${r.text}`),
+    '요구사항:', ...plan.requirements.filter(q => s.covers.includes(q.id)).map(q => `- ${q.id}: ${q.text}`),
     `시나리오 ${s.id}: ${s.title}`,
     `실패한 항목 ${v.id}: ${JSON.stringify(item)}`,
     ...(targetId ? [`대상 ${targetId}: ${JSON.stringify(plan.targets[targetId])} (탐색 때 유일하게 찾은 요소)`] : []),
     `실행 기록: ${v.observed}`,
+    ...(comparison ? [`비교 기록: ${JSON.stringify(comparison)}`] : []),
     ...(v.error ? [`오류 원문: ${v.error}`] : []),
     '증거 파일 (*.start.aria.txt는 시작 직후, 나머지는 실패 시점):',
     ...[...files].map(([name, text]) => `--- ${name}\n${text.length > EVIDENCE_CHARS ? `${text.slice(0, EVIDENCE_CHARS)}\n(이후 생략: 생략된 부분 없이 판단할 수 없으면 uncertain)` : text}`),
@@ -167,12 +183,13 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
 }
 
 /**
- * 결함 후보(mismatch, app_defect_candidate)의 시나리오를 최초 실행 폴더에 고정된 plan·정책으로 한 번 재실행한다.
+ * 결함 후보(원래 불일치이거나 AI가 결함 후보로 본 항목)의 시나리오를 최초 실행 폴더에 고정된 plan·정책으로 한 번 재실행한다.
  * 실행 코드가 최초와 다르거나, 재실행이 무효이거나, 시작 상태 지문이 다르면 reproduction_inconclusive.
  * shortcut: 시작 지문은 URL과 화면(접근성 snapshot)만 본다. 서버 상태가 다른 경우는 앱별 시작 fixture를 만들 때 포함한다.
  */
 export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir: string; timeoutMs?: number }): Promise<RunResult | undefined> {
-  const candidates = o.verdicts.filter(v => v.class === 'mismatch' || v.class === 'app_defect_candidate');
+  // 원래 불일치는 AI 분류 결과와 상관없이 재현한다. 자동화 문제로 분류돼도 재현 여부는 별도 정보다.
+  const candidates = o.verdicts.filter(isCandidate);
   if (!candidates.length) return undefined;
   const plan: Plan = JSON.parse(readFileSync(join(o.run.runDir, 'plan.json'), 'utf8'));
   const policy: Policy = JSON.parse(readFileSync(join(o.run.runDir, 'policy.json'), 'utf8'));
@@ -196,6 +213,8 @@ export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir
   }
   return again;
 }
+
+const isCandidate = (v: Verdict) => v.observed === 'mismatch' || v.class === 'app_defect_candidate';
 
 /** 같은 결과인지 비교하는 서명. 오류 문구의 숫자(시간 등)는 지우고 비교한다. */
 function signature(r: ScenarioResult, v: Verdict): string {
@@ -230,12 +249,13 @@ export async function judge(o: { plan: Plan; run: RunResult; send: Send; model: 
   }) });
   const save = (stage: string) => writeFileSync(file, JSON.stringify(judgment(stage), null, 2));
   save('preclassified');
-  await triage({ plan: o.plan, run: o.run, verdicts, send: o.send, model: o.model, budget: o.budget, maxItems: o.maxTriageItems, onUpdate: () => save('triage') });
+  await triage({ plan: o.plan, run: o.run, verdicts, send: o.send, model: o.model, budget: o.budget, maxItems: o.maxTriageItems,
+    onUpdate: () => save('triage'), logDir: n === 1 ? 'triage' : `triage-${n}` });
   save('triaged');
   try {
     await reproduce({ run: o.run, verdicts, runDir: o.reproduceDir, timeoutMs: o.timeoutMs });
   } catch (e) {
-    for (const v of verdicts) if ((v.class === 'mismatch' || v.class === 'app_defect_candidate') && !v.reproduction) {
+    for (const v of verdicts) if (isCandidate(v) && !v.reproduction) {
       v.reproduction = 'reproduction_inconclusive';
       v.reproductionDetail = `재실행 실패: ${(e as Error).message.split('\n')[0]}`;
     }

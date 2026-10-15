@@ -100,6 +100,10 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
       if (c.read === 'count' && (c.op !== 'equals' || !/^\d+$/.test(c.expected))) errors.push(`${c.id}: count needs op equals and a whole-number expected`);
       if ((c.read === 'checked' || c.read === 'visible') && !['true', 'false'].includes(c.expected)) errors.push(`${c.id}: ${c.read} expects "true" or "false"`);
       if (c.op === 'contains' && !c.expected.trim()) errors.push(`${c.id}: contains with an empty expected always passes`);
+      // 탐색은 결함이 있을 수 있는 앱을 보고 하므로, 행동 뒤 결과를 지금 본 값으로 기대하면 결함을 정답으로 고정한다.
+      if (c.source.kind === 'observed' && c.after !== 'start') {
+        errors.push(`${c.id}: a check after an action cannot use an observed value as its expectation; cite a requirement or use heuristic (general web behavior)`);
+      }
       checkSource(c, s);
     }
     // covers는 "검사했다"는 주장이므로 각 요구사항을 실제로 인용한 검사가 있어야 한다.
@@ -126,6 +130,11 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
   }
 
   function checkSource(c: Check, s: Scenario) {
+    // 추정 근거에는 근거가 된 일반 규칙을 문장으로 남긴다. 관찰값에 이름만 붙이는 것을 막고 보고서에 그대로 보여 준다.
+    // shortcut: 문장의 의미는 검사하지 않아 "지금 수량은 1개다" 같은 관찰을 규칙처럼 적는 우회가 남는다. M2의 관측 참조·규칙 근거 분리로 막는다.
+    if (c.source.kind === 'heuristic' && (c.source.quote ?? '').replace(/\s/g, '').length < 10) {
+      return errors.push(`${c.id}: heuristic needs source.quote stating the general rule it relies on (10+ characters)`);
+    }
     if (c.source.kind !== 'requirement') return;
     const r = c.source.id ? reqs.get(c.source.id) : undefined;
     if (!r) return errors.push(`${c.id}: source.kind requirement needs a known source.id`);

@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test as base, expect, type Page, type Locator } from '@playwright/test';
-import { guardContext, toLocator, type Policy } from './browser.ts';
+import { ariaText, guardContext, toLocator, type AriaNode, type Policy } from './browser.ts';
 import type { Plan, Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
@@ -141,7 +141,8 @@ async function read(loc: Locator, c: Check): Promise<Reading> {
   if (c.read === 'count') actual = String(count);
   else if (c.read === 'visible' && count === 0) actual = 'false';
   else if (count !== 1) return { status: 'unresolved', count };
-  else if (c.read === 'text') actual = (await loc.innerText()).replace(/\s+/g, ' ').trim();
+  // 탐색 때 모델이 본 접근성 snapshot과 같은 기준으로 읽는다. innerText는 CSS 대소문자 변환이, textContent는 숨긴 텍스트가 섞인다.
+  else if (c.read === 'text') actual = ariaText(await loc.ariaSnapshotJSON({ mode: 'ai' }) as AriaNode[]);
   else if (c.read === 'value') actual = await loc.inputValue();
   else if (c.read === 'checked') actual = String(await loc.isChecked());
   else actual = String(await loc.isVisible());
