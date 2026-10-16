@@ -68,7 +68,8 @@ try {
   const e = await explore({ browser, policy, startUrl: a.url, requirements, send, model: a['plan-model']!, budget, maxTurns: Number(a['max-turns']),
     maxPages: Number(a['max-pages']), maxTemplates: Number(a['max-templates']), turnsPerTemplate: Number(a['turns-per-template']), pagesPerTemplate: Number(a['pages-per-template']) });
   timing.explore = Date.now() - t0;
-  save('explore.json', { stop: e.stop, detail: e.detail, blocked: e.blocked, violations: e.violations, sitemap: e.sitemap, conversations: e.conversations, turns: e.turns });
+  save('explore.json', { stop: e.stop, detail: e.detail, blocked: e.blocked, violations: e.violations, sitemap: e.sitemap, conversations: e.conversations,
+    complete: e.complete, exploredUrls: e.exploredUrls, turns: e.turns });
   summary = { explore: { stop: e.stop, detail: e.detail, turns: e.turns.length, spentUsd: budget.spent, conversations: e.conversations,
     templates: e.sitemap?.templates.map(t => ({ key: t.key, pages: t.pages.length })), unvisited: e.sitemap?.unvisited.length } };
   if (!e.plan) throw new Error(`계획 없음: ${e.stop} ${e.detail ?? ''}`);
