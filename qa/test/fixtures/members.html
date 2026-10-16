@@ -10,7 +10,9 @@
 <a href="/board.html">게시판으로</a>
 </main>
 <script>
-  const people = ['김하늘', '이도윤', '박서연', '최민준'];
+  // 삭제는 브라우저 저장소에 남겨 다른 페이지에 다녀와도 유지한다(서버 요청 없는 개발 fixture).
+  let removed = []; try { removed = JSON.parse(localStorage.getItem('removed') || '[]'); } catch {}
+  const people = ['김하늘', '이도윤', '박서연', '최민준'].filter(n => !removed.includes(n));
   const isAdmin = () => document.querySelector('input[name=role]:checked').value === 'admin';
   const render = () => {
     document.getElementById('list').innerHTML = people
@@ -18,7 +20,7 @@
   };
   document.querySelectorAll('input[name=role]').forEach(r => r.onchange = render);
   // 삭제 버튼을 누르면 그 구성원이 목록에서 빠진다.
-  document.getElementById('list').onclick = e => { const n = e.target.closest('button')?.textContent.replace(/ 삭제$/, ''); if (n) { people.splice(people.indexOf(n), 1); render(); } };
+  document.getElementById('list').onclick = e => { const n = e.target.closest('button')?.textContent.replace(/ 삭제$/, ''); if (n) { people.splice(people.indexOf(n), 1); removed.push(n); localStorage.setItem('removed', JSON.stringify(removed)); render(); } };
   render();
 </script>
 </body></html>

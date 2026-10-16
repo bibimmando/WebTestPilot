@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>글쓰기</title></head>
+<body><main><h1>글쓰기</h1>
+<form id="f" novalidate>
+  <p><label>제목 (필수) <input id="title"></label></p>
+  <p><label>내용 <textarea id="body"></textarea></label></p>
+  <button>등록</button>
+</form>
+<div id="msg" role="status"></div>
+<a href="/posts.html">게시글 목록</a> · <a href="/board.html">게시판으로</a>
+</main>
+<script>
+  // 서버 요청 없이 브라우저 저장소에 글을 남긴다(쓰기 차단 상태에서 흐름을 검사하기 위한 개발 fixture). posts.html이 읽는다.
+  document.getElementById('f').addEventListener('submit', e => {
+    e.preventDefault();
+    const title = document.getElementById('title').value.trim();
+    if (!title) { document.getElementById('msg').textContent = '제목을 입력하세요.'; return; }
+    const saved = JSON.parse(localStorage.getItem('posts') || '[]');
+    saved.push({ title });
+    localStorage.setItem('posts', JSON.stringify(saved));
+    document.getElementById('msg').textContent = '글이 등록되었습니다.';
+    e.target.reset();
+  });
+</script>
+</body></html>

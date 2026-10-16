@@ -1,0 +1,12 @@
+{
+  "description": "비쇼핑몰 개발 fixture(qa/test/fixtures의 board·write·posts)에 흐름 결함을 심은 변형. 이 파일은 정답지이며 계획·실행·분류 모델 입력에 넣지 않는다.",
+  "bugs": [
+    {
+      "id": "B1",
+      "page": "write.html",
+      "summary": "글쓰기에서 '글이 등록되었습니다.'가 나오지만 게시글 목록에는 그 글이 없다",
+      "violates": "완료 안내와 결과 목록이 어긋남(일반 규칙 effect-shown-elsewhere)",
+      "inScope": true
+    }
+  ]
+}

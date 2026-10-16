@@ -42,7 +42,10 @@ export const RULES: Rule[] = [
     exceptions: '마지막 페이지에서 다음 누름', form: 'relation', ops: ['not_equals'] },
   { id: 'required-input', group: 2, rule: '필수 입력을 비우거나 형식에 맞지 않게 제출하면 제출되지 않고 안내가 나온다', applies: '필수 표시나 형식 안내가 있는 입력 폼',
     exceptions: '서버에서만 검사하는 앱', form: 'any', ops: ['contains', 'not_equals', 'equals'] },
-  { id: 'state-persists', group: 2, rule: '새로고침하거나 뒤로 갔다 와도 사용자가 바꾼 상태가 유지된다', applies: '장바구니·선택 상태',
+  { id: 'effect-shown-elsewhere', group: 2, rule: '앱이 행동의 결과를 알렸으면(완료 안내·개수 증가) 그 결과를 모아 보여 주는 다른 화면에도 반영돼 있다',
+    applies: '추가·등록·저장 같은 행동 뒤 결과를 모아 보여 주는 화면 (행동 전에 대상의 이름·입력값을 읽어 두고, 결과 화면의 항목들(group)을 items로 읽어 expected_from으로 any_equal·any_contain 비교)',
+    exceptions: '검토·승인 뒤에 보이도록 설계된 경우', form: 'relation', ops: ['any_equal', 'any_contain'] },
+  { id: 'state-persists', group: 2, rule: '새로고침하거나 뒤로 갔다 와도 사용자가 바꾼 상태가 유지된다', applies: '사용자가 고른 선택·입력값·추가한 항목',
     exceptions: '의도적으로 세션 단위로 두는 상태', form: 'relation', ops: ['equals', 'same_number'] },
 ];
 

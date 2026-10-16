@@ -134,7 +134,7 @@ export function taskMessage(o: Task, scope?: Scope): string {
       '사이트 지도 (페이지 종류별, 같은 종류는 대표 URL 하나로 다룸):',
       ...scope.map.templates.map(t => `- ${t.key} (발견 ${t.pages.length}개)${t.key === scope.template.key ? '  ← 이번 대화' : ''}`),
       '(페이지 종류는 URL 모양으로 묶은 잠정 분류입니다. 같은 종류로 묶였는데 기능이 다르면 observations에 적으세요.)',
-      `이번 대화의 범위: 페이지 종류 ${scope.template.key}. 이 종류의 기능만 계획하세요. 다른 종류는 다른 대화에서 다룹니다. 이 종류와 관련 없는 요구사항은 계획하지도 unplanned에 적지도 마세요.`,
+      `이번 대화의 범위: 페이지 종류 ${scope.template.key}. 이 종류에서 시작하는 기능을 계획하세요. 행동의 결과가 다른 페이지에 나타나면(목록·모음·내 정보 화면 등) 같은 시나리오 안에서 그 페이지로 이동해 이어서 확인하세요. 다른 종류에서 시작하는 기능은 다른 대화에서 다룹니다. 이 종류와 관련 없는 요구사항은 계획하지도 unplanned에 적지도 마세요.`,
       `ID는 이어서 씁니다: 시나리오 S${scope.nextScenario}부터, 기능 F${scope.nextFeature}부터.`,
     ] : []),
     `허용 origin: ${o.policy.origins.join(', ')} (쓰기 요청 ${o.policy.allowWrites ? '허용' : '차단'})`,
