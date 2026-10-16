@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>오류 신호</title></head>
+<body><main><h1>오류 신호</h1>
+<button id="load">불러오기</button> <button id="ext">외부 호출</button>
+<p id="state" role="status"></p>
+</main>
+<script>
+  // 오류 신호 수집 확인용 개발 fixture. 시작 때 콘솔 오류, 불러오기에서 404·403(정상 거절)·잡히지 않은 예외, 외부 호출은 정책 차단.
+  console.error('초기화 경고');
+  document.getElementById('load').onclick = async () => {
+    await fetch('/api/missing');
+    await fetch('/api/denied');
+    document.getElementById('state').textContent = '불러옴';
+    setTimeout(() => { throw new Error('불러오기 처리 실패'); });
+  };
+  document.getElementById('ext').onclick = () => { fetch('http://localhost:9/ping').catch(() => {}); document.getElementById('state').textContent = '외부 호출함'; };
+</script>
+</body></html>

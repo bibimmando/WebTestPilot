@@ -2,7 +2,7 @@
 // 분류는 판정이 아니라 후보 상태다. 결함 후보는 최초 실행에 고정된 입력으로 한 번 재실행해 재현 여부를 별도로 남긴다.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Policy } from './browser.ts';
+import type { Policy, Signal } from './browser.ts';
 import type { Plan } from './plan.ts';
 import { ruleOf } from './rules.ts';
 import { sequence } from './generate.ts';
@@ -229,6 +229,18 @@ export function checkQuotes(input: { class: string; quotes: Quote[] }, files: Ma
   return errors;
 }
 
+/** 같은 종류·내용·경로(쿼리 제외)의 신호는 한 항목으로 묶고 어느 시나리오·단계에서 났는지만 모은다. 복제 시나리오의 반복 발견을 새 항목으로 세지 않는다. */
+export function groupSignals(scenarios: ScenarioResult[]): Judgment['errorSignals'] {
+  const out = new Map<string, Judgment['errorSignals'][number]>();
+  for (const r of scenarios) for (const g of r.signals ?? []) {
+    const path = (() => { try { const u = new URL(g.url); return u.origin + u.pathname; } catch { return g.url; } })();
+    const key = JSON.stringify([g.kind, g.status ?? null, g.text, path]);
+    if (!out.has(key)) out.set(key, { kind: g.kind, text: g.text, path, ...(g.status ? { status: g.status } : {}), ...(g.normal ? { normal: true as const } : {}), at: [] });
+    out.get(key)!.at.push({ scenario: r.id, after: g.after });
+  }
+  return [...out.values()];
+}
+
 function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, files: Map<string, string>, r: ScenarioResult): string {
   const item = v.kind === 'start' ? { start: s.start }
     : v.kind === 'act' ? s.steps.find(x => x.id === v.id)
@@ -255,6 +267,8 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
     // 일반 규칙 근거면 규칙 본문·적용 조건·정상 예외를 함께 준다. 예외에 해당하면 결함이 아니다.
     ...(ruleOf(c?.source.rule) ? [`일반 규칙 ${c!.source.rule}: ${JSON.stringify(ruleOf(c!.source.rule))}`] : []),
     ...(v.error ? [`오류 원문: ${v.error}`] : []),
+    // 기대값 없이 잡힌 신호. 행동 직후의 스크립트 예외·서버 오류는 "앱이 반응하지 않았다"를 뒷받침할 수 있다.
+    ...(r.signals?.length ? [`이 시나리오의 콘솔·요청 오류 (after = 그 신호가 난 단계, 최대 20개): ${JSON.stringify(r.signals.slice(0, 20))}`] : []),
     '증거 파일 (*.start는 시작 직후, *.before·*.after는 그 행동의 직전·직후, 나머지는 실패 시점):',
     ...[...files].map(([name, text]) => `--- ${name}\n${text.length > EVIDENCE_CHARS ? `${text.slice(0, EVIDENCE_CHARS)}\n(이후 생략: 생략된 부분 없이 판단할 수 없으면 uncertain)` : text}`),
   ].join('\n');
@@ -360,6 +374,8 @@ export type Judgment = { file: string; verdicts: Verdict[]; requirements: { id: 
   features: { id: string; plan: 'planned' | 'unplanned' | 'missing'; system: Partial<Record<SystemLevel, number>>; questions: string[] }[];
   /** 답을 받지 못한 업무 규칙 질문. 관련 기능은 판단 보류 */
   pendingQuestions: Plan['questions'];
+  /** 기대값 없이 잡힌 오류 신호를 종류·내용·경로로 묶은 검토 대상(판정 아님). normal은 정상 거절(401·403·422) */
+  errorSignals: { kind: Signal['kind']; text: string; path: string; status?: number; normal?: true; at: { scenario: string; after: string }[] }[];
 };
 
 /**
@@ -393,7 +409,7 @@ export async function judge(o: { plan: Plan; run: RunResult; send: Send; model: 
       system: count(verdicts.filter(v => scenarios.has(v.scenario) && groupOf(v) !== 'preparation')),
       questions: (o.plan.questions ?? []).filter(q => q.feature === f.id).map(q => q.id) };
   }),
-  pendingQuestions: o.plan.questions ?? [] });
+  pendingQuestions: o.plan.questions ?? [], errorSignals: groupSignals(o.run.scenarios) });
   const save = (stage: string) => writeFileSync(file, JSON.stringify(judgment(stage), null, 2));
   save('preclassified');
   await triage({ plan: o.plan, run: o.run, verdicts, send: o.send, model: o.model, budget: o.budget, maxItems: o.maxTriageItems,

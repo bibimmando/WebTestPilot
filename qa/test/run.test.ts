@@ -8,7 +8,7 @@ import { runPlan } from '../src/run.ts';
 import { specFor, sequence } from '../src/generate.ts';
 import { reconcile, type Entry } from '../src/reconcile.ts';
 import { cloneScenarios, validate, type Plan } from '../src/plan.ts';
-import { preclassify, systemVerdict } from '../src/triage.ts';
+import { preclassify, systemVerdict, groupSignals } from '../src/triage.ts';
 
 let server: Server | undefined;
 let origin = '';
@@ -16,6 +16,7 @@ const writes: string[] = [];
 before(async () => {
   server = createServer(async (req, res) => {
     if (req.method !== 'GET') { writes.push(`${req.method} ${req.url}`); return res.end('ok'); }
+    if (req.url === '/api/denied') { res.statusCode = 403; return res.end(); }
     try {
       res.setHeader('content-type', 'text/html; charset=utf-8');
       res.end(await readFile(new URL(`./fixtures${new URL(req.url!, 'http://x').pathname}`, import.meta.url)));
@@ -338,4 +339,34 @@ test('선택 상자 값은 화면과 select 동작이 쓰는 옵션 라벨로 �
   assert.deepEqual(r.problems, [], readFileSync(`${r.runDir}/playwright.log`, 'utf8'));
   assert.deepEqual(r.scenarios[0].checks.map(c => c.status), ['passed', 'passed', 'passed'], JSON.stringify(r.scenarios[0].checks));
   assert.deepEqual(r.scenarios[0].checks.slice(0, 2).map(c => c.actual), ['최신순', '조회수 높은순']);
+});
+
+test('오류 신호: 콘솔 오류·스크립트 예외·400 이상 응답을 난 단계에 붙이고, 정상 거절은 표시하고, 정책 차단·favicon은 빼고, 시나리오끼리 묶는다', async () => {
+  const url = `${origin}/signals.html`;
+  const rule = { kind: 'inferred' as const, rule: 'no-error-page', quote: '불러오기 뒤 페이지가 오류 없이 상태를 보여 준다' };
+  const p: Plan = {
+    version: 1, observations: [], features: [{ id: 'F1', name: '불러오기', page: url }], questions: [], requirements: [], unplanned: [],
+    targets: {
+      T1: { target: { role: 'button', name: '^불러오기$' }, group: false, url },
+      T2: { target: { role: 'button', name: '^외부 호출$' }, group: false, url },
+      T3: { target: { role: 'status' }, group: false, url },
+    },
+    scenarios: ['S1', 'S2'].map(id => ({ id, title: '불러오기와 외부 호출', covers: ['F1'], start: { url },
+      steps: [{ id: `${id}.A1`, op: 'click' as const, target: 'T1' }, { id: `${id}.A2`, op: 'click' as const, target: 'T2' }],
+      checks: [{ id: `${id}.C1`, after: `${id}.A1`, target: 'T3', read: 'text' as const, op: 'equals' as const, expected: '불러옴', source: rule },
+        { id: `${id}.C2`, after: `${id}.A2`, target: 'T3', read: 'text' as const, op: 'equals' as const, expected: '외부 호출함', source: rule }] })),
+  };
+  const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir('signals'), timeoutMs: 2000 });
+  assert.deepEqual(r.problems, [], readFileSync(`${r.runDir}/playwright.log`, 'utf8'));
+  const signals = r.scenarios[0].signals!.map(g => [g.kind, g.after, g.text, g.status ?? null, g.normal ?? false]).sort();
+  assert.deepEqual(signals, [
+    ['console', 'start', '초기화 경고', null, false],
+    ['http', 'S1.A1', 'GET 403', 403, true],
+    ['http', 'S1.A1', 'GET 404', 404, false],
+    ['pageerror', 'S1.A1', '불러오기 처리 실패', null, false],
+  ], '정책 차단(외부 호출)과 /favicon.ico는 신호가 아니다');
+  assert.ok(r.scenarios[0].blocked.some(b => b.includes('localhost:9/ping')), '외부 호출은 정책 차단으로 따로 남는다');
+  const grouped = groupSignals(r.scenarios);
+  assert.deepEqual(grouped.find(g => g.status === 404)!.at, [{ scenario: 'S1', after: 'S1.A1' }, { scenario: 'S2', after: 'S2.A1' }], '같은 신호는 한 항목으로 묶고 난 곳을 모은다');
+  assert.equal(grouped.length, 4);
 });

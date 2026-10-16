@@ -12,6 +12,12 @@ export type Guarded = { context: BrowserContext; blocked: string[]; violations: 
  * 정책을 강제하는 브라우저 컨텍스트를 연다. 허용 origin 밖 요청과 권한 없는 쓰기 요청은 막고(blocked),
  * 막을 수 없는 우회(외부로의 리다이렉트)는 violations에 남긴다. violations가 있으면 그 실행은 신뢰하지 않는다.
  */
+/**
+ * 기대값 없이 잡히는 오류 신호(설계 5장 4단계). after = 신호가 난 단계('start' 또는 행동 ID).
+ * normal = 검사 의도대로일 수 있는 정상 거절(401·403·422)이라 결함 신호로 세지 않는다.
+ */
+export type Signal = { kind: 'console' | 'pageerror' | 'http' | 'requestfailed'; after: string; url: string; text: string; status?: number; normal?: true };
+
 export async function openContext(browser: Browser, policy: Policy, violations?: string[]): Promise<Guarded> {
   const context = await browser.newContext({ serviceWorkers: 'block' });
   return { context, ...(await guardContext(context, policy, violations)) };

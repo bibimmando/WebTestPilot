@@ -3,7 +3,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test as base, expect, type Page, type Locator } from '@playwright/test';
-import { ariaText, ariaTextV1, guardContext, settle, shapeChanged, toLocator, type AriaNode, type Policy } from './browser.ts';
+import { ariaText, ariaTextV1, guardContext, settle, shapeChanged, toLocator, type AriaNode, type Policy, type Signal } from './browser.ts';
 import { compareValues, expectedFrom, sortKeys, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
@@ -14,6 +14,10 @@ const TIMEOUT = Number(process.env.QA_TIMEOUT_MS ?? 5000);
 
 const steps = new Map(plan.scenarios.flatMap(s => s.steps.map(st => [st.id, st] as const)));
 const checks = new Map(plan.scenarios.flatMap(s => s.checks.map(c => [c.id, c] as const)));
+/** 지금 실행 중인 단계. 오류 신호를 이 단계에 붙인다. 워커 하나는 시나리오를 하나씩 차례로 돌린다. */
+let phase = 'start';
+const MAX_SIGNALS = 50;
+const NORMAL_REJECTIONS = new Set([401, 403, 422]);
 /** 이 실행에서 검사가 읽은 실제 값. 관측 참조(expected_from)가 앞선 검사의 값을 기대값으로 쓴다. */
 const actuals = new Map<string, string>();
 
@@ -38,14 +42,34 @@ export const test = base.extend<{ guard: void }>({
   // 러너의 컨텍스트에 탐색 때와 같은 정책을 건다. 막은 요청과 위반은 시나리오 끝에 ledger에 남긴다.
   guard: [async ({ context }, use, info) => {
     const g = await guardContext(context, policy);
+    // 오류 신호: 콘솔 오류, 잡히지 않은 스크립트 예외, 400 이상 응답, 실패한 요청.
+    // 정책 차단(우리가 막은 요청)·이동으로 취소된 요청·브라우저가 스스로 여는 /favicon.ico는 앱의 신호가 아니라 뺀다.
+    const signals: Signal[] = [];
+    const add = (s: Omit<Signal, 'after'>) => { if (signals.length < MAX_SIGNALS) signals.push({ ...s, after: phase, text: s.text.slice(0, 300) }); };
+    const favicon = (url: string) => new URL(url).pathname === '/favicon.ico';
+    context.on('console', m => {
+      // "Failed to load resource"는 브라우저가 실패한 요청을 다시 알리는 문구라 요청 신호와 겹친다.
+      if (m.type() === 'error' && !m.text().startsWith('Failed to load resource')) add({ kind: 'console', url: m.page()?.url() ?? '', text: m.text() });
+    });
+    context.on('weberror', e => add({ kind: 'pageerror', url: e.page()?.url() ?? '', text: String(e.error()?.message ?? e.error()) }));
+    context.on('response', r => {
+      if (r.status() < 400 || favicon(r.url())) return;
+      add({ kind: 'http', url: r.url(), status: r.status(), text: `${r.request().method()} ${r.status()}`, ...(NORMAL_REJECTIONS.has(r.status()) ? { normal: true as const } : {}) });
+    });
+    context.on('requestfailed', r => {
+      const why = r.failure()?.errorText ?? '';
+      if (/ERR_BLOCKED_BY_CLIENT|ERR_ABORTED/.test(why) || favicon(r.url())) return;
+      add({ kind: 'requestfailed', url: r.url(), text: `${r.method()} ${why}` });
+    });
     await use();
-    log({ kind: 'policy', scenario: info.title.split(' ')[0], blocked: g.blocked, violations: g.violations });
+    log({ kind: 'policy', scenario: info.title.split(' ')[0], blocked: g.blocked, violations: g.violations, signals });
   }, { auto: true }],
 });
 
 export async function start(page: Page, scenarioId: string): Promise<void> {
   const s = plan.scenarios.find(x => x.id === scenarioId);
   if (!s) throw new Error(`plan에 없는 시나리오: ${scenarioId}`);
+  phase = 'start';
   try {
     await page.goto(s.start.url);
   } catch (e) {
@@ -69,6 +93,7 @@ export async function start(page: Page, scenarioId: string): Promise<void> {
 export async function act(page: Page, stepId: string): Promise<void> {
   const st = steps.get(stepId);
   if (!st) throw new Error(`plan에 없는 단계: ${stepId}`);
+  phase = stepId;
   const stop = async (status: string, extra: Record<string, unknown>) => {
     log({ kind: 'act', id: stepId, status, ...extra, ...(await capture(page, stepId)) });
     return new Stopped(`${stepId} ${status}`);
