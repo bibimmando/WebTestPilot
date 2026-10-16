@@ -1,7 +1,7 @@
 // ledger ↔ plan 대조. ledger가 판정의 기준이지만 ledger를 그대로 믿지 않는다.
 // 비교 결과는 고정된 plan의 기대값과 기록된 실제 값으로 다시 계산하고, 순서·중복·정책 위반이 있는 시나리오는 무효로 집계한다.
 // 코드에 있어도 실행되지 않은 검사는 not_run이다. 상태는 차원별로 나누고 분모에서 빼지 않는다.
-import { compareValues, expectedFrom, type Plan, type Check } from './plan.ts';
+import { compareValues, sortKeys, expectedFrom, type Plan, type Check } from './plan.ts';
 import { sequence } from './generate.ts';
 
 export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; scenario?: string; id?: string; status?: string;
@@ -135,5 +135,7 @@ function pick<K extends keyof Entry>(e: Entry | undefined, ...keys: K[]): Partia
 /** 고정된 plan의 연산·기대값으로 비교를 다시 계산한다. 실제 값이나 기대값이 없으면 비교할 수 없다. */
 function compare(c: Check, actual: string | undefined, expected: string | undefined): CheckStatus {
   if (typeof actual !== 'string' || expected === undefined) return 'error';
+  // 실행기와 같이, 정렬 기준을 특정할 수 없으면 결함이 아니라 값을 못 읽은 것이다.
+  if (c.op.startsWith('sorted_') && !sortKeys(actual, expected)) return 'unresolved';
   return compareValues(c.op, actual, expected) ? 'passed' : 'mismatch';
 }

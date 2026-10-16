@@ -1,7 +1,7 @@
 import { groupTemplates } from '../src/sitemap.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validate, freeze, mergePlans, compareValues, numberIn, expectedFrom, startTargetsElsewhere, type Draft, type Pinned, type Requirement } from '../src/plan.ts';
+import { validate, freeze, mergePlans, compareValues, numberIn, expectedFrom, sortKeys, startTargetsElsewhere, type Draft, type Pinned, type Requirement } from '../src/plan.ts';
 
 const origin = 'http://app.test';
 const reqs: Requirement[] = [
@@ -164,6 +164,15 @@ test('비교 규칙: 숫자 비교는 첫 숫자로, 목록 조건은 빈 목록
   assert.ok(compareValues('any_equal', '["a","b"]', 'b'));
   assert.ok(!compareValues('all_equal', '[]', 'a'));
   assert.ok(compareValues('not_equals', 'a', 'b'));
+  assert.ok(compareValues('sorted_desc', '["글 · 조회 1500","글 · 조회 1030","글 · 조회 99"]', 'number'));
+  assert.ok(!compareValues('sorted_desc', '["글 · 조회 99","글 · 조회 1500","글 · 조회 1030"]', 'number'), '글자 순서 정렬은 숫자 내림차순이 아니다');
+  const byTitle = '["가 · 조회 99","나 · 조회 1500","다 · 조회 3"]';
+  assert.ok(compareValues('sorted_asc', byTitle, 'text') && !compareValues('sorted_asc', byTitle, 'number'), '같은 목록도 기준에 따라 판정이 다르다');
+  assert.ok(!compareValues('sorted_asc', '["가"]', 'text'), '항목이 둘 미만이면 정렬을 확인한 것이 아니다');
+  assert.equal(sortKeys('["글 2 · 조회 10","글 · 조회 3"]', 'number'), undefined, '숫자가 여러 개 섞이면 숫자 기준을 특정할 수 없다');
+  assert.equal(sortKeys('["가","나"]', ''), undefined, '기준이 없으면 판정하지 않는다');
+  assert.ok(!compareValues('sorted_asc', '["가 5","나 5"]', 'number') && !compareValues('sorted_desc', '["가 5","나 5"]', 'number'), '기준 값이 모두 같으면 정렬을 확인한 것이 아니다');
+  assert.deepEqual(sortKeys('["가 · 조회 3","나 · 조회 1"]', 'number'), [3, 1]);
   assert.ok(compareValues('same_number', '7', '7개 상품'));
   assert.ok(!compareValues('same_number', '3', '7개 상품'));
   assert.ok(!compareValues('same_number', '없음', '7개 상품'));
@@ -269,4 +278,16 @@ test('화면 제약 근거: 검사 대상 자신의 이름이나 기대값을 �
   assert.deepEqual(errs(check('T4', '1 × Arc Pendant Light added to your bag.')).filter(e => e.includes('S1.C2')), [], '이름을 포함한 결과 안내는 받는다');
   named.set('T6', { target: { role: 'status', text: '.*?' }, group: false, url: origin + '/p' });
   assert.deepEqual(errs(check('T6', '최대 10개')).filter(e => e.includes('S1.C2')), [], '글자가 없는 넓은 패턴으로 안내를 거부하지 않는다');
+});
+
+test('규칙별 허용 연산: 정렬 규칙에 목록 조건, 페이지 넘김에 같음 비교로 결함을 통과시키는 우회를 막는다', () => {
+  const why = '정렬을 고르면 그 순서로 놓인다는 일반 규칙';
+  const items = { id: 'S1.C2', after: 'S1.A1', target: 'T3', read: 'items' as const, expected: '', source: { kind: 'inferred' as const, rule: 'sort-order', quote: why } };
+  assert.deepEqual(errorsOf(d => { d.scenarios[0].checks.push({ ...items, op: 'sorted_desc', expected: 'number' }); }).filter(e => e.includes('S1.C2')), []);
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push({ ...items, op: 'sorted_desc', expected: '' }); }).some(e => e.includes('needs expected number|text')));
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push({ ...items, op: 'sorted_desc', expected: 'title', source: { kind: 'requirement', id: 'R1', quote: '1 증가한다' } }); }).some(e => e.includes('needs expected number|text')), '근거 종류와 상관없이 정렬 기준을 요구한다');
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push({ ...items, op: 'any_equal', expected: '조회 120' }); }).some(e => e.includes('allows op sorted_asc|sorted_desc')));
+  const before = { id: 'S1.C0', after: 'start', target: 'T3', read: 'items' as const, op: 'all_contain' as const, expected: '·', source: { kind: 'observed' as const } };
+  const page = { id: 'S1.C3', after: 'S1.A1', target: 'T3', read: 'items' as const, expected_from: 'S1.C0', source: { kind: 'inferred' as const, rule: 'page-changes', quote: '다음 페이지로 넘기면 항목이 바뀐다' } };
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push(before, { ...page, op: 'equals' as any }); }).some(e => e.includes('allows op not_equals')));
 });

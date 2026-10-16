@@ -34,8 +34,10 @@ test('MCP 서버: CLI처럼 도구를 불러 계획을 제출하면 plan.json을
     stderr: 'inherit',
   }));
   try {
-    const names = (await client.listTools()).tools.map(t => t.name).sort();
-    assert.deepEqual(names, ['ask_user', 'click', 'fill', 'navigate', 'pin', 'press', 'select', 'snapshot', 'submit_plan']);
+    const tools = (await client.listTools()).tools;
+    assert.deepEqual(tools.map(t => t.name).sort(), ['ask_user', 'click', 'fill', 'navigate', 'pin', 'press', 'select', 'snapshot', 'submit_plan']);
+    const ops = (tools.find(t => t.name === 'submit_plan')!.inputSchema as any).properties.scenarios.items.properties.checks.items.properties.op.enum;
+    assert.ok(ops.includes('sorted_asc') && ops.includes('sorted_desc') && !ops.includes('record'), '도구 스키마는 계약의 연산을 그대로 열고 내부 연산은 숨긴다');
     const prompt = await client.getPrompt({ name: 'explore' });
     assert.match(JSON.stringify(prompt), /R1: 쿠폰 적용 버튼이 보인다/);
 

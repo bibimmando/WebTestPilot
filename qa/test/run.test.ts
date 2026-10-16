@@ -175,6 +175,14 @@ test('reconcile: 기록된 상태를 믿지 않고 고정된 기대값으로 다
   assert.ok(r.problems.some(x => x.includes('다시 계산한 mismatch')));
 });
 
+test('reconcile: 정렬 기준을 특정할 수 없는 기록은 결함이 아니라 못 읽은 값으로 다시 계산한다', () => {
+  const p = plan();
+  p.scenarios[0].checks[0] = { ...p.scenarios[0].checks[0], target: 'T1', read: 'items', op: 'sorted_asc', expected: 'number', expected_from: undefined, offset: undefined };
+  const r = reconcile(p, [e('start', 'S1', { status: 'ok' }), e('check', 'S1.C1', { status: 'mismatch', actual: '["글 · 조회 5"]' }), policyOk('S1')]);
+  assert.equal(r.scenarios[0].checks[0].status, 'unresolved');
+  assert.ok(r.problems.some(x => x.includes('다시 계산한 unresolved')), '실행기 기록과 다르면 표시한다');
+});
+
 test('reconcile: 정책 기록이 없거나 위반이 있으면 무효, 시작 실패 뒤 기록도 무효', () => {
   const ok = [e('start', 'S1', { status: 'ok' }), e('check', 'S1.C1', { status: 'passed', actual: '30' })];
   assert.equal(reconcile(plan(), ok).scenarios[0].valid, false);
@@ -299,4 +307,27 @@ test('C4: 같은 템플릿 다른 페이지에서 계획을 실행하고, 대상
   assert.equal(systemVerdict(p, v['S7.C1']).level, 'hold');
   assert.deepEqual(validate({ ...p, scenarios: [{ ...p.scenarios[0], id: 'S9', variantOf: 'S99' }] }, [], new Map(Object.entries(p.targets)), [origin])
     .filter(e => e.includes('variantOf')).length, 1, '원본 없는 복제 표식은 거부한다');
+});
+
+test('선택 상자 값은 화면과 select 동작이 쓰는 옵션 라벨로 읽는다', async () => {
+  const posts = `${origin}/posts.html`;
+  const rule = { kind: 'inferred' as const, rule: 'sort-order', quote: '정렬 선택 상자로 목록 순서를 바꾼다' };
+  const p: Plan = {
+    version: 1, observations: [], features: [{ id: 'F1', name: '게시글 정렬', page: `${origin}/posts.html` }], questions: [], requirements: [], unplanned: [],
+    targets: {
+      T1: { target: { role: 'combobox', name: '^정렬$' }, group: false, url: posts },
+      T2: { target: { role: 'listitem', within: { role: 'list', name: '^게시글$' } }, group: true, url: posts },
+    },
+    scenarios: [{ id: 'S1', title: '조회수 정렬', covers: ['F1'], start: { url: posts },
+      steps: [{ id: 'S1.A1', op: 'select', target: 'T1', value: '조회수 높은순' }],
+      checks: [
+        { id: 'S1.C1', after: 'start', target: 'T1', read: 'value', op: 'equals', expected: '최신순', source: { kind: 'observed' }, precondition: true },
+        { id: 'S1.C2', after: 'S1.A1', target: 'T1', read: 'value', op: 'not_equals', expected_from: 'S1.C1', source: { kind: 'inferred', rule: 'action-has-effect', quote: '정렬 옵션을 고르면 선택 값이 바뀐다' } },
+        { id: 'S1.C3', after: 'S1.A1', target: 'T2', read: 'items', op: 'sorted_desc', expected: 'number', source: rule },
+      ] }],
+  };
+  const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir('select'), timeoutMs: 2000 });
+  assert.deepEqual(r.problems, [], readFileSync(`${r.runDir}/playwright.log`, 'utf8'));
+  assert.deepEqual(r.scenarios[0].checks.map(c => c.status), ['passed', 'passed', 'passed'], JSON.stringify(r.scenarios[0].checks));
+  assert.deepEqual(r.scenarios[0].checks.slice(0, 2).map(c => c.actual), ['최신순', '조회수 높은순']);
 });

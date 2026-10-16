@@ -7,7 +7,7 @@ export type Requirement = { id: string; text: string };
 export type Step = { id: string; op: 'click' | 'fill' | 'select' | 'press'; target?: string; value?: string };
 export type Read = 'text' | 'value' | 'checked' | 'visible' | 'count' | 'url' | 'items';
 /** record: 복제 실행(C4) 전용 "기록만" — 항상 통과하고 관측 참조용 값만 남긴다. 모델 계획에는 쓸 수 없다. */
-export type Op = 'record' | 'equals' | 'not_equals' | 'contains' | 'less' | 'greater' | 'same_number' | 'all_equal' | 'all_contain' | 'any_equal' | 'any_contain';
+export type Op = 'record' | 'equals' | 'not_equals' | 'contains' | 'less' | 'greater' | 'same_number' | 'all_equal' | 'all_contain' | 'any_equal' | 'any_contain' | 'sorted_asc' | 'sorted_desc';
 /**
  * 비교 규칙의 근거. requirement = 요구사항 인용, constraint = 화면 안내·HTML 제약 인용(탐색 중 본 텍스트),
  * observed = 탐색 때 본 값(시작 시점의 기준·선행조건에만), inferred = 일반 규칙 목록(rules.ts)의 규칙 ID 인용(quote는 적용 조건 설명).
@@ -60,8 +60,8 @@ export type Plan = {
 
 const NEEDS_VALUE = new Set(['fill', 'select', 'press']);
 const OPS = ['click', 'fill', 'select', 'press'];
-const READS: Read[] = ['text', 'value', 'checked', 'visible', 'count', 'url', 'items'];
-const COMPARES: Op[] = ['record', 'equals', 'not_equals', 'contains', 'less', 'greater', 'same_number', 'all_equal', 'all_contain', 'any_equal', 'any_contain'];
+export const READS: Read[] = ['text', 'value', 'checked', 'visible', 'count', 'url', 'items'];
+export const COMPARES: Op[] = ['record', 'equals', 'not_equals', 'contains', 'less', 'greater', 'same_number', 'all_equal', 'all_contain', 'any_equal', 'any_contain', 'sorted_asc', 'sorted_desc'];
 const KINDS = ['requirement', 'constraint', 'observed', 'inferred'];
 /** 읽기 종류마다 쓸 수 있는 비교 */
 const ALLOWED: Record<Read, Op[]> = {
@@ -71,7 +71,7 @@ const ALLOWED: Record<Read, Op[]> = {
   checked: ['equals', 'not_equals'],
   visible: ['equals', 'not_equals'],
   count: ['equals', 'not_equals', 'less', 'greater', 'same_number'],
-  items: ['all_equal', 'all_contain', 'any_equal', 'any_contain'],
+  items: ['all_equal', 'all_contain', 'any_equal', 'any_contain', 'sorted_asc', 'sorted_desc', 'not_equals'],
 };
 
 /** 문자열 안의 첫 숫자 (쉼표 제거). "$1,450" → 1450, "장바구니 (2)" → 2. 없으면 NaN. */
@@ -88,10 +88,35 @@ export function expectedFrom(c: Check, ref: string | undefined): string | undefi
   return Number.isNaN(n) ? undefined : ref.replace(/-?\d[\d,]*(?:\.\d+)?/, String(n + c.offset));
 }
 
+/** 정렬 검사의 expected: 무엇을 기준으로 정렬됐는지. 항목에 글자와 숫자가 함께 있으면(제목 · 조회 120) 데이터만으로 기준을 알 수 없다. */
+export const SORT_BY = ['number', 'text'] as const;
+
+/**
+ * 정렬을 확인할 기준 값. number: 항목마다 숫자가 정확히 하나일 때 그 숫자. text: 항목 글자 전체.
+ * 기준을 특정할 수 없거나(숫자가 없거나 여러 개, 모르는 기준), 항목이 2개 미만이거나, 기준 값이 모두 같으면 undefined(정렬을 확인한 것이 아니다 → 실행은 "값 못 읽음"으로 남긴다).
+ * shortcut: 글자 비교는 실행 환경의 기본 로캘을 따른다. 앱의 정렬 정책(로캘·대소문자)이 다르면 오판할 수 있다.
+ */
+export function sortKeys(actual: string, by: string): number[] | string[] | undefined {
+  let items: unknown;
+  try { items = JSON.parse(actual); } catch { return undefined; }
+  if (!Array.isArray(items) || items.length < 2) return undefined;
+  const text = items.map(String);
+  const keys = by === 'text' ? text
+    : by === 'number' && text.every(t => (t.match(/-?\d[\d,]*(?:\.\d+)?/g) ?? []).length === 1) ? text.map(numberIn) : undefined;
+  // 기준 값이 모두 같으면 오름·내림차순이 둘 다 참이라 정렬을 확인한 것이 아니다.
+  return keys && new Set<number | string>(keys).size > 1 ? keys : undefined;
+}
+
 /** 실행(fixture)과 대조(reconcile)가 같은 규칙으로 비교하도록 한 곳에 둔다. items의 실제 값은 JSON 배열 문자열이다. */
 export function compareValues(op: Op, actual: string, expected: string): boolean {
   // 빈 기대값의 포함 비교는 항상 참이다. 관측 참조가 빈 값으로 풀려도 통과시키지 않는다.
   if (op.includes('contain') && !expected.trim()) return false;
+  if (op === 'sorted_asc' || op === 'sorted_desc') {
+    const keys = sortKeys(actual, expected);
+    if (!keys) return false;
+    const cmp = (a: number | string, b: number | string) => typeof a === 'number' ? a - (b as number) : a.localeCompare(b as string);
+    return keys.every((k, i) => i === 0 || (op === 'sorted_asc' ? cmp(keys[i - 1], k) <= 0 : cmp(keys[i - 1], k) >= 0));
+  }
   if (op.startsWith('all_') || op.startsWith('any_')) {
     let items: unknown;
     try { items = JSON.parse(actual); } catch { return false; }
@@ -261,6 +286,7 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
       if (c.target !== undefined) errors.push(`${c.id}: read url takes no target`);
     } else if (!c.target) errors.push(`${c.id}: read ${c.read} needs a target`);
     else requireTarget(c.id, c.target, c.read === 'count' || c.read === 'items', c.after === 'start' && !s.variantOf ? s.start.url : undefined);
+    if (c.op.startsWith('sorted_') && !(SORT_BY as readonly unknown[]).includes(c.expected)) errors.push(`${c.id}: ${c.op} needs expected ${SORT_BY.join('|')} (the sort key)`);
   }
 
   function checkExpectation(c: Check, s: Scenario, order: string[]) {
@@ -301,6 +327,8 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
       if (rule.offset && !c.offset) errors.push(`${c.id}: rule ${rule.id} needs offset (how many steps up or down from the value read earlier)`);
       if (rule.form === 'bound' && c.op !== 'less' && c.op !== 'greater') errors.push(`${c.id}: rule ${rule.id} is a bound; use op less or greater`);
       if (rule.form === 'items' && c.read !== 'items') errors.push(`${c.id}: rule ${rule.id} checks every item; use read items`);
+      // 규칙마다 허용한 비교 연산만 쓴다. 다른 연산으로 바꿔 결함 상태를 통과시키는 우회를 막는다(예: 정렬 규칙에 any_equal).
+      if (rule.ops && !rule.ops.includes(c.op)) errors.push(`${c.id}: rule ${rule.id} allows op ${rule.ops.join('|')}`);
       return;
     }
     if (c.source.kind === 'constraint') {

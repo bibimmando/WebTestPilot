@@ -1,0 +1,33 @@
+{
+  "description": "비쇼핑몰 개발 fixture(qa/test/fixtures의 board·signup·posts·members)에 버그를 심은 변형. 이 파일은 정답지이며 계획·실행·분류 모델 입력에 넣지 않는다.",
+  "bugs": [
+    {
+      "id": "B1",
+      "page": "signup.html",
+      "summary": "비밀번호 7자도 가입 신청이 접수된다",
+      "violates": "비밀번호는 8자 이상이어야 합니다(화면 안내)",
+      "inScope": true
+    },
+    {
+      "id": "B2",
+      "page": "posts.html",
+      "summary": "조회수 높은순 정렬이 숫자가 아니라 글자 순서로 정렬된다(1500·1200·1030 등이 섞임)",
+      "violates": "정렬 기준 순서",
+      "inScope": true
+    },
+    {
+      "id": "B3",
+      "page": "posts.html",
+      "summary": "다음 페이지(2페이지)로 넘겨도 1페이지와 같은 글이 보인다(페이지 표시는 2 / 3)",
+      "violates": "페이지 넘김 시 항목 변경",
+      "inScope": true
+    },
+    {
+      "id": "B4",
+      "page": "members.html",
+      "summary": "뷰어 역할에서도 박서연 삭제 버튼이 보인다",
+      "violates": "구성원 삭제는 관리자만 할 수 있습니다(화면 안내)",
+      "inScope": true
+    }
+  ]
+}

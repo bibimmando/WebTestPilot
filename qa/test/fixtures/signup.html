@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>회원가입</title></head>
+<body><main><h1>회원가입</h1>
+<form id="f" novalidate>
+  <p><label>이름 (필수) <input id="name"></label></p>
+  <p><label>이메일 (필수) <input id="email"></label></p>
+  <p><label>비밀번호 <input id="pw" type="password"></label></p>
+  <p id="pwhelp">비밀번호는 8자 이상이어야 합니다.</p>
+  <button>가입 신청</button>
+</form>
+<div id="msg" role="status"></div>
+<a href="/board.html">게시판으로</a>
+</main>
+<script>
+  // 클라이언트에서만 검사한다(서버 요청 없음). MIN은 결함 변형에서 바뀐다.
+  const MIN = 8;
+  document.getElementById('f').addEventListener('submit', e => {
+    e.preventDefault();
+    const errors = [];
+    if (!document.getElementById('name').value.trim()) errors.push('이름을 입력하세요.');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(document.getElementById('email').value)) errors.push('이메일 형식이 올바르지 않습니다.');
+    if (document.getElementById('pw').value.length < MIN) errors.push('비밀번호가 너무 짧습니다.');
+    document.getElementById('msg').textContent = errors.length ? errors.join(' ') : '가입 신청이 접수되었습니다.';
+  });
+</script>
+</body></html>

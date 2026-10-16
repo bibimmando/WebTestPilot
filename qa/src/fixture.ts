@@ -4,7 +4,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path';
 import { test as base, expect, type Page, type Locator } from '@playwright/test';
 import { ariaText, ariaTextV1, guardContext, settle, shapeChanged, toLocator, type AriaNode, type Policy } from './browser.ts';
-import { compareValues, expectedFrom, type Plan, type Check } from './plan.ts';
+import { compareValues, expectedFrom, sortKeys, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
 if (!dir) throw new Error('QA_RUN_DIR가 없다. spec은 run.ts로 실행한다.');
@@ -175,12 +175,21 @@ async function read(page: Page, loc: Locator | undefined, c: Check, expected: st
   if (c.read === 'items') {
     const items: string[] = [];
     for (const l of await loc.all()) items.push(await text(l));
-    return done(JSON.stringify(items), count);
+    const actual = JSON.stringify(items);
+    // 정렬 기준 값을 특정할 수 없으면 결함이 아니라 값을 못 읽은 것이다.
+    if ((c.op === 'sorted_asc' || c.op === 'sorted_desc') && !sortKeys(actual, expected)) return { status: 'unresolved', actual, count, reason: '정렬 기준 값을 특정할 수 없음(항목 2개 미만, 기준 숫자가 없거나 여러 개, 모르는 기준)' };
+    return done(actual, count);
   }
   if (c.read === 'visible' && count === 0) return done('false', count);
   if (count !== 1) return { status: 'unresolved', count };
   if (c.read === 'text') return done(await text(loc), count);
-  if (c.read === 'value') return done(await loc.inputValue(), count);
+  // 선택 상자는 화면(snapshot)과 select 동작이 쓰는 옵션 라벨로 읽는다. 내부 value는 모델이 볼 수 없다.
+  if (c.read === 'value') {
+    // 다중 선택은 라벨 배열(JSON)로 남겨 "A, B" 같은 라벨끼리 섞이지 않게 한다.
+    const label = await loc.evaluate(e => !(e instanceof HTMLSelectElement) ? null
+      : e.multiple ? JSON.stringify([...e.selectedOptions].map(o => o.label)) : e.selectedOptions[0]?.label ?? '');
+    return done(label ?? await loc.inputValue(), count);
+  }
   if (c.read === 'checked') return done(String(await loc.isChecked()), count);
   return done(String(await loc.isVisible()), count);
 }

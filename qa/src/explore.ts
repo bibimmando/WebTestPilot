@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import type { Browser, Page } from 'playwright';
 import type Anthropic from '@anthropic-ai/sdk';
 import { openContext, snapshot, resolveRef, resolveGroup, resolveText, resolvePosition, settle, stableOnReload, type Policy } from './browser.ts';
-import { validate, freeze, mergePlans, cloneScenarios, startTargetsElsewhere, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
+import { validate, freeze, mergePlans, cloneScenarios, startTargetsElsewhere, READS, COMPARES, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
 import { rulesText } from './rules.ts';
 import { crawl, pathOf, type SiteMap, type Template } from './sitemap.ts';
 import { runAgent, type AgentResult, type Budget, type Send, type Tool } from './agent.ts';
@@ -314,8 +314,9 @@ const DRAFT_SCHEMA: Anthropic.Tool.InputSchema = {
           type: 'object', additionalProperties: false, required: ['id', 'after', 'read', 'op', 'source'],
           properties: { id: { type: 'string', description: 'S1.C1 ...' }, after: { type: 'string', description: '"start" 또는 이 시나리오의 단계 ID' },
             target: { type: 'string', description: 'read url이면 생략' },
-            read: { enum: ['text', 'value', 'checked', 'visible', 'count', 'url', 'items'] },
-            op: { enum: ['equals', 'not_equals', 'contains', 'less', 'greater', 'same_number', 'all_equal', 'all_contain', 'any_equal', 'any_contain'] },
+            read: { enum: READS },
+            // record는 복제 전용 내부 연산이라 모델에게 주지 않는다.
+            op: { enum: COMPARES.filter(o => o !== 'record') },
             expected: { type: 'string', description: '고정 기대값. expected_from과 둘 중 하나' },
             expected_from: { type: 'string', description: '같은 시나리오의 앞선 검사 ID. 그 검사가 읽은 실제 값을 기대값으로 쓴다' },
             offset: { type: 'integer', description: 'expected_from 값의 첫 숫자에 더할 수 (예: 증가 버튼 1번 = 1)' },

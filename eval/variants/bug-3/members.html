@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>구성원 관리</title></head>
+<body><main><h1>구성원 관리</h1>
+<fieldset><legend>보기 역할</legend>
+  <label><input type="radio" name="role" value="viewer" checked> 뷰어</label>
+  <label><input type="radio" name="role" value="admin"> 관리자</label>
+</fieldset>
+<p>구성원 삭제는 관리자만 할 수 있습니다.</p>
+<ul id="list" aria-label="구성원"></ul>
+<a href="/board.html">게시판으로</a>
+</main>
+<script>
+  const people = ['김하늘', '이도윤', '박서연', '최민준'];
+  const isAdmin = () => document.querySelector('input[name=role]:checked').value === 'admin';
+  const render = () => {
+    document.getElementById('list').innerHTML = people
+      .map(n => `<li>${n}${isAdmin() || n === '박서연' ? ` <button>${n} 삭제</button>` : ''}</li>`).join('');
+  };
+  document.querySelectorAll('input[name=role]').forEach(r => r.onchange = render);
+  // 삭제 버튼을 누르면 그 구성원이 목록에서 빠진다.
+  document.getElementById('list').onclick = e => { const n = e.target.closest('button')?.textContent.replace(/ 삭제$/, ''); if (n) { people.splice(people.indexOf(n), 1); render(); } };
+  render();
+</script>
+</body></html>

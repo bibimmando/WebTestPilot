@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>게시글 목록</title></head>
+<body><main><h1>게시글 목록</h1>
+<p id="total"></p>
+<label>정렬 <select id="sort"><option value="new">최신순</option><option value="views">조회수 높은순</option><option value="title">제목순</option></select></label>
+<p>한 페이지에 10개씩 보입니다.</p>
+<ul id="list" aria-label="게시글"></ul>
+<nav aria-label="페이지"><button id="prev">이전</button> <span id="page"></span> <button id="next">다음</button></nav>
+<a href="/board.html">게시판으로</a>
+</main>
+<script>
+  // 항목에는 숫자가 조회수 하나뿐이다(정렬 기준을 특정할 수 있게). 열 단위 대상 고정(조회수 칸만 묶기)은 아직 지원하지 않는다.
+  const words = ['분기 회의 안내', '보안 교육 일정', '사무실 이전 공지', '휴가 신청 방법', '신규 입사자 소개', '장비 반납 절차', '주간 보고 양식',
+    '워크숍 장소 투표', '도서 구입 신청', '건강 검진 안내', '주차 등록 변경', '프로젝트 회고 정리', '고객 문의 응대 지침', '출장비 정산 기준',
+    '사내 동아리 모집', '복지 포인트 사용', '회의실 예약 규칙', '문서 보관 정책', '야근 식대 안내', '명함 신청 방법', '인트라넷 점검', '연말 행사 준비', '팀 재배치 안내'];
+  const posts = words.map((t, i) => ({ title: t, views: [120, 85, 1030, 47, 260, 9, 512, 73, 1500, 33, 208, 64, 99, 1200, 18, 340, 56, 777, 21, 150, 88, 1010, 42][i], day: i + 1 }));
+  const PER = 10;
+  let page = 1;
+  const sorted = () => {
+    const by = document.getElementById('sort').value;
+    const list = [...posts];
+    if (by === 'new') list.sort((a, b) => b.day - a.day);
+    if (by === 'views') list.sort((a, b) => String(b.views).localeCompare(String(a.views)));
+    if (by === 'title') list.sort((a, b) => a.title.localeCompare(b.title, 'ko'));
+    return list;
+  };
+  const pages = () => Math.ceil(posts.length / PER);
+  const render = () => {
+    const list = sorted();
+    const from = page === 2 ? 0 : (page - 1) * PER;
+    document.getElementById('list').innerHTML = list.slice(from, from + PER)
+      .map(p => `<li>${p.title} · 조회 ${p.views}</li>`).join('');
+    document.getElementById('total').textContent = `총 ${posts.length}개`;
+    document.getElementById('page').textContent = `${page} / ${pages()} 페이지`;
+    document.getElementById('prev').disabled = page === 1;
+    document.getElementById('next').disabled = page === pages();
+  };
+  document.getElementById('sort').onchange = () => { page = 1; render(); };
+  document.getElementById('prev').onclick = () => { page--; render(); };
+  document.getElementById('next').onclick = () => { page++; render(); };
+  render();
+</script>
+</body></html>
