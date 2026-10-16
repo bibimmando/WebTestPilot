@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs';
 import type { Browser, Page } from 'playwright';
 import type Anthropic from '@anthropic-ai/sdk';
 import { openContext, snapshot, resolveRef, resolveGroup, resolveText, resolvePosition, settle, stableOnReload, type Policy } from './browser.ts';
-import { validate, freeze, startTargetsElsewhere, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
+import { validate, freeze, mergePlans, startTargetsElsewhere, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
 import { rulesText } from './rules.ts';
+import { crawl, type SiteMap, type Template } from './sitemap.ts';
 import { runAgent, type AgentResult, type Budget, type Send, type Tool } from './agent.ts';
 
 export const SYSTEM = readFileSync(new URL('../prompts/explore.md', import.meta.url), 'utf8');
@@ -14,18 +15,74 @@ const SETTLE_TIMEOUT = 3_000;
 const MAX_QUESTIONS = 5;
 const MAX_START_CHECKS = 20;
 
-export type ExploreResult = AgentResult & { plan?: Plan; blocked: string[]; violations: string[] };
+/**
+ * conversations: 발견한 모든 템플릿의 상태(계획함 · 계획 없이 끝남 · 시도 안 함과 사유). complete = 모든 템플릿을 계획함.
+ * exploredUrls: AI 탐색 중 실제로 머문 URL(사이트 지도에 없던 페이지 포함).
+ */
+export type ExploreResult = AgentResult & { plan?: Plan; blocked: string[]; violations: string[]; sitemap?: SiteMap; complete: boolean;
+  exploredUrls: string[];
+  conversations: { template: string; url: string; stop: AgentResult['stop'] | 'not_attempted'; detail?: string; turns: number; planned: boolean }[] };
+/** 템플릿별 대화가 함께 쓰는 번호·기록. 도구는 대화마다 새로 만들어 이전 대화의 대상·인용·행동 상태가 새지 않게 한다. */
+export type Part = { taken: Set<string>; next: { T: number; Q: number }; questions: Question[]; urls: Set<string> };
 type Task = { policy: Policy; startUrl: string; requirements: Requirement[] };
+/** 템플릿별 대화의 범위: 사이트 지도 요약, 이번 템플릿, 이어 쓸 ID 번호 */
+export type Scope = { map: SiteMap; template: Template; url: string; nextScenario: number; nextFeature: number };
 
-export async function explore(o: Task & { browser: Browser; send: Send; model: string; budget: Budget; maxTurns: number }): Promise<ExploreResult> {
+/**
+ * 사이트 지도를 만든 뒤 템플릿마다 새 대화로 탐색·계획하고, 계획을 하나로 합친다(설계 5장 1·2단계, M3 2차).
+ * 대상(T#)·질문(Q#)·본 텍스트는 대화 사이에 공유하고 S#·F#는 이어 쓴다. 템플릿이 하나면 대화 하나다.
+ * shortcut: 템플릿마다 대표 페이지 하나만 탐색한다(기준 실행). 같은 템플릿 다른 페이지 실행(C4)은 팀 확인 뒤.
+ */
+export async function explore(o: Task & { browser: Browser; send: Send; model: string; budget: Budget; maxTurns: number;
+  maxPages?: number; maxTemplates?: number; turnsPerTemplate?: number }): Promise<ExploreResult> {
   assertStartAllowed(o);
+  // 사이트 지도는 쓰기 허용과 상관없이 읽기 전용으로 모은다. 페이지를 여는 것만으로 스크립트가 쓰기 요청을 보낼 수 있다.
+  const reader = await openContext(o.browser, { ...o.policy, allowWrites: false });
+  let map: SiteMap;
+  try {
+    map = await crawl(await reader.context.newPage(), o.startUrl, o.policy, { maxPages: o.maxPages ?? 30, perTemplate: 2, timeoutMs: SETTLE_TIMEOUT });
+  } finally {
+    await reader.context.close();
+  }
   const { context, blocked, violations } = await openContext(o.browser, o.policy);
+  blocked.push(...reader.blocked);
+  violations.push(...reader.violations.map(v => `사이트 지도 수집 중 ${v}`));
   try {
     const page = await context.newPage();
-    await page.goto(o.startUrl);
-    const tools = exploreTools(page, o, violations);
-    const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools, user: taskMessage(o), budget: o.budget, maxTurns: o.maxTurns });
-    return { ...result, plan: result.result as Plan | undefined, blocked, violations };
+    // 시작 페이지의 템플릿을 먼저, 나머지는 발견 순서대로.
+    const startKey = map.templates.find(t => t.pages.includes(new URL(o.startUrl).href))?.key;
+    const ordered = [...map.templates].sort((a, b) => Number(b.key === startKey) - Number(a.key === startKey));
+    const templates = ordered.slice(0, o.maxTemplates ?? 8);
+    const single = templates.length <= 1;
+    const part: Part = { taken: new Set(), next: { T: 1, Q: 1 }, questions: [], urls: new Set() };
+    const plans: Plan[] = [];
+    const conversations: ExploreResult['conversations'] = [];
+    let last: AgentResult | undefined;
+    const turns: AgentResult['turns'] = [];
+    let stopped: string | undefined;
+    for (const template of single ? [{ key: startKey ?? o.startUrl, pages: [o.startUrl] }] : templates) {
+      if (stopped) {
+        conversations.push({ template: template.key, url: template.pages[0], stop: 'not_attempted', detail: stopped, turns: 0, planned: false });
+        continue;
+      }
+      const url = template.key === startKey ? o.startUrl : map.visited.find(v => template.pages.includes(v)) ?? template.pages[0];
+      await page.goto(url).catch(() => {});
+      const next = (prefix: string) => Math.max(0, ...[...part.taken].filter(id => id.startsWith(prefix)).map(id => Number(id.slice(1)))) + 1;
+      const tools = exploreTools(page, o, violations, single ? undefined : part);
+      const user = taskMessage(o, single ? undefined : { map, template, url, nextScenario: next('S'), nextFeature: next('F') });
+      const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools, user, budget: o.budget,
+        maxTurns: single ? o.maxTurns : o.turnsPerTemplate ?? 25 });
+      last = result;
+      turns.push(...result.turns);
+      conversations.push({ template: template.key, url, stop: result.stop, ...(result.detail ? { detail: result.detail } : {}), turns: result.turns.length, planned: !!result.result });
+      if (result.result) plans.push(result.result as Plan);
+      if (result.stop === 'budget') stopped = '예산 소진';
+    }
+    for (const t of ordered.slice(templates.length)) conversations.push({ template: t.key, url: t.pages[0], stop: 'not_attempted', detail: `페이지 종류 수 한도(${templates.length})`, turns: 0, planned: false });
+    // 실패한 대화의 질문도 버리지 않고 남긴다.
+    const plan = plans.length ? (single ? plans[0] : { ...mergePlans(plans, o.requirements), questions: part.questions }) : undefined;
+    return { ...last!, stop: plan ? 'done' : last!.stop, turns, plan, blocked, violations, sitemap: map, conversations,
+      complete: conversations.every(c => c.planned), exploredUrls: [...part.urls] };
   } finally {
     await context.close();
   }
@@ -36,10 +93,17 @@ export function assertStartAllowed(o: Task): void {
   if (!o.policy.origins.includes(new URL(o.startUrl).origin)) throw new Error(`시작 URL이 허용 origin 밖: ${o.startUrl}`);
 }
 
-/** 첫 사용자 메시지: 시작 URL, 권한, 요구사항. */
-export function taskMessage(o: Task): string {
+/** 첫 사용자 메시지: 시작 URL, 권한, 요구사항. 템플릿별 대화면 사이트 지도 요약과 이번 대화의 범위를 함께 준다. */
+export function taskMessage(o: Task, scope?: Scope): string {
   return [
-    `시작 URL: ${o.startUrl}`,
+    `시작 URL: ${scope?.url ?? o.startUrl}`,
+    ...(scope ? [
+      '사이트 지도 (페이지 종류별, 같은 종류는 대표 URL 하나로 다룸):',
+      ...scope.map.templates.map(t => `- ${t.key} (발견 ${t.pages.length}개)${t.key === scope.template.key ? '  ← 이번 대화' : ''}`),
+      '(페이지 종류는 URL 모양으로 묶은 잠정 분류입니다. 같은 종류로 묶였는데 기능이 다르면 observations에 적으세요.)',
+      `이번 대화의 범위: 페이지 종류 ${scope.template.key}. 이 종류의 기능만 계획하세요. 다른 종류는 다른 대화에서 다룹니다. 이 종류와 관련 없는 요구사항은 계획하지도 unplanned에 적지도 마세요.`,
+      `ID는 이어서 씁니다: 시나리오 S${scope.nextScenario}부터, 기능 F${scope.nextFeature}부터.`,
+    ] : []),
     `허용 origin: ${o.policy.origins.join(', ')} (쓰기 요청 ${o.policy.allowWrites ? '허용' : '차단'})`,
     ...(o.requirements.length
       ? ['요구사항 (먼저 계획하고, 남은 여유로 다른 기능도 탐색):', ...o.requirements.map(r => `- ${r.id}: ${r.text}`)]
@@ -50,22 +114,25 @@ export function taskMessage(o: Task): string {
 }
 
 /** 탐색 도구 전체. API 루프(explore)와 개발용 MCP 서버(mcp.ts)가 같은 도구를 쓴다. 계획이 통과하면 done에 Plan이 담긴다. */
-export function exploreTools(page: Page, o: Task, violations: string[]): Tool[] {
+export function exploreTools(page: Page, o: Task, violations: string[], part?: Part): Tool[] {
   const pinned = new Map<string, Pinned>();
   // 탐색 중 본 snapshot 텍스트. constraint(화면 안내) 인용이 실제로 화면에 있었는지 확인한다.
   const seen: string[] = [];
   const questions: Question[] = [];
-  return [...browserTools(page, o.policy, pinned, violations, seen), {
+  const nextTarget = () => part ? `T${part.next.T++}` : `T${pinned.size + 1}`;
+  return [...browserTools(page, o.policy, pinned, violations, seen, nextTarget, u => part?.urls.add(u)), {
     def: { name: 'ask_user', strict: true, description: '정답이 업무 규칙에 달려 있고 화면만으로 알 수 없을 때 사용자에게 질문을 남긴다. 답을 기다리지 말고 다른 기능을 계속 탐색한다.',
       input_schema: { type: 'object', additionalProperties: false, required: ['question', 'options'], properties: {
         question: { type: 'string' }, options: { type: 'array', items: { type: 'string' }, description: '선택지 2개 이상' },
         feature: { type: 'string', description: '이 질문에 걸린 기능 ID (F#). 계획의 features에 같은 ID로 적는다' } } } },
     run: async ({ question, options, feature }: { question: string; options: string[]; feature?: string }) => {
       if (!question.trim() || options.length < 2) return { text: '질문과 선택지 2개 이상이 필요합니다.', isError: true };
-      const id = `Q${questions.length + 1}`;
-      // 상한을 넘은 질문도 버리지 않고 "규칙 미확인"으로 남긴다. 사용자에게 보내는 질문은 상한까지만이다.
-      const overLimit = questions.filter(q => !q.overLimit).length >= MAX_QUESTIONS;
-      questions.push({ id, page: page.url(), question, options, ...(feature ? { feature } : {}), ...(overLimit ? { overLimit } : {}) });
+      const id = part ? `Q${part.next.Q++}` : `Q${questions.length + 1}`;
+      // 상한을 넘은 질문도 버리지 않고 "규칙 미확인"으로 남긴다. 사용자에게 보내는 질문은 실행 전체에서 상한까지만이다.
+      const overLimit = (part ? part.questions : questions).filter(q => !q.overLimit).length >= MAX_QUESTIONS;
+      const q: Question = { id, page: page.url(), question, options, ...(feature ? { feature } : {}), ...(overLimit ? { overLimit } : {}) };
+      questions.push(q);
+      part?.questions.push(q);
       return { text: `${id}로 남겼습니다${overLimit ? ` (질문 한도 ${MAX_QUESTIONS}개를 넘어 사용자에게 묻지 않고 "규칙 미확인"으로 기록)` : ''}. 답은 이번 실행 중에 오지 않습니다. 이 규칙에 의존하는 기대값은 쓰지 말고 다른 기능을 계속 탐색하세요.` };
     },
   }, {
@@ -73,7 +140,7 @@ export function exploreTools(page: Page, o: Task, violations: string[]): Tool[] 
     run: async (draft: Draft) => {
       if (violations.length) return { text: `정책 위반이 있어 계획을 받을 수 없다: ${violations.join(', ')}`, isError: true };
       let errors: string[];
-      const check = (onStart?: Set<string>) => validate(draft, o.requirements, pinned, o.policy.origins, seen.join('\n'), onStart);
+      const check = (onStart?: Set<string>) => validate(draft, o.requirements, pinned, o.policy.origins, seen.join('\n'), onStart, part);
       try { errors = check(); } catch (e) {
         return { text: `계획 형식 오류: ${(e as Error).message}`, isError: true };
       }
@@ -93,16 +160,20 @@ export function exploreTools(page: Page, o: Task, violations: string[]): Tool[] 
       const declared = new Set((draft.features ?? []).map(f => f.id));
       for (const q of questions) if (q.feature && !declared.has(q.feature)) errors.push(`question ${q.id}: feature ${q.feature} is not in features`);
       if (errors.length) return { text: `계획을 고쳐서 다시 제출하세요:\n- ${errors.join('\n- ')}`, isError: true };
+      // 템플릿별 대화면 이 계획의 ID를 다음 대화가 다시 쓰지 못하게 남긴다.
+      for (const id of [...draft.scenarios.map(s => s.id), ...(draft.features ?? []).map(f => f.id)]) part?.taken.add(id);
       return { text: '계획을 받았습니다.', done: freeze(draft, o.requirements, pinned, questions, [...onStart]) };
     },
   }];
 }
 
-function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, violations: string[], seen: string[]): Tool[] {
+function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, violations: string[], seen: string[],
+  nextTarget: () => string, onUrl: (url: string) => void): Tool[] {
   // 마지막 이동 뒤 행동이 없으면 지금 화면은 URL만으로 다시 만들 수 있으므로, pin한 대상이 새로 열어도 있는지 확인한다.
   let acted = false;
   const after = async (what: string) => {
     await settle(page, SETTLE_TIMEOUT);
+    onUrl(page.url());
     return `${what}. 현재 URL: ${page.url()}${violations.length ? `\n정책 위반: ${violations.join(', ')}` : ''}`;
   };
   const ref = { type: 'string', description: 'snapshot의 ref (예: e12)' } as const;
@@ -166,7 +237,7 @@ function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, v
           throw new Error(`${ref}는 같은 페이지를 새로 열면 사라지는 요소라 재실행할 수 없음. `
             + '바뀌는 목록이면 position=true로 순서로 고정하고, 기대값은 클릭 전에 읽은 값(expected_from)으로 비교하세요.');
         }
-        const id = `T${pinned.size + 1}`;
+        const id = nextTarget();
         pinned.set(id, { target: r.target, group, url: page.url() });
         return `${id} = ${JSON.stringify(r.target)}`;
       }),

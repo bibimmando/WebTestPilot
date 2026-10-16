@@ -1,6 +1,7 @@
+import { groupTemplates } from '../src/sitemap.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validate, freeze, compareValues, numberIn, expectedFrom, startTargetsElsewhere, type Draft, type Pinned, type Requirement } from '../src/plan.ts';
+import { validate, freeze, mergePlans, compareValues, numberIn, expectedFrom, startTargetsElsewhere, type Draft, type Pinned, type Requirement } from '../src/plan.ts';
 
 const origin = 'http://app.test';
 const reqs: Requirement[] = [
@@ -233,4 +234,18 @@ test('시작 상태 대상: 다른 URL에서 pin했어도 시작 URL을 새로 �
   assert.deepEqual(startTargetsElsewhere(d, other), [{ id: 'T2', url: origin + '/p' }]);
   assert.ok(validate(d, reqs, other, [origin]).some(e => e.includes('not on the start page')));
   assert.deepEqual(validate(d, reqs, other, [origin], undefined, new Set([`T2 ${origin}/p`])), []);
+});
+
+test('템플릿 묶기: 같은 상위 경로의 여러 상세는 한 템플릿, 최상위 경로와 쿼리 차이는 묶지 않거나 같은 페이지로 본다', () => {
+  const o = 'http://x.test';
+  const t = groupTemplates([`${o}/products`, `${o}/products?sort=1`, `${o}/product/a`, `${o}/product/b`, `${o}/cart`, `${o}/info/faq`]);
+  assert.deepEqual(t.map(x => [x.key.replace(o, ''), x.pages.length]), [['/products', 2], ['/product/:x', 2], ['/cart', 1], ['/info/faq', 1]]);
+});
+
+test('계획 합치기: 어느 대화도 다루지 않은 요구사항은 미계획으로 남기고, 다른 대화가 다룬 요구사항의 미계획은 지운다', () => {
+  const part = (s: string, covers: string[], unplanned: Draft['unplanned']) => freeze({ features: [], scenarios: [{ ...good().scenarios[0], id: s, covers,
+    steps: [], checks: [] }], unplanned }, reqs, pins);
+  const m = mergePlans([part('S1', ['R1'], [{ requirement: 'R2', reason: '이 페이지에 없음' }]), part('S2', ['R2'], [])], [...reqs, { id: 'R3', text: '세 번째' }]);
+  assert.deepEqual(m.scenarios.map(s => s.id), ['S1', 'S2']);
+  assert.deepEqual(m.unplanned, [{ requirement: 'R3', reason: '어느 페이지 종류의 대화에서도 계획하지 않음' }]);
 });

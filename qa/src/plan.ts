@@ -156,7 +156,11 @@ function shapeErrors(d: any): string[] {
 /**
  * onStart: 다른 페이지에서 pin했지만 시작 URL을 새로 열어 그 대상이 있음을 확인한 "대상ID 시작URL" 쌍. 시작 페이지 pin 규칙을 대신한다.
  */
-export function validate(draft: Draft, requirements: Requirement[], pinned: Map<string, Pinned>, origins: string[], seenText?: string, onStart?: Set<string>): string[] {
+/**
+ * part: 템플릿별 대화의 부분 계획을 검사할 때. taken = 앞선 대화에서 이미 쓴 S#·F# ID, partial = 요구사항 분모는 합친 계획에서 따진다.
+ */
+export function validate(draft: Draft, requirements: Requirement[], pinned: Map<string, Pinned>, origins: string[], seenText?: string, onStart?: Set<string>,
+  part?: { taken: Set<string> }): string[] {
   const shape = shapeErrors(draft);
   if (shape.length) return shape;
   const errors: string[] = [];
@@ -166,6 +170,7 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
     if (!pattern.test(id)) errors.push(`${where}: id "${id}" must match ${pattern}`);
     if (seen.has(id)) errors.push(`${where}: duplicate id "${id}"`);
     seen.add(id);
+    if (part?.taken.has(id)) errors.push(`${where}: id "${id}" is already used in another page type's plan`);
   };
   const covered = new Set<string>();
   const features = new Set<string>();
@@ -226,7 +231,7 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
     if (!u.reason.trim()) errors.push(`unplanned: "${u.requirement}" needs a reason`);
     covered.add(u.requirement);
   }
-  for (const r of requirements) if (!covered.has(r.id)) errors.push(`requirement ${r.id} is neither covered nor unplanned`);
+  if (!part) for (const r of requirements) if (!covered.has(r.id)) errors.push(`requirement ${r.id} is neither covered nor unplanned`);
   // 찾았다고 적은 기능은 검사하거나 미계획 사유를 남긴다(분모 보존).
   for (const f of features) if (!covered.has(f)) errors.push(`feature ${f} is neither covered nor unplanned`);
   return errors;
@@ -296,6 +301,26 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
     if (!s.covers.includes(r.id)) errors.push(`${c.id}: source requirement ${r.id} is not in ${s.id}.covers`);
     if (len < 2 || !r.text.includes(q)) errors.push(`${c.id}: source.quote must be an exact excerpt (2+ characters) of ${r.id}`);
   }
+}
+
+/**
+ * 템플릿별 대화의 계획을 하나로 합친다. ID(S#·F#·T#·Q#)는 대화 사이에 겹치지 않게 만들어졌다.
+ * 어느 대화에서도 계획하지 않은 요구사항은 미계획으로 남겨 분모에서 숨기지 않는다. 한 대화에서 미계획이어도 다른 대화가 다뤘으면 지운다.
+ */
+export function mergePlans(plans: Plan[], requirements: Requirement[]): Plan {
+  const covered = new Set(plans.flatMap(p => p.scenarios.flatMap(s => s.covers)));
+  const unplanned: Draft['unplanned'] = [];
+  for (const u of plans.flatMap(p => p.unplanned)) {
+    if (!covered.has(u.requirement) && !unplanned.some(x => x.requirement === u.requirement)) unplanned.push(u);
+  }
+  for (const r of requirements) {
+    if (!covered.has(r.id) && !unplanned.some(u => u.requirement === r.id)) unplanned.push({ requirement: r.id, reason: '어느 페이지 종류의 대화에서도 계획하지 않음' });
+  }
+  const questions = new Map(plans.flatMap(p => p.questions).map(q => [q.id, q]));
+  return { version: 1, requirements, features: plans.flatMap(p => p.features), scenarios: plans.flatMap(p => p.scenarios), unplanned,
+    observations: plans.flatMap(p => p.observations), questions: [...questions.values()],
+    ...(plans.some(p => p.startVerified?.length) ? { startVerified: plans.flatMap(p => p.startVerified ?? []) } : {}),
+    targets: Object.assign({}, ...plans.map(p => p.targets)) };
 }
 
 /** 검증된 Draft를 실행 가능한 Plan으로 고정한다. 대화 기록과 객체를 공유하지 않도록 복사하고, 쓰이지 않은 pin은 버린다. */

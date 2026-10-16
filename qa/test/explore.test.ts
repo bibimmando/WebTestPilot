@@ -268,3 +268,43 @@ test('다른 쿼리에서 pin한 시작 대상은 시작 URL을 새로 열어 �
   assert.deepEqual(r.plan!.startVerified!.sort(), [`T1 ${origin}/list.html`, `T2 ${origin}/list.html`]);
   assert.deepEqual(validate(r.plan!, r.plan!.requirements, new Map(Object.entries(r.plan!.targets)), [origin], undefined, new Set(r.plan!.startVerified)), []);
 });
+
+test('여러 페이지 사이트: 사이트 지도를 만들고 페이지 종류마다 대화를 나눠 계획을 합친다', async () => {
+  const firsts: string[] = [];
+  // 대화마다 첫 메시지(범위·이어 쓸 ID)를 보고 snapshot → 제목 pin → 계획 제출을 한다.
+  const send: Send = async req => {
+    const first = String(req.messages[0].content);
+    if (req.messages.length === 1) firsts.push(first);
+    const last = req.messages.at(-1)!;
+    const text = Array.isArray(last.content) ? last.content.map(b => (b.type === 'tool_result' ? String(b.content) : '')).join('\n') : '';
+    const S = first.match(/S(\d+)부터/)![1], F = first.match(/F(\d+)부터/)![1];
+    const call = (name: string, input: unknown) => ({ id: 'm', type: 'message', role: 'assistant', model: req.model, stop_reason: 'tool_use', stop_sequence: null,
+      content: [{ type: 'tool_use', id: `t${req.messages.length}`, name, input }],
+      usage: { input_tokens: 100, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } }) as unknown as Anthropic.Message;
+    if (req.messages.length === 1) return call('snapshot', {});
+    if (req.messages.length === 3) return call('pin', { ref: ref(text, 'heading'), group: false });
+    const T = text.match(/(T\d+) =/)![1];
+    const title = text.match(/"name":"\^(.*)\$"/)![1];
+    return call('submit_plan', { features: [{ id: `F${F}`, name: `${title} 제목`, page: 'x' }], unplanned: [],
+      scenarios: [{ id: `S${S}`, title: `${title} 제목`, covers: [`F${F}`], start: { url: firsts.at(-1)!.match(/시작 URL: (\S+)/)![1] }, steps: [],
+        checks: [{ id: `S${S}.C1`, after: 'start', target: T, read: 'text', op: 'equals', expected: title, source: { kind: 'constraint', quote: title } }] }] });
+  };
+  const r = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html',
+    requirements: [{ id: 'R1', text: '로그인하면 주문 내역을 본다' }], send, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20 });
+  assert.equal(r.stop, 'done', JSON.stringify(r.conversations));
+  assert.deepEqual(r.sitemap!.templates.map(t => t.key.replace(origin, '')), ['/home.html', '/item/:x', '/cart.html']);
+  assert.deepEqual(r.conversations.map(c => [c.template.replace(origin, ''), c.planned]), [['/home.html', true], ['/item/:x', true], ['/cart.html', true]]);
+  assert.match(firsts[1], /이번 대화의 범위: 페이지 종류 .*\/item\/:x/);
+  assert.deepEqual(r.plan!.scenarios.map(s => [s.id, s.title]), [['S1', '홈 화면 제목'], ['S2', '상품 A 제목'], ['S3', '장바구니 제목']]);
+  assert.deepEqual(Object.keys(r.plan!.targets).sort(), ['T1', 'T2', 'T3'], '대상 ID는 대화 사이에 겹치지 않는다');
+  assert.deepEqual(r.plan!.unplanned, [{ requirement: 'R1', reason: '어느 페이지 종류의 대화에서도 계획하지 않음' }]);
+  assert.deepEqual(validate(r.plan!, r.plan!.requirements, new Map(Object.entries(r.plan!.targets)), [origin]), [], '합친 계획은 실행 검증을 통과한다');
+  assert.deepEqual([r.sitemap!.visited.filter(u => u.includes('/item/')).length, r.sitemap!.unvisited.map(u => u.replace(origin, ''))], [2, ['/item/c.html']],
+    '같은 페이지 종류는 2개까지만 방문하고 나머지는 미방문으로 남긴다');
+  assert.equal(r.complete, true);
+
+  const limited = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html',
+    requirements: [], send, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20, maxTemplates: 2 });
+  assert.deepEqual(limited.conversations.map(c => [c.template.replace(origin, ''), c.stop, c.detail ?? '']).at(-1), ['/cart.html', 'not_attempted', '페이지 종류 수 한도(2)']);
+  assert.equal(limited.complete, false, '시도하지 않은 페이지 종류가 있으면 완료가 아니다');
+});

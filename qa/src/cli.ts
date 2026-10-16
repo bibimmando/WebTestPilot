@@ -20,6 +20,8 @@ const { values: a } = parseArgs({ options: {
   name: { type: 'string', default: 'live' }, origins: { type: 'string' },
   'plan-model': { type: 'string', default: 'claude-opus-5-5' }, 'triage-model': { type: 'string', default: 'claude-sonnet-5-5' },
   'max-turns': { type: 'string', default: '40' }, 'allow-writes': { type: 'boolean', default: false },
+  // 여러 페이지 종류가 있는 사이트: 사이트 지도 방문 한도, 탐색할 페이지 종류 수, 종류마다 대화 턴 수
+  'max-pages': { type: 'string', default: '30' }, 'max-templates': { type: 'string', default: '8' }, 'turns-per-template': { type: 'string', default: '25' },
 } });
 if (!a.url || !a.budget) {
   console.error('사용법: node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] --budget <USD> [--name 이름]');
@@ -57,10 +59,12 @@ const timing: Record<string, number> = {};
 const browser = await chromium.launch();
 let summary: Record<string, unknown> = {};
 try {
-  const e = await explore({ browser, policy, startUrl: a.url, requirements, send, model: a['plan-model']!, budget, maxTurns: Number(a['max-turns']) });
+  const e = await explore({ browser, policy, startUrl: a.url, requirements, send, model: a['plan-model']!, budget, maxTurns: Number(a['max-turns']),
+    maxPages: Number(a['max-pages']), maxTemplates: Number(a['max-templates']), turnsPerTemplate: Number(a['turns-per-template']) });
   timing.explore = Date.now() - t0;
-  save('explore.json', { stop: e.stop, detail: e.detail, blocked: e.blocked, violations: e.violations, turns: e.turns });
-  summary = { explore: { stop: e.stop, detail: e.detail, turns: e.turns.length, spentUsd: budget.spent } };
+  save('explore.json', { stop: e.stop, detail: e.detail, blocked: e.blocked, violations: e.violations, sitemap: e.sitemap, conversations: e.conversations, turns: e.turns });
+  summary = { explore: { stop: e.stop, detail: e.detail, turns: e.turns.length, spentUsd: budget.spent, conversations: e.conversations,
+    templates: e.sitemap?.templates.map(t => ({ key: t.key, pages: t.pages.length })), unvisited: e.sitemap?.unvisited.length } };
   if (!e.plan) throw new Error(`계획 없음: ${e.stop} ${e.detail ?? ''}`);
   save('plan.json', e.plan);
 
