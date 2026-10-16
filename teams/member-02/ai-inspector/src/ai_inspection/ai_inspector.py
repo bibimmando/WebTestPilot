@@ -9,7 +9,7 @@ if __package__ in {None, ""}:
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.ai_inspection.evidence_inspector import inspect_hybrid_input
+from src.ai_inspection.analysis.evidence_inspector import inspect_hybrid_input
 
 
 # 전처리 증거를 준비하거나 명시적 선택에 따라 Claude에 분석 요청한다.
@@ -21,6 +21,7 @@ def main(argv=None) -> int:
     mode.add_argument("--analyze", action="store_true", help="explicitly authorize paid Claude API analysis")
     mode.add_argument("--execute", action="store_true", help="authorize paid planning and approved shared-tab actions")
     parser.add_argument("--runtime-factory", help="trusted local module:function creating a RuntimeBinding")
+    parser.add_argument("--mcp-config", help="trusted local JSON config for an existing single CDP tab")
     parser.add_argument("--max-rounds", type=int, default=3)
     parser.add_argument("--max-actions", type=int, default=10)
     parser.add_argument("--max-seconds", type=float, default=60.0)
@@ -35,14 +36,16 @@ def main(argv=None) -> int:
         parser.error("--limit and --max-tokens must be positive")
     if not math.isfinite(args.api_timeout) or args.api_timeout <= 0:
         parser.error("--api-timeout must be finite and positive")
-    if args.execute and (not args.runtime_factory or args.runtime_factory.count(":") != 1):
-        parser.error("--execute requires --runtime-factory module:function for the prepared shared tab")
-    if not args.execute and args.runtime_factory:
-        parser.error("--runtime-factory is only supported with --execute")
+    if args.execute and (bool(args.runtime_factory) == bool(args.mcp_config)):
+        parser.error("--execute requires exactly one of --runtime-factory or --mcp-config")
+    if args.runtime_factory and args.runtime_factory.count(":") != 1:
+        parser.error("--runtime-factory must be module:function")
+    if not args.execute and (args.runtime_factory or args.mcp_config):
+        parser.error("Runtime connection options require --execute")
     factory = None
     config = None
     if args.analyze:
-        from src.ai_inspection.claude_client import ClaudeAnalyzer, MODELS
+        from src.ai_inspection.providers.claude_client import ClaudeAnalyzer, MODELS
         config = {"provider": "anthropic", "tier": args.tier, "model": args.model or MODELS[args.tier],
                   "max_tokens": args.max_tokens, "api_timeout": args.api_timeout}
 
@@ -52,15 +55,19 @@ def main(argv=None) -> int:
 
     try:
         if args.execute:
-            from src.ai_inspection.inspection_runtime import RuntimeLimits, run_inspection
+            from src.ai_inspection.execution.inspection_runtime import RuntimeLimits, run_inspection
             limits = RuntimeLimits(args.max_rounds, args.max_actions, args.max_seconds)
 
             def runtime_factory(context):
                 # The CLI integration module is trusted code, never a JSONL/page field.
                 import importlib
-                from src.ai_inspection.claude_client import ClaudePlanner
-                module, name = args.runtime_factory.split(":")
-                create = getattr(importlib.import_module(module), name)
+                from src.ai_inspection.providers.claude_client import ClaudePlanner
+                if args.mcp_config:
+                    from src.ai_inspection.execution.playwright_mcp_runtime import create_runtime
+                    create = lambda **kwargs: create_runtime(**kwargs, config_path=args.mcp_config)
+                else:
+                    module, name = args.runtime_factory.split(":")
+                    create = getattr(importlib.import_module(module), name)
                 planner = ClaudePlanner(tier=args.tier, model=args.model,
                                         max_tokens=args.max_tokens, timeout=args.api_timeout)
                 return create(context=context, planner=planner, output_dir=Path(args.output_dir))

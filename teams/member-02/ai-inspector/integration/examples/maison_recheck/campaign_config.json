@@ -1,0 +1,72 @@
+{
+  "schema_version": "inspection_campaign/1",
+  "target": "http://13.124.7.113:8081/",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "requirements_file": "requirements.md",
+  "settings": {
+    "model": "claude-sonnet-5-5",
+    "effort": "low",
+    "model_timeout": 45,
+    "max_tokens": 8000,
+    "max_actions": 16,
+    "max_rounds": 20,
+    "max_calls": 20,
+    "per_seed_seconds": 95,
+    "campaign_seconds": 1500,
+    "total_seconds": 1800
+  },
+  "seeds": [
+    "/products",
+    "/product/arc-pendant-light",
+    "/products?collection=furniture",
+    "/wishlist",
+    "/cart",
+    "/info",
+    "/",
+    "/products?collection=ceramics",
+    "/about",
+    "/info/faq",
+    "/products?collection=objects",
+    "/products?collection=textiles",
+    "/products?collection=seasonal",
+    "/product/harvest-dining-table",
+    "/products?collection=lighting",
+    "/product/forge-candleholder-set",
+    "/product/large-sculptural-vessel",
+    "/info/care-guide",
+    "/info/shipping-returns",
+    "/login",
+    "/signup",
+    "/forgot-password",
+    "/reset-password",
+    "/checkout",
+    "/account",
+    "/orders",
+    "/info/privacy",
+    "/info/terms",
+    "/info/cookies"
+  ],
+  "followups": [
+    {
+      "name": "saved_list",
+      "seed": "/product/harvest-dining-table",
+      "requirements_file": "requirements_saved_list.md",
+      "seconds": 130,
+      "max_actions": 12,
+      "max_rounds": 16,
+      "max_calls": 16
+    },
+    {
+      "name": "related_card",
+      "seed": "/product/harvest-dining-table",
+      "requirements_file": "requirements_related_card.md",
+      "seconds": 130,
+      "max_actions": 12,
+      "max_rounds": 16,
+      "max_calls": 16
+    }
+  ]
+}

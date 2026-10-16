@@ -1,6 +1,6 @@
 # 팀원 2 작업 공간
 
-> 현재 제품 개발은 [integration/](../member-01/integration/DEVELOPMENT.md)에서 이어갑니다. 판단 AI는 **[판단용 JSON 규격](../member-01/integration/docs/JUDGMENT_CONTRACT.md)**, [입력 예시](../member-01/integration/examples/judge_input.v2.example.json), [응답 예시](../member-01/integration/examples/scenario_judgments.example.json)를 기준으로 연결합니다. 기존 ai-inspector는 프로토타입 참고용입니다.
+2026-10-16: AI 판정 모듈과 통합 실행 사본을 member-02 안에서 독립 실행할 수 있도록 정리했습니다. member-01 파일 변경 없이 실행합니다. 외부 계약은 judge_input/2를 유지합니다.
 
 - 이름 / GitHub 아이디: logoo82
 - 담당 모듈: AI 검사기 및 리포트 구현
@@ -8,7 +8,9 @@
 - 개발 변경은 `development`에 승인 없이 직접 push할 수 있다.
 - `main` 반영은 `development` → `main` PR의 승인·CI 통과 후 총괄 담당자가 병합한다.
 
-현재 버그 판정과 사용자용 리포트는 후속 구현 예정입니다.
+현재 단계: 계획 → 실제 Playwright MCP 실행 → 증거 → 독립 AI 판정 → 추가 재현 → JSON 보고서까지 연결했습니다. Maison 17종 중 6종을 재현 확인했습니다. 사용자용 최종 리포트·로그인/암호 입력·UI 전용 확장·비용 최적화는 후속 작업입니다.
 
 - [프로젝트 설명](ai-inspector/README.md)
+- [설치·동일 조건 실행·오프라인 검증](ai-inspector/REPRODUCE.md)
+- [6종 대표 증거와 실험 비용·한계](ai-inspector/reports/maison_2026-10-16/README.md)
 - [AI 검사기 사용법](ai-inspector/docs/ai_inspection/AI_README.md)

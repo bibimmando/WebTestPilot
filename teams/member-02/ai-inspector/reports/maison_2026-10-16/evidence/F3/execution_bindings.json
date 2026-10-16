@@ -1,0 +1,32 @@
+{
+  "targets": {
+    "cart_qty": [
+      {
+        "role": "button",
+        "observed_ref": "1792080940983.1-chcum5itvjk:20"
+      },
+      {
+        "role": "button",
+        "name": "ADD TO BAG"
+      },
+      null
+    ],
+    "wish_save": [
+      null,
+      {
+        "role": "button",
+        "name": "ADD TO WISHLIST"
+      },
+      null
+    ],
+    "related_card": [
+      null,
+      {
+        "role": "link",
+        "name": "NEW VIEW DETAILS FURNITURE Woven Lounge Chair Danish paper cord meets sculptural walnut $1,450 Solid walnut",
+        "href": "http://13.124.7.113:8081/product/harvest-dining-table"
+      }
+    ]
+  },
+  "rejected_scenarios": []
+}

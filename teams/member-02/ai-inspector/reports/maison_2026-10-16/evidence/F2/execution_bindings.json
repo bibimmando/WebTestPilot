@@ -1,0 +1,15 @@
+{
+  "targets": {
+    "add_bag_then_inspect_cart": [
+      {
+        "role": "button",
+        "name": "ADD TO BAG"
+      },
+      {
+        "role": "link",
+        "href": "http://13.124.7.113:8081/cart"
+      }
+    ]
+  },
+  "rejected_scenarios": []
+}

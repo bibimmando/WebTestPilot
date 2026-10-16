@@ -1,0 +1,32 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "add_bag_then_inspect_cart",
+      "proposal_index": 0,
+      "title": "상품을 장바구니에 담은 후 장바구니 내용 확인",
+      "family": "functional",
+      "expected": "1) /cart 페이지로 이동한다. 2) 장바구니에 'Arc Pendant Light' 항목이 표시된다. 3) 수량이 상세 페이지에서 담은 1과 일치한다. 4) 단가/금액이 상세 페이지 가격 $485와 일치하고, 합계가 $485로 표시된다. 알림만으로는 통과 판단하지 않으며 장바구니 화면의 실제 항목을 근거로 한다.",
+      "expected_source": "site_requirements(상세 장바구니 추가, 장바구니 상품별 금액과 합계) 및 관찰된 UI(수량 1, 가격 $485)",
+      "steps": [
+        {
+          "operation": "click",
+          "element_key": "e:3cee001efb29932a5534",
+          "wait_ms": 1000
+        },
+        {
+          "operation": "click",
+          "element_key": "e:8c320c1e70bf500b8310",
+          "wait_ms": 1500
+        }
+      ]
+    }
+  ],
+  "unplanned": [],
+  "schema_version": "test_plan/2",
+  "initial_snapshot_id": "initial_load-1db8ad032581",
+  "flow_id": "flow-ed435518ddf64bad",
+  "proposal_tool_use_id": "toolu_01THYhJYkJBP76TtA7xCb15U",
+  "plan_tool_use_id": "toolu_01THYhJYkJBP76TtA7xCb15U",
+  "source_tool": "qa_test_plan",
+  "planning_attempts": 1
+}

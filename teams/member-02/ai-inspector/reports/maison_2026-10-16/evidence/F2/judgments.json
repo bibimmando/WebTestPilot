@@ -1,0 +1,26 @@
+{
+  "schema_version": "scenario_judgments/1",
+  "status": "recorded",
+  "tool_use_id": "toolu_01N6JMAxoaVC1mZutJQNarvn",
+  "judgments": [
+    {
+      "scenario_id": "add_bag_then_inspect_cart",
+      "verdict": "candidate",
+      "actual": "상세 페이지에서 ADD TO BAG 클릭 후 \"1 × Arc Pendant Light added to your bag.\" 알림이 표시되었고(가격 $485, 수량 1). 이어 장바구니 링크를 클릭하자 /cart로 이동했지만, 이동 직후와 추가 관찰 모두 \"Your Bag is Empty\"가 표시되었고 상품 항목 DOM 후보가 0개였습니다. Arc Pendant Light, 수량 1, $485 및 합계 $485는 장바구니 화면에서 확인되지 않았습니다. 스크린샷은 푸터 영역만 보여 항목 표시를 보여주지 않습니다.",
+      "snapshot_ids": [
+        "before_action-5676e80d6ad9",
+        "after_action-505c9cb6623f",
+        "before_action-053ccad9b714",
+        "after_action-49d488361aa4",
+        "inspection_observe-f94e53c97871"
+      ],
+      "action_ids": [
+        "action-38980afd2974433f",
+        "action-58fcc230bbec49f1"
+      ],
+      "judgment_source": "model",
+      "finding_id": "finding-437f687b27a443b0",
+      "finding_error": null
+    }
+  ]
+}

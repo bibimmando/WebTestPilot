@@ -1,0 +1,27 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "related_card_vs_destination",
+      "proposal_index": 0,
+      "title": "관련 상품 카드와 이동한 상세 페이지의 이름·가격 비교",
+      "family": "functional",
+      "expected": "1. 클릭 전 카드에 표시된 이름(Woven Lounge Chair)과 가격($1,450)을 기록한다. 2. 카드 클릭 후 도착한 상품 상세의 제목이 카드 이름과 같다. 3. 도착한 상세의 가격이 카드 가격과 같다. 불일치 시 카드와 목적지의 실제 값을 함께 증거로 남긴다.",
+      "expected_source": "요구사항(상품 상세는 연관 상품 제공) 및 관찰된 카드 UI에 근거한 휴리스틱 기대값; 카드 표시 내용을 의도 목적지로 간주",
+      "steps": [
+        {
+          "operation": "click",
+          "element_key": "e:ffc14ecd2f3355f8e4ab",
+          "wait_ms": 1500
+        }
+      ]
+    }
+  ],
+  "unplanned": [],
+  "schema_version": "test_plan/2",
+  "initial_snapshot_id": "initial_load-dbcf50252233",
+  "flow_id": "flow-6eb193e7ebfa4ed8",
+  "proposal_tool_use_id": "toolu_01UXHoyatcFSDhqoWQVYMyBU",
+  "plan_tool_use_id": "toolu_01UXHoyatcFSDhqoWQVYMyBU",
+  "source_tool": "qa_test_plan",
+  "planning_attempts": 1
+}

@@ -1,0 +1,97 @@
+{
+  "pipeline": "staged/3",
+  "flow_id": "flow-069dfca2e01c4ee6",
+  "initial_url": "http://13.124.7.113:8081/product/harvest-dining-table",
+  "status": "completed",
+  "test_status": "failed",
+  "initial_reset": {
+    "method": "browser_only",
+    "receipt": null
+  },
+  "target_audit": [
+    {
+      "scenario_id": "wishlist_save_inspect",
+      "step_index": 0,
+      "snapshot_id": "initial_load-0adcd8e3823f",
+      "status": "matched",
+      "identity": {
+        "role": "button",
+        "name": "ADD TO WISHLIST"
+      },
+      "selected_key": "e:6954a54f1a8d0aa461fe",
+      "equivalent_target_count": 1
+    },
+    {
+      "scenario_id": "wishlist_save_inspect",
+      "step_index": 1,
+      "snapshot_id": "after_action-b2d16364540b",
+      "status": "matched",
+      "identity": {
+        "role": "link",
+        "name": "위시리스트",
+        "href": "http://13.124.7.113:8081/wishlist"
+      },
+      "selected_key": "e:c24e528355f52a95be70",
+      "equivalent_target_count": 1
+    }
+  ],
+  "steps": [
+    {
+      "snapshot_id": "initial_load-0adcd8e3823f",
+      "operation": "click",
+      "element_key": "e:6954a54f1a8d0aa461fe",
+      "action_id": "action-c54d8452d93c471d",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-39383b63fc81",
+      "after_snapshot_id": "after_action-b2d16364540b",
+      "phase": "inspection",
+      "scenario_id": "wishlist_save_inspect",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_01G4vfkf4ZygbRaUeovHXGMg",
+      "wait_ms": 1000
+    },
+    {
+      "snapshot_id": "after_action-b2d16364540b",
+      "operation": "click",
+      "element_key": "e:c24e528355f52a95be70",
+      "action_id": "action-9cd077c3aa0e487b",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-b7b6b7efc57f",
+      "after_snapshot_id": "after_action-d0a0afe36e68",
+      "phase": "inspection",
+      "scenario_id": "wishlist_save_inspect",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_01G4vfkf4ZygbRaUeovHXGMg",
+      "wait_ms": 1500
+    },
+    {
+      "operation": "click",
+      "element_key": "e:6954a54f1a8d0aa461fe",
+      "snapshot_id": "reproduction_start-358dd3d983fe",
+      "action_id": "action-e883149e368a46d9",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-f27204b382d1",
+      "after_snapshot_id": "after_action-942f33de9ac5",
+      "phase": "reproduction",
+      "scenario_id": "wishlist_save_inspect",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_01G4vfkf4ZygbRaUeovHXGMg",
+      "wait_ms": 1000
+    },
+    {
+      "operation": "click",
+      "element_key": "e:c24e528355f52a95be70",
+      "snapshot_id": "after_action-942f33de9ac5",
+      "action_id": "action-254f9524f0ca4d72",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-6a0ffc04ccfc",
+      "after_snapshot_id": "after_action-76591b4a4874",
+      "phase": "reproduction",
+      "scenario_id": "wishlist_save_inspect",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_01G4vfkf4ZygbRaUeovHXGMg",
+      "wait_ms": 1500
+    }
+  ],
+  "errors": []
+}

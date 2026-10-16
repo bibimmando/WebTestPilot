@@ -1,0 +1,564 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "judge_input/2"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "flow_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "page_url": {
+      "type": "string",
+      "minLength": 1
+    },
+    "site_requirements": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "unplanned": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "proposal_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "proposal": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_index",
+          "reason",
+          "proposal"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "observations": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/observation"
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "$ref": "#/$defs/scenario"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "flow_id",
+    "page_url",
+    "site_requirements",
+    "unplanned",
+    "observations",
+    "scenarios"
+  ],
+  "additionalProperties": true,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WebTestPilot judge_input/2 cooperative input",
+  "description": "Current producer fields. Reference ownership and evidence sufficiency also require semantic validation. Optional absent evidence is unknown, not success.",
+  "$defs": {
+    "step": {
+      "type": "object",
+      "properties": {
+        "step_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "plan_step_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "purpose": {
+          "enum": ["planned", "supporting"]
+        },
+        "tool_use_id": {
+          "type": ["string", "null"]
+        },
+        "correction_of": {
+          "type": ["string", "null"]
+        },
+        "operation": {
+          "enum": [
+            "click",
+            "fill",
+            "press",
+            "navigate"
+          ]
+        },
+        "element_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3000
+        },
+        "action_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution": {
+          "enum": [
+            "executed",
+            "not_executed",
+            "unknown"
+          ]
+        },
+        "observation_status": {
+          "enum": [
+            "available",
+            "incomplete"
+          ]
+        },
+        "policy_blocked": {
+          "type": "boolean"
+        },
+        "before_snapshot_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "after_snapshot_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "diff": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "event_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "maxItems": 100
+        },
+        "resource_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "maxItems": 100
+        },
+        "error": {
+          "type": [
+            "string",
+            "object",
+            "null"
+          ]
+        },
+        "settle_error": {
+          "type": [
+            "string",
+            "object",
+            "null"
+          ]
+        },
+        "capture_error": {
+          "type": [
+            "string",
+            "object",
+            "null"
+          ]
+        },
+        "operator_error": {
+          "type": [
+            "string",
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "step_index",
+        "operation",
+        "action_id",
+        "execution",
+        "observation_status",
+        "policy_blocked",
+        "before_snapshot_id",
+        "after_snapshot_id"
+      ],
+      "additionalProperties": true
+    },
+    "scenario": {
+      "type": "object",
+      "properties": {
+        "scenario_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proposal_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "family": {
+          "enum": [
+            "functional",
+            "input_validation",
+            "routing",
+            "ui"
+          ]
+        },
+        "expected": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expected_source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution_status": {
+          "enum": [
+            "completed",
+            "incomplete",
+            "not_run"
+          ]
+        },
+        "failure_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "policy_blocked": {
+          "type": "boolean"
+        },
+        "planned_step_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "planned_steps": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {"type": "object"}
+        },
+        "attempted_plan_step_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed_plan_step_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "executed_action_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "attempted_step_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skipped_step_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "snapshot_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "maxItems": 100
+        },
+        "action_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "maxItems": 100
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        },
+        "start_snapshot_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "end_snapshot_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "snapshot_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "viewport": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "scroll": {
+                  "type": "object"
+                },
+                "full_page": {
+                  "type": "boolean"
+                },
+                "association": {
+                  "type": "string"
+                },
+                "captured_at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "snapshot_id"
+              ],
+              "additionalProperties": true
+            }
+          ]
+        },
+        "observation_errors": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "scenario_id",
+        "proposal_index",
+        "title",
+        "family",
+        "expected",
+        "expected_source",
+        "execution_status",
+        "failure_reason",
+        "policy_blocked",
+        "planned_step_count",
+        "attempted_step_count",
+        "skipped_step_count",
+        "snapshot_ids",
+        "action_ids",
+        "steps",
+        "start_snapshot_id",
+        "end_snapshot_id",
+        "image",
+        "observation_errors"
+      ],
+      "additionalProperties": true
+    },
+    "observation": {
+      "type": "object",
+      "properties": {
+        "observation": {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "const": "ai_input/1"
+            },
+            "content_trust": {
+              "const": "untrusted_page_data"
+            },
+            "page": {
+              "type": "object",
+              "properties": {
+                "snapshot_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "http_status": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "snapshot_id",
+                "url"
+              ],
+              "additionalProperties": true
+            },
+            "quality": {
+              "type": "object"
+            },
+            "controls": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "key"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "forms": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "errors": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "untrusted_text": {
+              "type": "string"
+            },
+            "omitted": {
+              "type": "object"
+            },
+            "source_truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "schema_version",
+            "page",
+            "quality",
+            "controls",
+            "forms",
+            "links",
+            "errors",
+            "omitted",
+            "source_truncated"
+          ],
+          "additionalProperties": true
+        },
+        "supplement": {
+          "type": "object",
+          "properties": {
+            "action_context": {
+              "type": "object",
+              "description": "Optional bounded action-relevant facts from full local snapshots; empty for legacy evidence.",
+              "properties": {
+                "schema_version": {"const": "action_context/1"},
+                "controls": {"type": "array", "maxItems": 12, "items": {"type": "object"}},
+                "forms": {"type": "array", "maxItems": 2, "items": {"type": "object"}},
+                "form_events": {"type": "array", "maxItems": 20, "items": {"type": "object"}},
+                "form_event_collection": {"type": "object"},
+                "omitted": {"type": "object"},
+                "budget_bytes": {"type": "integer", "minimum": 2048}
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "navigation": {
+          "type": "object"
+        },
+        "redirects": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "observation"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

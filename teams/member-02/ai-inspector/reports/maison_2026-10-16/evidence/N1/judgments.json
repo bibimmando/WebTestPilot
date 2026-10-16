@@ -1,0 +1,23 @@
+{
+  "schema_version": "scenario_judgments/1",
+  "status": "recorded",
+  "tool_use_id": "toolu_0113G3BHihX8XJAMk7kkn7jh",
+  "judgments": [
+    {
+      "scenario_id": "related_card_vs_destination",
+      "verdict": "candidate",
+      "actual": "클릭 전 관련 상품 카드에는 Woven Lounge Chair, $1,450이 표시되어 있었습니다. 카드 링크의 href는 /product/harvest-dining-table이었습니다. 클릭 후 URL은 그대로 /product/harvest-dining-table이었고 제목은 Harvest Dining Table, 가격은 $2,850이었습니다. 카드의 이름과 가격이 도착 페이지의 제목·가격과 모두 다릅니다. 클릭 후 스크린샷에서는 같은 카드가 보이고 상세 페이지로 바뀐 모습은 확인되지 않습니다.",
+      "snapshot_ids": [
+        "before_action-fdae1f1623fd",
+        "after_action-74036c7e81f9",
+        "inspection_observe-a20dab831289"
+      ],
+      "action_ids": [
+        "action-0c65eb7e00654fe4"
+      ],
+      "judgment_source": "model",
+      "finding_id": "finding-b109b903bf394499",
+      "finding_error": null
+    }
+  ]
+}

@@ -1,0 +1,1022 @@
+{
+  "schema_version": "scenario_results/2",
+  "flow_id": "flow-ed435518ddf64bad",
+  "plan_tool_use_id": "toolu_01THYhJYkJBP76TtA7xCb15U",
+  "scenarios": [
+    {
+      "scenario_id": "add_bag_then_inspect_cart",
+      "proposal_index": 0,
+      "title": "상품을 장바구니에 담은 후 장바구니 내용 확인",
+      "family": "functional",
+      "expected": "1) /cart 페이지로 이동한다. 2) 장바구니에 'Arc Pendant Light' 항목이 표시된다. 3) 수량이 상세 페이지에서 담은 1과 일치한다. 4) 단가/금액이 상세 페이지 가격 $485와 일치하고, 합계가 $485로 표시된다. 알림만으로는 통과 판단하지 않으며 장바구니 화면의 실제 항목을 근거로 한다.",
+      "expected_source": "site_requirements(상세 장바구니 추가, 장바구니 상품별 금액과 합계) 및 관찰된 UI(수량 1, 가격 $485)",
+      "execution_status": "completed",
+      "failure_reason": null,
+      "policy_blocked": false,
+      "planned_steps": [
+        {
+          "operation": "click",
+          "element_key": "e:3cee001efb29932a5534",
+          "wait_ms": 1000
+        },
+        {
+          "operation": "click",
+          "element_key": "e:8c320c1e70bf500b8310",
+          "wait_ms": 1500
+        }
+      ],
+      "planned_step_count": 2,
+      "attempted_step_count": 2,
+      "attempted_plan_step_count": 2,
+      "completed_plan_step_count": 2,
+      "executed_action_count": 2,
+      "skipped_step_count": 0,
+      "action_ids": [
+        "action-38980afd2974433f",
+        "action-58fcc230bbec49f1"
+      ],
+      "snapshot_ids": [
+        "initial_load-1db8ad032581",
+        "before_action-5676e80d6ad9",
+        "after_action-505c9cb6623f",
+        "before_action-053ccad9b714",
+        "after_action-49d488361aa4",
+        "inspection_observe-f94e53c97871"
+      ],
+      "steps": [
+        {
+          "execution": "executed",
+          "observation_status": "available",
+          "error": null,
+          "settle_error": null,
+          "capture_error": null,
+          "operator_error": null,
+          "before_snapshot_id": "before_action-5676e80d6ad9",
+          "after_snapshot_id": "after_action-505c9cb6623f",
+          "diff": {
+            "before_snapshot_id": "before_action-5676e80d6ad9",
+            "after_snapshot_id": "after_action-505c9cb6623f",
+            "added": [
+              {
+                "element_key": "e:127845aa6e8d21238b1b",
+                "element_id": "after_action-505c9cb6623f-e0",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:61c35bb622ac768936e8",
+                "element_id": "after_action-505c9cb6623f-e1",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:323d0d01925d40ca4346",
+                "element_id": "after_action-505c9cb6623f-e3",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b2b69f3313664b54a55a",
+                "element_id": "after_action-505c9cb6623f-e4",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:cd3eb090e2c06a8e50a7",
+                "element_id": "after_action-505c9cb6623f-e8",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:ae36c9ed5debfe82e4c9",
+                "element_id": "after_action-505c9cb6623f-e9",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:3f8fd7a9a88460e5f5c9",
+                "element_id": "after_action-505c9cb6623f-e11",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b7c4094dc74c45eaf3b6",
+                "element_id": "after_action-505c9cb6623f-e12",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:5d9ea1d5328628fc19e0",
+                "element_id": "after_action-505c9cb6623f-e13",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:83dde8a54d92f0dfc09d",
+                "element_id": "after_action-505c9cb6623f-e14",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:708db6b95308a3c0cbe7",
+                "element_id": "after_action-505c9cb6623f-e15",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:0b0f037ad7a4b4012d79",
+                "element_id": "after_action-505c9cb6623f-e16",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:34fe89220bad94d0d7c3",
+                "element_id": "after_action-505c9cb6623f-e17",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:71177d10a13d10673655",
+                "element_id": "after_action-505c9cb6623f-e18",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:2964b034414790730578",
+                "element_id": "after_action-505c9cb6623f-e19",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:645aa72e0ac6b53a8c04",
+                "element_id": "after_action-505c9cb6623f-e20",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:188677a33b8222455a94",
+                "element_id": "after_action-505c9cb6623f-e21",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:712b326ad294196722d5",
+                "element_id": "after_action-505c9cb6623f-e22",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:11a6f8e692b4651640cc",
+                "element_id": "after_action-505c9cb6623f-e23",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:126455a544bd46297bac",
+                "element_id": "after_action-505c9cb6623f-e24",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:2c133f6ecaeaeabeea76",
+                "element_id": "after_action-505c9cb6623f-e25",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:2747398b13128e9a7dec",
+                "element_id": "after_action-505c9cb6623f-e26",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:8e212dca6cd9c84da94f",
+                "element_id": "after_action-505c9cb6623f-e29",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:d8259a134492533fd681",
+                "element_id": "after_action-505c9cb6623f-e35",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:9082a7c7ef77ad6a62e1",
+                "element_id": "after_action-505c9cb6623f-e41",
+                "uncertain": true
+              }
+            ],
+            "removed": [
+              {
+                "element_key": "e:d7f4699b4700116f2e23",
+                "element_id": "before_action-5676e80d6ad9-e0",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:7c9e8221cf88c359273c",
+                "element_id": "before_action-5676e80d6ad9-e2",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:c17b01255918eb56bf6c",
+                "element_id": "before_action-5676e80d6ad9-e3",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:8c320c1e70bf500b8310",
+                "element_id": "before_action-5676e80d6ad9-e7",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:ae627d1fdee9d622ff7c",
+                "element_id": "before_action-5676e80d6ad9-e8",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:6971fabe01dc3ff6435a",
+                "element_id": "before_action-5676e80d6ad9-e10",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:26d67afc64e25f6711ed",
+                "element_id": "before_action-5676e80d6ad9-e11",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:16df81e601bea908f313",
+                "element_id": "before_action-5676e80d6ad9-e12",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:9a51d9faa07e1e7ef0a8",
+                "element_id": "before_action-5676e80d6ad9-e13",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:0ad3526c49f45909a729",
+                "element_id": "before_action-5676e80d6ad9-e14",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:fdf631925df937671367",
+                "element_id": "before_action-5676e80d6ad9-e15",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:64d10c286b588844ae8c",
+                "element_id": "before_action-5676e80d6ad9-e16",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:66bc1f144c6601d7595c",
+                "element_id": "before_action-5676e80d6ad9-e17",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:aedbf8f1d987a47c01ec",
+                "element_id": "before_action-5676e80d6ad9-e18",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b540b1df3af8fa2503ba",
+                "element_id": "before_action-5676e80d6ad9-e19",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:3cee001efb29932a5534",
+                "element_id": "before_action-5676e80d6ad9-e20",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:244f9255506621dfee73",
+                "element_id": "before_action-5676e80d6ad9-e21",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:d41988c140b93d24dfe1",
+                "element_id": "before_action-5676e80d6ad9-e22",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b1805e1c39563bf837d8",
+                "element_id": "before_action-5676e80d6ad9-e23",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:e56c4fbb42990eedaf18",
+                "element_id": "before_action-5676e80d6ad9-e24",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:136a4ffb1d953255017f",
+                "element_id": "before_action-5676e80d6ad9-e25",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:5e20ad684d1356ec35be",
+                "element_id": "before_action-5676e80d6ad9-e28",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:8f7ba2d7c00fc2a177f4",
+                "element_id": "before_action-5676e80d6ad9-e34",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:38356dfd5528462b5c6d",
+                "element_id": "before_action-5676e80d6ad9-e40",
+                "uncertain": true
+              }
+            ],
+            "changed": [
+              {
+                "element_key": "e:5dcfb749b41158e872d6",
+                "before_element_id": "before_action-5676e80d6ad9-e9",
+                "after_element_id": "after_action-505c9cb6623f-e10",
+                "changes": {
+                  "in_viewport": {
+                    "before": true,
+                    "after": false
+                  },
+                  "bbox.y": {
+                    "before": 24,
+                    "after": -446
+                  }
+                }
+              },
+              {
+                "element_key": "e:7d6e6c94f0bedc192f4e",
+                "before_element_id": "before_action-5676e80d6ad9-e26",
+                "after_element_id": "after_action-505c9cb6623f-e27",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2055.90625,
+                    "after": 1585.90625
+                  }
+                }
+              },
+              {
+                "element_key": "e:c78053283d04e3874b73",
+                "before_element_id": "before_action-5676e80d6ad9-e27",
+                "after_element_id": "after_action-505c9cb6623f-e28",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2055.90625,
+                    "after": 1585.90625
+                  }
+                }
+              },
+              {
+                "element_key": "e:5cc32661faf10fd51740",
+                "before_element_id": "before_action-5676e80d6ad9-e29",
+                "after_element_id": "after_action-505c9cb6623f-e30",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2309.40625,
+                    "after": 1839.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:d83f95c6523caaee884a",
+                "before_element_id": "before_action-5676e80d6ad9-e30",
+                "after_element_id": "after_action-505c9cb6623f-e31",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2345.40625,
+                    "after": 1875.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:24eecdc560d0794031b0",
+                "before_element_id": "before_action-5676e80d6ad9-e31",
+                "after_element_id": "after_action-505c9cb6623f-e32",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2381.40625,
+                    "after": 1911.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:fac83841598fe12b81b8",
+                "before_element_id": "before_action-5676e80d6ad9-e32",
+                "after_element_id": "after_action-505c9cb6623f-e33",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2417.40625,
+                    "after": 1947.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:6d94ce9112417cde6682",
+                "before_element_id": "before_action-5676e80d6ad9-e33",
+                "after_element_id": "after_action-505c9cb6623f-e34",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2453.40625,
+                    "after": 1983.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:da738dac126784a9aa21",
+                "before_element_id": "before_action-5676e80d6ad9-e35",
+                "after_element_id": "after_action-505c9cb6623f-e36",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2309.40625,
+                    "after": 1839.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:aa0b45d2f5b0cf6bd8cf",
+                "before_element_id": "before_action-5676e80d6ad9-e36",
+                "after_element_id": "after_action-505c9cb6623f-e37",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2345.40625,
+                    "after": 1875.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:c3b9838f4e7cce10a9ab",
+                "before_element_id": "before_action-5676e80d6ad9-e37",
+                "after_element_id": "after_action-505c9cb6623f-e38",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2273.40625,
+                    "after": 1803.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:430531f5ba0683862023",
+                "before_element_id": "before_action-5676e80d6ad9-e38",
+                "after_element_id": "after_action-505c9cb6623f-e39",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2309.40625,
+                    "after": 1839.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:366aecd29d4d3cd7fef6",
+                "before_element_id": "before_action-5676e80d6ad9-e39",
+                "after_element_id": "after_action-505c9cb6623f-e40",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2345.40625,
+                    "after": 1875.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:a79565dcc98297805f2a",
+                "before_element_id": "before_action-5676e80d6ad9-e41",
+                "after_element_id": "after_action-505c9cb6623f-e42",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2273.40625,
+                    "after": 1803.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:2c82466c6e2cd38783ed",
+                "before_element_id": "before_action-5676e80d6ad9-e42",
+                "after_element_id": "after_action-505c9cb6623f-e43",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2562.40625,
+                    "after": 2092.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:326834584284d7055029",
+                "before_element_id": "before_action-5676e80d6ad9-e43",
+                "after_element_id": "after_action-505c9cb6623f-e44",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2562.40625,
+                    "after": 2092.40625
+                  }
+                }
+              },
+              {
+                "element_key": "e:8579f106ea413f9b1144",
+                "before_element_id": "before_action-5676e80d6ad9-e44",
+                "after_element_id": "after_action-505c9cb6623f-e45",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2562.40625,
+                    "after": 2092.40625
+                  }
+                }
+              }
+            ],
+            "changed_truncated": false,
+            "url_changed": false,
+            "document_scope_changed": false,
+            "status_changed": false,
+            "error_candidates_changed": [
+              [
+                {
+                  "text": "",
+                  "visible": true,
+                  "source": "aria",
+                  "role": null
+                }
+              ],
+              [
+                {
+                  "text": "Added to bag1 × Arc Pendant Light added to your bag.",
+                  "visible": true,
+                  "source": "aria",
+                  "role": "status"
+                },
+                {
+                  "text": "",
+                  "visible": true,
+                  "source": "aria",
+                  "role": null
+                }
+              ]
+            ],
+            "uncertain": [],
+            "comparison_limited": false,
+            "limits": {
+              "before_partial": false,
+              "after_partial": false
+            },
+            "note": "observed changes only; not a causal verdict"
+          },
+          "event_ids": [],
+          "resource_ids": [],
+          "step_index": 0,
+          "plan_step_index": 0,
+          "purpose": "planned",
+          "operation": "click",
+          "element_key": "e:3cee001efb29932a5534",
+          "url": null,
+          "value": null,
+          "wait_ms": 1000,
+          "correction_of": null,
+          "action_id": "action-38980afd2974433f",
+          "tool_use_id": "toolu_01WPLVZ4a8syLzQmrdhpcFMk",
+          "policy_blocked": false
+        },
+        {
+          "execution": "executed",
+          "observation_status": "available",
+          "error": null,
+          "settle_error": null,
+          "capture_error": null,
+          "operator_error": null,
+          "before_snapshot_id": "before_action-053ccad9b714",
+          "after_snapshot_id": "after_action-49d488361aa4",
+          "diff": {
+            "before_snapshot_id": "before_action-053ccad9b714",
+            "after_snapshot_id": "after_action-49d488361aa4",
+            "added": [
+              {
+                "element_key": "e:d41d463b51987cd7b7ef",
+                "element_id": "after_action-49d488361aa4-e0",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:abcb6a4c9dcdb7c7b141",
+                "element_id": "after_action-49d488361aa4-e1",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:6fc8d61f9951960ac663",
+                "element_id": "after_action-49d488361aa4-e2",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:c77b3cb93f1d68a7b11d",
+                "element_id": "after_action-49d488361aa4-e3",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:225aea0b71be21991212",
+                "element_id": "after_action-49d488361aa4-e4",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:c99c18f7e89c5c0a5d67",
+                "element_id": "after_action-49d488361aa4-e5",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:8288dded9fdbebd83797",
+                "element_id": "after_action-49d488361aa4-e6",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:95ae7cd68c275cc91a3f",
+                "element_id": "after_action-49d488361aa4-e7",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:43be8973a3506926b9ba",
+                "element_id": "after_action-49d488361aa4-e8",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:fefa4f3dbc38ac2594fc",
+                "element_id": "after_action-49d488361aa4-e9",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:5f3a77a904aabf6a4151",
+                "element_id": "after_action-49d488361aa4-e10",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:89b375fddb8cdff04e65",
+                "element_id": "after_action-49d488361aa4-e11",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:93c80dea045476157f15",
+                "element_id": "after_action-49d488361aa4-e12",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:55ade31c717bc332e7b5",
+                "element_id": "after_action-49d488361aa4-e13",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:91b5d4a21d1a51d2ef1e",
+                "element_id": "after_action-49d488361aa4-e14",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:e3ecb96aa94327f218bb",
+                "element_id": "after_action-49d488361aa4-e15",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:13427797ee792fea95c6",
+                "element_id": "after_action-49d488361aa4-e16",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:d106b7b7312b742cf0bc",
+                "element_id": "after_action-49d488361aa4-e17",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:a32056bc72064f8e8f2b",
+                "element_id": "after_action-49d488361aa4-e18",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:fd21118bfcf515471de8",
+                "element_id": "after_action-49d488361aa4-e19",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:8dcd1df1f08520f5670c",
+                "element_id": "after_action-49d488361aa4-e20",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:25f529c188eae016686c",
+                "element_id": "after_action-49d488361aa4-e21",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:f1e02ef6aa6083e40b10",
+                "element_id": "after_action-49d488361aa4-e22",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:59d9bff6cc428b206dac",
+                "element_id": "after_action-49d488361aa4-e23",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:fa3e0df120ec04f5a6a7",
+                "element_id": "after_action-49d488361aa4-e24",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:37b2e2d576087519b201",
+                "element_id": "after_action-49d488361aa4-e25",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:a1a71178886e7a0b11a2",
+                "element_id": "after_action-49d488361aa4-e26",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:3acaaf219833eb087475",
+                "element_id": "after_action-49d488361aa4-e27",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:f3e09ea39d79992819a9",
+                "element_id": "after_action-49d488361aa4-e28",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:0a9f2fa59f9394c2717b",
+                "element_id": "after_action-49d488361aa4-e29",
+                "uncertain": false
+              }
+            ],
+            "removed": [
+              {
+                "element_key": "e:127845aa6e8d21238b1b",
+                "element_id": "before_action-053ccad9b714-e0",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:61c35bb622ac768936e8",
+                "element_id": "before_action-053ccad9b714-e1",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:14a10f7598a96f056c3f",
+                "element_id": "before_action-053ccad9b714-e2",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:323d0d01925d40ca4346",
+                "element_id": "before_action-053ccad9b714-e3",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b2b69f3313664b54a55a",
+                "element_id": "before_action-053ccad9b714-e4",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:d8eed2240169502b62fc",
+                "element_id": "before_action-053ccad9b714-e5",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:356ed26c2bb245ad8770",
+                "element_id": "before_action-053ccad9b714-e6",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:fa677c7fa47b8f7c7908",
+                "element_id": "before_action-053ccad9b714-e7",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:cd3eb090e2c06a8e50a7",
+                "element_id": "before_action-053ccad9b714-e8",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:ae36c9ed5debfe82e4c9",
+                "element_id": "before_action-053ccad9b714-e9",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:5dcfb749b41158e872d6",
+                "element_id": "before_action-053ccad9b714-e10",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:3f8fd7a9a88460e5f5c9",
+                "element_id": "before_action-053ccad9b714-e11",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b7c4094dc74c45eaf3b6",
+                "element_id": "before_action-053ccad9b714-e12",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:5d9ea1d5328628fc19e0",
+                "element_id": "before_action-053ccad9b714-e13",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:83dde8a54d92f0dfc09d",
+                "element_id": "before_action-053ccad9b714-e14",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:708db6b95308a3c0cbe7",
+                "element_id": "before_action-053ccad9b714-e15",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:0b0f037ad7a4b4012d79",
+                "element_id": "before_action-053ccad9b714-e16",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:34fe89220bad94d0d7c3",
+                "element_id": "before_action-053ccad9b714-e17",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:71177d10a13d10673655",
+                "element_id": "before_action-053ccad9b714-e18",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:2964b034414790730578",
+                "element_id": "before_action-053ccad9b714-e19",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:645aa72e0ac6b53a8c04",
+                "element_id": "before_action-053ccad9b714-e20",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:188677a33b8222455a94",
+                "element_id": "before_action-053ccad9b714-e21",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:712b326ad294196722d5",
+                "element_id": "before_action-053ccad9b714-e22",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:11a6f8e692b4651640cc",
+                "element_id": "before_action-053ccad9b714-e23",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:126455a544bd46297bac",
+                "element_id": "before_action-053ccad9b714-e24",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:2c133f6ecaeaeabeea76",
+                "element_id": "before_action-053ccad9b714-e25",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:2747398b13128e9a7dec",
+                "element_id": "before_action-053ccad9b714-e26",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:7d6e6c94f0bedc192f4e",
+                "element_id": "before_action-053ccad9b714-e27",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:c78053283d04e3874b73",
+                "element_id": "before_action-053ccad9b714-e28",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:8e212dca6cd9c84da94f",
+                "element_id": "before_action-053ccad9b714-e29",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:5cc32661faf10fd51740",
+                "element_id": "before_action-053ccad9b714-e30",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:d83f95c6523caaee884a",
+                "element_id": "before_action-053ccad9b714-e31",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:24eecdc560d0794031b0",
+                "element_id": "before_action-053ccad9b714-e32",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:fac83841598fe12b81b8",
+                "element_id": "before_action-053ccad9b714-e33",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:6d94ce9112417cde6682",
+                "element_id": "before_action-053ccad9b714-e34",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:d8259a134492533fd681",
+                "element_id": "before_action-053ccad9b714-e35",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:da738dac126784a9aa21",
+                "element_id": "before_action-053ccad9b714-e36",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:aa0b45d2f5b0cf6bd8cf",
+                "element_id": "before_action-053ccad9b714-e37",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:c3b9838f4e7cce10a9ab",
+                "element_id": "before_action-053ccad9b714-e38",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:430531f5ba0683862023",
+                "element_id": "before_action-053ccad9b714-e39",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:366aecd29d4d3cd7fef6",
+                "element_id": "before_action-053ccad9b714-e40",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:9082a7c7ef77ad6a62e1",
+                "element_id": "before_action-053ccad9b714-e41",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:a79565dcc98297805f2a",
+                "element_id": "before_action-053ccad9b714-e42",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:2c82466c6e2cd38783ed",
+                "element_id": "before_action-053ccad9b714-e43",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:326834584284d7055029",
+                "element_id": "before_action-053ccad9b714-e44",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:8579f106ea413f9b1144",
+                "element_id": "before_action-053ccad9b714-e45",
+                "uncertain": false
+              }
+            ],
+            "changed": [],
+            "changed_truncated": false,
+            "url_changed": true,
+            "document_scope_changed": true,
+            "status_changed": false,
+            "error_candidates_changed": [
+              [
+                {
+                  "text": "Added to bag1 × Arc Pendant Light added to your bag.",
+                  "visible": true,
+                  "source": "aria",
+                  "role": "status"
+                },
+                {
+                  "text": "",
+                  "visible": true,
+                  "source": "aria",
+                  "role": null
+                }
+              ],
+              [
+                {
+                  "text": "",
+                  "visible": true,
+                  "source": "aria",
+                  "role": null
+                }
+              ]
+            ],
+            "uncertain": [],
+            "comparison_limited": false,
+            "limits": {
+              "before_partial": false,
+              "after_partial": false
+            },
+            "note": "observed changes only; not a causal verdict"
+          },
+          "event_ids": [],
+          "resource_ids": [],
+          "step_index": 1,
+          "plan_step_index": 1,
+          "purpose": "planned",
+          "operation": "click",
+          "element_key": "e:cd3eb090e2c06a8e50a7",
+          "url": null,
+          "value": null,
+          "wait_ms": 1500,
+          "correction_of": null,
+          "action_id": "action-58fcc230bbec49f1",
+          "tool_use_id": "toolu_01Wuidk5SVpeVw5kcwfBYBgJ",
+          "policy_blocked": false
+        }
+      ],
+      "start_snapshot_id": "initial_load-1db8ad032581",
+      "end_snapshot_id": "inspection_observe-f94e53c97871",
+      "image": {
+        "path": "images\\inspection_observe-f94e53c97871.png",
+        "snapshot_id": "inspection_observe-f94e53c97871",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 356
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T14:58:10.151930+00:00"
+      },
+      "observation_errors": []
+    }
+  ],
+  "export_note": "Derived compact copy; original before/after observations are in referenced snapshots."
+}

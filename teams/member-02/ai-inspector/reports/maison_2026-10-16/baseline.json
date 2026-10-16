@@ -1,0 +1,76 @@
+{
+  "schema_version": "shared_confirmation_baseline/1",
+  "confirmed_bug_ids": [
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "N1",
+    "U5"
+  ],
+  "count": 6,
+  "total": 17,
+  "representative_evidence": [
+    {
+      "bug_id": "F1",
+      "finding_id": "finding-fffc2b5861c64d3d",
+      "flow_id": "flow-069dfca2e01c4ee6",
+      "source_run": "20261015_160320",
+      "source_batch": "30_followup_saved_list",
+      "folder": "evidence/F1",
+      "status": "confirmed",
+      "reproduction": "reproduced"
+    },
+    {
+      "bug_id": "F2",
+      "finding_id": "finding-437f687b27a443b0",
+      "flow_id": "flow-ed435518ddf64bad",
+      "source_run": "20261015_145748",
+      "source_batch": "01_bag",
+      "folder": "evidence/F2",
+      "status": "confirmed",
+      "reproduction": "reproduced"
+    },
+    {
+      "bug_id": "F3",
+      "finding_id": "finding-a076c338b0ea4df7",
+      "flow_id": "flow-862d925b56de4208",
+      "source_run": "20261015_160320",
+      "source_batch": "14_product_harvest-dining-table",
+      "folder": "evidence/F3",
+      "status": "confirmed",
+      "reproduction": "reproduced"
+    },
+    {
+      "bug_id": "F4",
+      "finding_id": "finding-1b4c07f908614338",
+      "flow_id": "flow-50b44838f4e44ff3",
+      "source_run": "20261015_160320",
+      "source_batch": "01_products",
+      "folder": "evidence/F4",
+      "status": "confirmed",
+      "reproduction": "reproduced"
+    },
+    {
+      "bug_id": "N1",
+      "finding_id": "finding-b109b903bf394499",
+      "flow_id": "flow-6eb193e7ebfa4ed8",
+      "source_run": "20261015_160320",
+      "source_batch": "31_followup_related_card",
+      "folder": "evidence/N1",
+      "status": "confirmed",
+      "reproduction": "reproduced"
+    },
+    {
+      "bug_id": "U5",
+      "finding_id": "finding-d1178870e6034dcd",
+      "flow_id": "flow-e640ef8f2a6446c4",
+      "source_run": "20261015_160320",
+      "source_batch": "18_info_care-guide",
+      "folder": "evidence/U5",
+      "status": "confirmed",
+      "reproduction": "reproduced"
+    }
+  ],
+  "note": "F2 uses the prior direct-link-click evidence; all other representatives are from the full review and followups. This is not a promise that replanning returns identical findings."
+}

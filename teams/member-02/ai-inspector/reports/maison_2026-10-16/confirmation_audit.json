@@ -1,0 +1,191 @@
+{
+  "ground_truth_total": 17,
+  "ground_truth_enabled": 17,
+  "current_unique_confirmed": [
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "N1",
+    "U5"
+  ],
+  "previous_unique_confirmed": [
+    "F2",
+    "F4",
+    "U5"
+  ],
+  "cumulative_unique_confirmed": [
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "N1",
+    "U5"
+  ],
+  "new_unique_confirmed": [
+    "F1",
+    "F3",
+    "N1"
+  ],
+  "current_fraction_of_17": 0.35294117647058826,
+  "cumulative_fraction_of_17": 0.35294117647058826,
+  "confirmed_record_count": 9,
+  "review_complete": true,
+  "unreviewed_candidate_ids": [],
+  "bugs": [
+    {
+      "id": "F1",
+      "title": "위시리스트 목록에서 마지막 항목이 빠짐",
+      "current_confirmed": true,
+      "current_candidate": true,
+      "previous_confirmed": false,
+      "cumulative_confirmed": true,
+      "note": "본 검사에서는 후보·재현 예산 부족. 독립 후속 검사에서 재현 확인됨. DOM/텍스트 근거이며 본문 이미지 확인은 못한 제한 있음."
+    },
+    {
+      "id": "F2",
+      "title": "장바구니 담기 거짓 성공",
+      "current_confirmed": true,
+      "current_candidate": true,
+      "previous_confirmed": true,
+      "cumulative_confirmed": true,
+      "note": "이번 navigate 방식의 제한을 판정 원문에 보존. 이전 직접 링크 클릭 검사에서도 재현 확인된 유형."
+    },
+    {
+      "id": "F3",
+      "title": "수량 조절 버튼 무반응",
+      "current_confirmed": true,
+      "current_candidate": true,
+      "previous_confirmed": false,
+      "cumulative_confirmed": true,
+      "note": "Harvest 검사의 독립 수량 조건 unmet과 추가 재현에서 같은 plus 버튼의 1→1을 확인. F2와 같은 finding의 서로 다른 조건 위반을 각 ID에 대조."
+    },
+    {
+      "id": "F4",
+      "title": "컬렉션 필터 해제 무반응",
+      "current_confirmed": true,
+      "current_candidate": true,
+      "previous_confirmed": true,
+      "cumulative_confirmed": true,
+      "note": ""
+    },
+    {
+      "id": "V1",
+      "title": "BUG-001 주문 이메일 형식 검증 누락",
+      "current_confirmed": false,
+      "current_candidate": false,
+      "previous_confirmed": false,
+      "cumulative_confirmed": false,
+      "note": "빈 장바구니·주문 생성 및 쓰기 요청 제한으로 주문 접수까지 검증하지 않음."
+    },
+    {
+      "id": "V2",
+      "title": "BUG-002 계정 이름 공백 저장",
+      "current_confirmed": false,
+      "current_candidate": false,
+      "previous_confirmed": false,
+      "cumulative_confirmed": false,
+      "note": "로그인·기존 계정 프로필 변경을 수행하지 않음."
+    },
+    {
+      "id": "V3",
+      "title": "BUG-004 배송 도시 빈값 수용",
+      "current_confirmed": false,
+      "current_candidate": false,
+      "previous_confirmed": false,
+      "cumulative_confirmed": false,
+      "note": "도시만 빈값인 실제 주문 수용 비교를 수행하지 않음."
+    },
+    {
+      "id": "V4",
+      "title": "BUG-005 재설정 암호 확인 불일치 수용",
+      "current_confirmed": false,
+      "current_candidate": false,
+      "previous_confirmed": false,
+      "cumulative_confirmed": false,
+      "note": "유효 토큰·암호 재설정·후속 로그인을 수행하지 않음."
+    },
+    {
+      "id": "V5",
+      "title": "BUG-003 정확히 8자인 가입 암호 거부",
+      "current_confirmed": false,
+      "current_candidate": false,
+      "previous_confirmed": false,
+      "cumulative_confirmed": false,
+      "note": "암호 입력 및 정확한 경계값의 가입 성공 검사를 수행하지 않음."
+    },
+    {
+      "id": "N1",
+      "title": "연관 상품을 누르면 다른 상품이 열림",
+      "current_confirmed": true,
+      "current_candidate": true,
+      "previous_confirmed": false,
+      "cumulative_confirmed": true,
+      "note": "본 검사에서는 후보·재현 예산 부족. 독립 후속 검사에서 카드 라벨/목적지 불일치 재현 확인됨."
+    },
+    {
+      "id": "N3",
+      "title": "화면을 옮겨도 스크롤이 맨 위로 가지 않음",
+      "current_confirmed": false,
+      "current_candidate": false,
+      "previous_confirmed": false,
+      "cumulative_confirmed": false,
+      "note": "일부 이미지의 스크롤 유지 관찰을 독립 후보·추가 재현 확정으로 세지 않음."
+    },
+    {
+      "id": "N4",
+      "title": "로그인 후 원래 가려던 곳 대신 홈으로 감",
+      "current_confirmed": false,
+      "current_candidate": false,
+      "previous_confirmed": false,
+      "cumulative_confirmed": false,
+      "note": "로그인 후 원래 목적지 복귀는 수행하지 않음."
+    },
+    {
+      "id": "U1",
+      "title": "가로 스크롤이 생겨 오른쪽 내용이 잘림",
+      "current_confirmed": false,
+      "current_candidate": false,
+      "previous_confirmed": false,
+      "cumulative_confirmed": false,
+      "note": "1280×800 조건이며 좁은 화면 폭 비교를 별도로 실행하지 않음."
+    },
+    {
+      "id": "U2",
+      "title": "상품 이름이 줄임표 없이 잘림",
+      "current_confirmed": false,
+      "current_candidate": false,
+      "previous_confirmed": false,
+      "cumulative_confirmed": false,
+      "note": "긴 상품명 잘림을 별도 후보·추가 재현 확정한 기록 필요."
+    },
+    {
+      "id": "U3",
+      "title": "키보드 포커스 표시가 보이지 않음",
+      "current_confirmed": false,
+      "current_candidate": false,
+      "previous_confirmed": false,
+      "cumulative_confirmed": false,
+      "note": "키보드 포커스 표시 누락을 별도 후보·추가 재현 확정한 기록 필요."
+    },
+    {
+      "id": "U4",
+      "title": "누를 수 없는 버튼이 누를 수 있어 보임",
+      "current_confirmed": false,
+      "current_candidate": false,
+      "previous_confirmed": false,
+      "cumulative_confirmed": false,
+      "note": "disabled 버튼의 시각적 구분 문제를 별도 후보·추가 재현 확정한 기록 필요."
+    },
+    {
+      "id": "U5",
+      "title": "상단 헤더가 본문 첫 부분을 덮음",
+      "current_confirmed": true,
+      "current_candidate": true,
+      "previous_confirmed": true,
+      "cumulative_confirmed": true,
+      "note": "이번 Care Guide와 Shipping & Returns 실제 이미지 검사에서도 재현 확인. 동일 헤더 가림을 한 ID로 집계."
+    }
+  ],
+  "missing_token_usage_calls": 1
+}

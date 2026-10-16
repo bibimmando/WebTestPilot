@@ -1,0 +1,147 @@
+{
+  "schema_version": "judgment_assessment/1",
+  "scenarios": [
+    {
+      "scenario_id": "ui_initial",
+      "model_verdict": "passed",
+      "accepted_verdict": "passed",
+      "downgrade_reason": null,
+      "assessment": {
+        "expectation_supported": true,
+        "purpose_covered": true,
+        "reason": "텍스트와 이미지 모두 기대와 일치함.",
+        "criteria": [
+          {
+            "criterion": "13 pieces 문구가 보인다",
+            "status": "met",
+            "evidence": "텍스트와 스크린샷에 13 pieces 표시",
+            "snapshot_ids": [
+              "inspection_observe-8db0f02231e9"
+            ],
+            "action_ids": []
+          },
+          {
+            "criterion": "카드에 이름·가격·카테고리가 겹침 없이 표시된다",
+            "status": "met",
+            "evidence": "DOM 텍스트에 13개 카드의 이름, 가격, 카테고리가 있고 보이는 영역에서 겹침이 없음",
+            "snapshot_ids": [
+              "initial_load-26d2e48068b7",
+              "inspection_observe-8db0f02231e9"
+            ],
+            "action_ids": []
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "filter_apply_clear",
+      "model_verdict": "candidate",
+      "accepted_verdict": "candidate",
+      "downgrade_reason": null,
+      "assessment": {
+        "expectation_supported": true,
+        "purpose_covered": true,
+        "reason": "ALL 클릭 후 전체 복귀가 관찰되지 않음.",
+        "criteria": [
+          {
+            "criterion": "LIGHTING 적용 시 조명 상품만 표시되고 개수 일치",
+            "status": "met",
+            "evidence": "2 pieces, 조명 카드 2개",
+            "snapshot_ids": [
+              "after_action-a5753ea02337"
+            ],
+            "action_ids": [
+              "action-03b153ff663d4769"
+            ]
+          },
+          {
+            "criterion": "ALL 클릭 후 13개 전체 상품으로 복귀",
+            "status": "unmet",
+            "evidence": "ALL 클릭 후에도 2 pieces, lighting URL 유지",
+            "snapshot_ids": [
+              "before_action-7b6eee1ea833",
+              "after_action-03d73ef7148e",
+              "inspection_observe-743711e57957"
+            ],
+            "action_ids": [
+              "action-d674fe68bcd44572"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "card_dest",
+      "model_verdict": "inconclusive",
+      "accepted_verdict": "inconclusive",
+      "downgrade_reason": null,
+      "assessment": {
+        "expectation_supported": true,
+        "purpose_covered": true,
+        "reason": "기대 항목은 충족되어 보이나, 라우팅 확인에 그치므로 신중히 판단함. 실제 충족 증거가 있어 모든 기준 충족.",
+        "criteria": [
+          {
+            "criterion": "카드 클릭 시 /product/arc-pendant-light로 이동",
+            "status": "met",
+            "evidence": "after URL이 해당 경로",
+            "snapshot_ids": [
+              "before_action-77e920439b0d",
+              "after_action-182ea7631e61"
+            ],
+            "action_ids": [
+              "action-d4cce32717c84a17"
+            ]
+          },
+          {
+            "criterion": "상세 제목 Arc Pendant Light, 가격 $485 일치",
+            "status": "met",
+            "evidence": "상세 텍스트에 Arc Pendant Light, $485",
+            "snapshot_ids": [
+              "after_action-182ea7631e61"
+            ],
+            "action_ids": [
+              "action-d4cce32717c84a17"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "newsletter_empty",
+      "model_verdict": "passed",
+      "accepted_verdict": "passed",
+      "downgrade_reason": null,
+      "assessment": {
+        "expectation_supported": true,
+        "purpose_covered": true,
+        "reason": "검증 메시지 표시와 성공 문구 부재 확인.",
+        "criteria": [
+          {
+            "criterion": "제출이 차단되거나 검증 메시지가 나타난다",
+            "status": "met",
+            "evidence": "invalid 이벤트와 툴팁 이미지",
+            "snapshot_ids": [
+              "after_action-370ed48f3e41",
+              "inspection_observe-3f3cce75fa19"
+            ],
+            "action_ids": [
+              "action-91526a9c1805467b"
+            ]
+          },
+          {
+            "criterion": "성공 접수 문구가 나타나지 않는다",
+            "status": "met",
+            "evidence": "텍스트에 성공 문구 없음",
+            "snapshot_ids": [
+              "after_action-370ed48f3e41"
+            ],
+            "action_ids": [
+              "action-91526a9c1805467b"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "status": "accepted"
+}

@@ -1,0 +1,827 @@
+{
+  "schema_version": "scenario_results/2",
+  "flow_id": "flow-50b44838f4e44ff3",
+  "plan_tool_use_id": "toolu_01GSKyK79Tms7oEGWpX8PD5n",
+  "scenarios": [
+    {
+      "scenario_id": "filter_apply_clear",
+      "proposal_index": 1,
+      "title": "LIGHTING 필터 적용 후 ALL 해제",
+      "family": "functional",
+      "expected": "1. LIGHTING 적용 시 목록이 조명 카테고리 상품(관찰상 Arc Pendant Light, Orb Table Lamp)만 표시되고 개수 문구가 표시 카드 수와 일치한다. 2. ALL 클릭 후 13개 전체 상품으로 복귀한다.",
+      "expected_source": "site_requirements의 컬렉션 필터 + 관찰된 카드 카테고리",
+      "execution_status": "completed",
+      "failure_reason": null,
+      "policy_blocked": false,
+      "planned_steps": [
+        {
+          "operation": "click",
+          "element_key": "e:4af20692448eafcf803a",
+          "wait_ms": 800
+        },
+        {
+          "operation": "click",
+          "element_key": "e:d6373df91833fe33dcbd",
+          "wait_ms": 800
+        }
+      ],
+      "planned_step_count": 2,
+      "attempted_step_count": 2,
+      "attempted_plan_step_count": 2,
+      "completed_plan_step_count": 2,
+      "executed_action_count": 2,
+      "skipped_step_count": 0,
+      "action_ids": [
+        "action-03b153ff663d4769",
+        "action-d674fe68bcd44572"
+      ],
+      "snapshot_ids": [
+        "inspection_observe-8db0f02231e9",
+        "before_action-9a3fdfe53980",
+        "after_action-a5753ea02337",
+        "before_action-7b6eee1ea833",
+        "after_action-03d73ef7148e",
+        "inspection_observe-743711e57957"
+      ],
+      "steps": [
+        {
+          "execution": "executed",
+          "observation_status": "available",
+          "error": null,
+          "settle_error": null,
+          "capture_error": null,
+          "operator_error": null,
+          "before_snapshot_id": "before_action-9a3fdfe53980",
+          "after_snapshot_id": "after_action-a5753ea02337",
+          "diff": {
+            "before_snapshot_id": "before_action-9a3fdfe53980",
+            "after_snapshot_id": "after_action-a5753ea02337",
+            "added": [
+              {
+                "element_key": "e:79a7d2fb2c639d0a6eaf",
+                "element_id": "after_action-a5753ea02337-e0",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:98b405a46d58657bbb37",
+                "element_id": "after_action-a5753ea02337-e1",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:f7167578d708fd3da580",
+                "element_id": "after_action-a5753ea02337-e2",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:7b57eb160b085bc611ef",
+                "element_id": "after_action-a5753ea02337-e3",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:aa3ac5fdbf0af65a0ae9",
+                "element_id": "after_action-a5753ea02337-e4",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:fbcd802a8c162a2072a0",
+                "element_id": "after_action-a5753ea02337-e5",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:a1fe051964dd7d9340ba",
+                "element_id": "after_action-a5753ea02337-e6",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:e6d39bcd4faef17f1640",
+                "element_id": "after_action-a5753ea02337-e7",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:f12536afb83f692f4b81",
+                "element_id": "after_action-a5753ea02337-e8",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:038c7c51c725273640a0",
+                "element_id": "after_action-a5753ea02337-e9",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:4b206c0a517ac8e030a4",
+                "element_id": "after_action-a5753ea02337-e10",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:5e0a46ae7a15a59a8691",
+                "element_id": "after_action-a5753ea02337-e11",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:6e3a2842e33492c69389",
+                "element_id": "after_action-a5753ea02337-e12",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:7462d7928a2a18bde9f7",
+                "element_id": "after_action-a5753ea02337-e13",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:ff3e34d9fa6c3e61e354",
+                "element_id": "after_action-a5753ea02337-e14",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b7d2722462e27ed4d3a5",
+                "element_id": "after_action-a5753ea02337-e15",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:786ee09a3d8fa6f75683",
+                "element_id": "after_action-a5753ea02337-e16",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:c767f6cc7ea213a2cb19",
+                "element_id": "after_action-a5753ea02337-e17",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:94e06bd92e07e42650c7",
+                "element_id": "after_action-a5753ea02337-e18",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:98ff9a5c8114a7d7558c",
+                "element_id": "after_action-a5753ea02337-e19",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:3ba1213adb558210ffef",
+                "element_id": "after_action-a5753ea02337-e20",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:2ffd5050fe29d2ccf83b",
+                "element_id": "after_action-a5753ea02337-e21",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:6009bf5c13d5bddd0bca",
+                "element_id": "after_action-a5753ea02337-e22",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:fdb6b9b53542d3ff163c",
+                "element_id": "after_action-a5753ea02337-e23",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b400c9e1d73eeb588581",
+                "element_id": "after_action-a5753ea02337-e24",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b4370296c444e7712b0f",
+                "element_id": "after_action-a5753ea02337-e25",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:9f08e5a428d827d503c2",
+                "element_id": "after_action-a5753ea02337-e26",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:2b4f68bddec0bfbc5c71",
+                "element_id": "after_action-a5753ea02337-e27",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:f6c516a8fd4880206474",
+                "element_id": "after_action-a5753ea02337-e28",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:c5cb6b69d11ec86b8317",
+                "element_id": "after_action-a5753ea02337-e29",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:fccd173b9adf2c9c9717",
+                "element_id": "after_action-a5753ea02337-e30",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:df0d3a70486a8b00aac2",
+                "element_id": "after_action-a5753ea02337-e31",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:e345356827c131706f57",
+                "element_id": "after_action-a5753ea02337-e32",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:53ca137762cf979c6fd9",
+                "element_id": "after_action-a5753ea02337-e33",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:6d21cb4030a590c7e967",
+                "element_id": "after_action-a5753ea02337-e34",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:8639924d2c307551254e",
+                "element_id": "after_action-a5753ea02337-e35",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:fe9b46434188c2078c8e",
+                "element_id": "after_action-a5753ea02337-e36",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:c9e26a43536f0a25cc4e",
+                "element_id": "after_action-a5753ea02337-e37",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:814378cb47b98349eef0",
+                "element_id": "after_action-a5753ea02337-e38",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:1b94e979746bbbf466f3",
+                "element_id": "after_action-a5753ea02337-e39",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:ddf42484e8ac8f5f1cc2",
+                "element_id": "after_action-a5753ea02337-e40",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:696c6820102dbfc2538c",
+                "element_id": "after_action-a5753ea02337-e41",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:bf20abe716397edb3f66",
+                "element_id": "after_action-a5753ea02337-e42",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:717e8d74903784ee92cd",
+                "element_id": "after_action-a5753ea02337-e43",
+                "uncertain": false
+              }
+            ],
+            "removed": [
+              {
+                "element_key": "e:7a946c6a016e0f114c73",
+                "element_id": "before_action-9a3fdfe53980-e0",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:3fcaab69eeb97855f388",
+                "element_id": "before_action-9a3fdfe53980-e1",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:e2b27a30101db74d1e2c",
+                "element_id": "before_action-9a3fdfe53980-e2",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b10056fa4904cac4db8a",
+                "element_id": "before_action-9a3fdfe53980-e3",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:35949189558a522088a9",
+                "element_id": "before_action-9a3fdfe53980-e4",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:9002ede968cbe32715ac",
+                "element_id": "before_action-9a3fdfe53980-e5",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:4862e33ce3ec6bc0bb40",
+                "element_id": "before_action-9a3fdfe53980-e6",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:025799f7fbceb8f7c19d",
+                "element_id": "before_action-9a3fdfe53980-e7",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:670ce661dad778d0051a",
+                "element_id": "before_action-9a3fdfe53980-e8",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:d6373df91833fe33dcbd",
+                "element_id": "before_action-9a3fdfe53980-e9",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:4af20692448eafcf803a",
+                "element_id": "before_action-9a3fdfe53980-e10",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:bc2c5df30b30198bdfdb",
+                "element_id": "before_action-9a3fdfe53980-e11",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:dc11dc49e9d464d361c8",
+                "element_id": "before_action-9a3fdfe53980-e12",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:f434ee06568cf0464a44",
+                "element_id": "before_action-9a3fdfe53980-e13",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:df7f1a7670a2e8cb7239",
+                "element_id": "before_action-9a3fdfe53980-e14",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:ecaf55fc5369cfe7e9ae",
+                "element_id": "before_action-9a3fdfe53980-e15",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:9c3f7ad4fca63d5059b4",
+                "element_id": "before_action-9a3fdfe53980-e16",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:38f1d06c9a47d4f68fbb",
+                "element_id": "before_action-9a3fdfe53980-e17",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:3786df9eedbc4cb49929",
+                "element_id": "before_action-9a3fdfe53980-e18",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:7d6075dba9ffef4340f1",
+                "element_id": "before_action-9a3fdfe53980-e19",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:7a8e75eed87db01adeda",
+                "element_id": "before_action-9a3fdfe53980-e20",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:73bc3a1d22979c5e9d1b",
+                "element_id": "before_action-9a3fdfe53980-e21",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:c7b34901557716abbea5",
+                "element_id": "before_action-9a3fdfe53980-e22",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:6eec245fbf5c5636881a",
+                "element_id": "before_action-9a3fdfe53980-e23",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:f6b25fb09d3cb4def5ad",
+                "element_id": "before_action-9a3fdfe53980-e24",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:270d53cfc800fafa5449",
+                "element_id": "before_action-9a3fdfe53980-e25",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:f8342a00df0730172a32",
+                "element_id": "before_action-9a3fdfe53980-e26",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:66f74087f7cb47ecf3a9",
+                "element_id": "before_action-9a3fdfe53980-e27",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:5f16fb5787b76ad48d45",
+                "element_id": "before_action-9a3fdfe53980-e28",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b717ffd9d82d0c6479b1",
+                "element_id": "before_action-9a3fdfe53980-e29",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:8ec2c06bbcb8e3250157",
+                "element_id": "before_action-9a3fdfe53980-e30",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:bff0f0f044417e5fbb5f",
+                "element_id": "before_action-9a3fdfe53980-e31",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:fe068ec7541f4907ab50",
+                "element_id": "before_action-9a3fdfe53980-e32",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:103898a0e0e46699bfd8",
+                "element_id": "before_action-9a3fdfe53980-e33",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b1c23de85decdaa8166e",
+                "element_id": "before_action-9a3fdfe53980-e34",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:26ff8699926b0e525844",
+                "element_id": "before_action-9a3fdfe53980-e35",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:54b51546b4ebdebde6a0",
+                "element_id": "before_action-9a3fdfe53980-e36",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:4fdf332106591a463132",
+                "element_id": "before_action-9a3fdfe53980-e37",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:c94c912d148e47e1413c",
+                "element_id": "before_action-9a3fdfe53980-e38",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:b8f244e6292b5121f031",
+                "element_id": "before_action-9a3fdfe53980-e39",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:ca3368abead4e036ec19",
+                "element_id": "before_action-9a3fdfe53980-e40",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:546608d7311ae972c1da",
+                "element_id": "before_action-9a3fdfe53980-e41",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:6dbd5b204ea43ed751af",
+                "element_id": "before_action-9a3fdfe53980-e42",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:0e0cce4e9ecccf6e6bee",
+                "element_id": "before_action-9a3fdfe53980-e43",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:de38ed84653ecbaf3498",
+                "element_id": "before_action-9a3fdfe53980-e44",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:0365253e9589acff77c3",
+                "element_id": "before_action-9a3fdfe53980-e45",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:3cba9a0368132cd3c5b5",
+                "element_id": "before_action-9a3fdfe53980-e46",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:65014a972c8a43767a24",
+                "element_id": "before_action-9a3fdfe53980-e47",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:507a2c562881b44bd9c7",
+                "element_id": "before_action-9a3fdfe53980-e48",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:1cf0f9fc99b0688fd7e0",
+                "element_id": "before_action-9a3fdfe53980-e49",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:ecd57b6268c405cd1e96",
+                "element_id": "before_action-9a3fdfe53980-e50",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:5580a271e607f6d4e00d",
+                "element_id": "before_action-9a3fdfe53980-e51",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:3e2fc95041d172196724",
+                "element_id": "before_action-9a3fdfe53980-e52",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:cd873b990725fd99d9b4",
+                "element_id": "before_action-9a3fdfe53980-e53",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:22bdda5d8f774231f010",
+                "element_id": "before_action-9a3fdfe53980-e54",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:a2d4f5e33359dec0d9e8",
+                "element_id": "before_action-9a3fdfe53980-e55",
+                "uncertain": true
+              },
+              {
+                "element_key": "e:1e82964975a760387b51",
+                "element_id": "before_action-9a3fdfe53980-e56",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:9139e9169f7a9e6ec2a7",
+                "element_id": "before_action-9a3fdfe53980-e57",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:30d52b149740fe1030db",
+                "element_id": "before_action-9a3fdfe53980-e58",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:6b0e30a780105a61d79c",
+                "element_id": "before_action-9a3fdfe53980-e59",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:ee02ff8522ed3534c35a",
+                "element_id": "before_action-9a3fdfe53980-e60",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:7cd1f1c48d1ad4d8ffb9",
+                "element_id": "before_action-9a3fdfe53980-e61",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:57228734bc5403052c4c",
+                "element_id": "before_action-9a3fdfe53980-e62",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:5a7de7bc024c0b70dcd2",
+                "element_id": "before_action-9a3fdfe53980-e63",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:146eecb84ae270e1339e",
+                "element_id": "before_action-9a3fdfe53980-e64",
+                "uncertain": false
+              },
+              {
+                "element_key": "e:9ea92ff445662669c426",
+                "element_id": "before_action-9a3fdfe53980-e65",
+                "uncertain": false
+              }
+            ],
+            "changed": [],
+            "changed_truncated": false,
+            "url_changed": true,
+            "document_scope_changed": true,
+            "status_changed": false,
+            "error_candidates_changed": [
+              [
+                {
+                  "text": "",
+                  "visible": true,
+                  "source": "aria",
+                  "role": null
+                },
+                {
+                  "text": "13 pieces",
+                  "visible": true,
+                  "source": "aria",
+                  "role": null
+                }
+              ],
+              [
+                {
+                  "text": "",
+                  "visible": true,
+                  "source": "aria",
+                  "role": null
+                },
+                {
+                  "text": "2 pieces",
+                  "visible": true,
+                  "source": "aria",
+                  "role": null
+                }
+              ]
+            ],
+            "uncertain": [],
+            "comparison_limited": false,
+            "limits": {
+              "before_partial": false,
+              "after_partial": false
+            },
+            "note": "observed changes only; not a causal verdict"
+          },
+          "event_ids": [],
+          "resource_ids": [
+            "ev-34"
+          ],
+          "step_index": 0,
+          "plan_step_index": 0,
+          "purpose": "planned",
+          "operation": "click",
+          "element_key": "e:4af20692448eafcf803a",
+          "url": null,
+          "value": null,
+          "wait_ms": 800,
+          "correction_of": null,
+          "action_id": "action-03b153ff663d4769",
+          "tool_use_id": "toolu_01PDetPxA2QaVxmVsNkiYbQA",
+          "policy_blocked": false
+        },
+        {
+          "execution": "executed",
+          "observation_status": "available",
+          "error": null,
+          "settle_error": null,
+          "capture_error": null,
+          "operator_error": null,
+          "before_snapshot_id": "before_action-7b6eee1ea833",
+          "after_snapshot_id": "after_action-03d73ef7148e",
+          "diff": {
+            "before_snapshot_id": "before_action-7b6eee1ea833",
+            "after_snapshot_id": "after_action-03d73ef7148e",
+            "added": [],
+            "removed": [],
+            "changed": [],
+            "changed_truncated": false,
+            "url_changed": false,
+            "document_scope_changed": false,
+            "status_changed": false,
+            "error_candidates_changed": null,
+            "uncertain": [
+              {
+                "element_key": "e:79a7d2fb2c639d0a6eaf",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:f7167578d708fd3da580",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:7b57eb160b085bc611ef",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:e6d39bcd4faef17f1640",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:f12536afb83f692f4b81",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:038c7c51c725273640a0",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:4b206c0a517ac8e030a4",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:5e0a46ae7a15a59a8691",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:6e3a2842e33492c69389",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:7462d7928a2a18bde9f7",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:ff3e34d9fa6c3e61e354",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:b7d2722462e27ed4d3a5",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:786ee09a3d8fa6f75683",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:c767f6cc7ea213a2cb19",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:94e06bd92e07e42650c7",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:98ff9a5c8114a7d7558c",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:3ba1213adb558210ffef",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:2ffd5050fe29d2ccf83b",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:6009bf5c13d5bddd0bca",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:fdb6b9b53542d3ff163c",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:b400c9e1d73eeb588581",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:53ca137762cf979c6fd9",
+                "reason": "weak_identity"
+              }
+            ],
+            "comparison_limited": false,
+            "limits": {
+              "before_partial": false,
+              "after_partial": false
+            },
+            "note": "observed changes only; not a causal verdict"
+          },
+          "event_ids": [],
+          "resource_ids": [],
+          "step_index": 1,
+          "plan_step_index": 1,
+          "purpose": "planned",
+          "operation": "click",
+          "element_key": "e:038c7c51c725273640a0",
+          "url": null,
+          "value": null,
+          "wait_ms": 800,
+          "correction_of": null,
+          "action_id": "action-d674fe68bcd44572",
+          "tool_use_id": "toolu_012QETLPBaATdY1A3eydoVS4",
+          "policy_blocked": false
+        }
+      ],
+      "start_snapshot_id": "inspection_observe-8db0f02231e9",
+      "end_snapshot_id": "inspection_observe-743711e57957",
+      "image": {
+        "path": "images\\inspection_observe-743711e57957.png",
+        "snapshot_id": "inspection_observe-743711e57957",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 0
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:03:46.418318+00:00"
+      },
+      "observation_errors": []
+    }
+  ],
+  "export_note": "Derived compact copy; original before/after observations are in referenced snapshots."
+}

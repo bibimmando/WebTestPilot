@@ -1,0 +1,96 @@
+{
+  "pipeline": "staged/3",
+  "flow_id": "flow-ed435518ddf64bad",
+  "initial_url": "http://13.124.7.113:8081/product/arc-pendant-light",
+  "status": "completed",
+  "test_status": "failed",
+  "initial_reset": {
+    "method": "browser_only",
+    "receipt": null
+  },
+  "target_audit": [
+    {
+      "scenario_id": "add_bag_then_inspect_cart",
+      "step_index": 0,
+      "snapshot_id": "initial_load-1db8ad032581",
+      "status": "matched",
+      "identity": {
+        "role": "button",
+        "name": "ADD TO BAG"
+      },
+      "selected_key": "e:3cee001efb29932a5534",
+      "equivalent_target_count": 1
+    },
+    {
+      "scenario_id": "add_bag_then_inspect_cart",
+      "step_index": 1,
+      "snapshot_id": "after_action-505c9cb6623f",
+      "status": "matched",
+      "identity": {
+        "role": "link",
+        "href": "http://13.124.7.113:8081/cart"
+      },
+      "selected_key": "e:cd3eb090e2c06a8e50a7",
+      "equivalent_target_count": 2
+    }
+  ],
+  "steps": [
+    {
+      "snapshot_id": "initial_load-1db8ad032581",
+      "operation": "click",
+      "element_key": "e:3cee001efb29932a5534",
+      "action_id": "action-38980afd2974433f",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-5676e80d6ad9",
+      "after_snapshot_id": "after_action-505c9cb6623f",
+      "phase": "inspection",
+      "scenario_id": "add_bag_then_inspect_cart",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_01THYhJYkJBP76TtA7xCb15U",
+      "wait_ms": 1000
+    },
+    {
+      "snapshot_id": "after_action-505c9cb6623f",
+      "operation": "click",
+      "element_key": "e:cd3eb090e2c06a8e50a7",
+      "action_id": "action-58fcc230bbec49f1",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-053ccad9b714",
+      "after_snapshot_id": "after_action-49d488361aa4",
+      "phase": "inspection",
+      "scenario_id": "add_bag_then_inspect_cart",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_01THYhJYkJBP76TtA7xCb15U",
+      "wait_ms": 1500
+    },
+    {
+      "operation": "click",
+      "element_key": "e:3cee001efb29932a5534",
+      "snapshot_id": "reproduction_start-aa8c4cb78207",
+      "action_id": "action-14ccd338adb942c9",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-f435bc841e71",
+      "after_snapshot_id": "after_action-adb42638b4f0",
+      "phase": "reproduction",
+      "scenario_id": "add_bag_then_inspect_cart",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_01THYhJYkJBP76TtA7xCb15U",
+      "wait_ms": 1000
+    },
+    {
+      "operation": "click",
+      "element_key": "e:cd3eb090e2c06a8e50a7",
+      "snapshot_id": "after_action-adb42638b4f0",
+      "action_id": "action-3177c0cfe9524ee9",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-a5fde2febae8",
+      "after_snapshot_id": "after_action-7fe632d2af8e",
+      "phase": "reproduction",
+      "scenario_id": "add_bag_then_inspect_cart",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_01THYhJYkJBP76TtA7xCb15U",
+      "wait_ms": 1500
+    }
+  ],
+  "errors": []
+}

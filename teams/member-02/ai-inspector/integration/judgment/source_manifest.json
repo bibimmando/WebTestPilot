@@ -1,0 +1,20 @@
+{
+  "source": "src/ai_inspection/judgment",
+  "policy": "member-02 standalone copy; no other team is modified",
+  "files": {
+    "__init__.py": "e9930a93dc48feec65a18ff83bfeb18c9a90536fa8a901aebaecc248d4ad5b37",
+    "assessment.py": "e8273a35669141bf8581d560ef28cbe0c5bb77bd679a4e33e87c2540baf3056f",
+    "async_adapter.py": "063d5785ffc237f0184823dd04a74115888bb23fb353db1d30b7f908dc3610ac",
+    "examples/judge_input.v2.example.json": "d802341f1b81ff744d117371eeaa153660549b648b9b97997166d0372794c5e0",
+    "examples/scenario_judgments.example.json": "6eb413ff80c99759270f82ce60e06939a20b21d554adb23cdbd60923c5bd2b11",
+    "images.py": "5411dead3bb790afa23ab2bccdf7973f3208843a464911ebefcc27cfae54569b",
+    "input_contract.py": "01463d111c9bfd16d1252ed6002495cd6327e3ebc65adf3fc9ee16a94f5e125f",
+    "judge.py": "bc42359eeb05f9fb6842414493371b39558742e9f0965d2a7ffba010a704fb4b",
+    "prompts.py": "cc6937924b72c49ac406d59f60dda4ccb5e93506f0b48f259fd6dac8e0da63ef",
+    "QUALITY_IMPROVEMENTS.md": "d7f4b7e883b0bf6d269410b3b630520bf327df6c800169c51bb88fa3b03b8b01",
+    "README.md": "616510f45297fc48919713f049ba05db60288b3e02e402649f9737bea82302ef",
+    "response_contract.py": "856c1b32c7b5e6a47709dbf87233c5979d504eaaddc2581ec1ed59e6bc7c9689",
+    "schemas/judge_input.v2.schema.json": "46d5bf6d5d3c93945e769c069e280a1fae457edc3219336e4b51caa7146c7231",
+    "schemas/scenario_judgments.schema.json": "8da11f796db9b351e3d4e47d2762c6d59b144521f4269ca24f28822a665fae36"
+  }
+}

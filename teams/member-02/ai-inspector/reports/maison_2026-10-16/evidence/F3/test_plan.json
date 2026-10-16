@@ -1,0 +1,77 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "cart_qty",
+      "proposal_index": 0,
+      "title": "수량 증가 후 장바구니 담기",
+      "family": "functional",
+      "expected": "1. 수량 표시가 1에서 2로 증가한다. 2. 담은 뒤 장바구니에 Harvest Dining Table 항목이 수량 2, 금액 $5,700(단가 $2,850×2)로 표시된다.",
+      "expected_source": "site_requirements(수량 1~10, 장바구니 금액) 및 관찰된 가격 $2,850",
+      "steps": [
+        {
+          "operation": "click",
+          "element_key": "e:6324b5b854a1b5e351b6"
+        },
+        {
+          "operation": "click",
+          "element_key": "e:79ad63916d51f1055819",
+          "wait_ms": 1000
+        },
+        {
+          "operation": "navigate",
+          "url": "http://13.124.7.113:8081/cart"
+        }
+      ]
+    },
+    {
+      "scenario_id": "wish_save",
+      "proposal_index": 1,
+      "title": "위시리스트 추가 후 목록 확인",
+      "family": "functional",
+      "expected": "1. 추가 후 위시리스트에 Harvest Dining Table이 1건 나타난다. 2. 상품명과 가격 $2,850이 상세와 일치한다.",
+      "expected_source": "site_requirements(위시리스트 저장)",
+      "steps": [
+        {
+          "operation": "navigate",
+          "url": "http://13.124.7.113:8081/product/harvest-dining-table"
+        },
+        {
+          "operation": "click",
+          "element_key": "e:6954a54f1a8d0aa461fe",
+          "wait_ms": 1000
+        },
+        {
+          "operation": "navigate",
+          "url": "http://13.124.7.113:8081/wishlist"
+        }
+      ]
+    },
+    {
+      "scenario_id": "related_card",
+      "proposal_index": 2,
+      "title": "연관 상품 카드 라벨 대비 도착 페이지",
+      "family": "routing",
+      "expected": "카드의 상품명 Woven Lounge Chair와 같은 상품 상세 페이지(제목 Woven Lounge Chair)로 이동한다.",
+      "expected_source": "관찰된 UI의 카드 라벨(휴리스틱)",
+      "steps": [
+        {
+          "operation": "navigate",
+          "url": "http://13.124.7.113:8081/product/harvest-dining-table"
+        },
+        {
+          "operation": "click",
+          "element_key": "e:ffc14ecd2f3355f8e4ab",
+          "wait_ms": 1000
+        }
+      ]
+    }
+  ],
+  "unplanned": [],
+  "schema_version": "test_plan/2",
+  "initial_snapshot_id": "initial_load-4ba83bf756be",
+  "flow_id": "flow-862d925b56de4208",
+  "proposal_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+  "plan_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+  "source_tool": "qa_test_plan",
+  "planning_attempts": 1
+}

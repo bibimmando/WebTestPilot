@@ -1,0 +1,219 @@
+{
+  "pipeline": "staged/3",
+  "flow_id": "flow-862d925b56de4208",
+  "initial_url": "http://13.124.7.113:8081/product/harvest-dining-table",
+  "status": "completed",
+  "test_status": "failed",
+  "initial_reset": {
+    "method": "browser_only",
+    "receipt": null
+  },
+  "target_audit": [
+    {
+      "scenario_id": "cart_qty",
+      "step_index": 0,
+      "snapshot_id": "initial_load-4ba83bf756be",
+      "status": "matched",
+      "identity": {
+        "role": "button",
+        "observed_ref": "1792080940983.1-chcum5itvjk:20"
+      },
+      "selected_key": "e:6324b5b854a1b5e351b6",
+      "equivalent_target_count": 1
+    },
+    {
+      "scenario_id": "cart_qty",
+      "step_index": 1,
+      "snapshot_id": "after_action-4409c6f7b529",
+      "status": "matched",
+      "identity": {
+        "role": "button",
+        "name": "ADD TO BAG"
+      },
+      "selected_key": "e:79ad63916d51f1055819",
+      "equivalent_target_count": 1
+    },
+    {
+      "scenario_id": "wish_save",
+      "step_index": 1,
+      "snapshot_id": "inspection_observe-adca3d4d740f",
+      "status": "matched",
+      "identity": {
+        "role": "button",
+        "name": "ADD TO WISHLIST"
+      },
+      "selected_key": "e:6954a54f1a8d0aa461fe",
+      "equivalent_target_count": 1
+    },
+    {
+      "scenario_id": "related_card",
+      "step_index": 1,
+      "snapshot_id": "inspection_observe-21840d895d91",
+      "status": "matched",
+      "identity": {
+        "role": "link",
+        "name": "NEW VIEW DETAILS FURNITURE Woven Lounge Chair Danish paper cord meets sculptural walnut $1,450 Solid walnut",
+        "href": "http://13.124.7.113:8081/product/harvest-dining-table"
+      },
+      "selected_key": "e:ffc14ecd2f3355f8e4ab",
+      "equivalent_target_count": 1
+    }
+  ],
+  "steps": [
+    {
+      "snapshot_id": "initial_load-4ba83bf756be",
+      "operation": "click",
+      "element_key": "e:6324b5b854a1b5e351b6",
+      "action_id": "action-bf234bef49ff4c15",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-b8fbe4eac5db",
+      "after_snapshot_id": "after_action-4409c6f7b529",
+      "phase": "inspection",
+      "scenario_id": "cart_qty",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+      "wait_ms": 0
+    },
+    {
+      "snapshot_id": "after_action-4409c6f7b529",
+      "operation": "click",
+      "element_key": "e:79ad63916d51f1055819",
+      "action_id": "action-f474feed23754697",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-d86d8ae95667",
+      "after_snapshot_id": "after_action-c02e1d50af50",
+      "phase": "inspection",
+      "scenario_id": "cart_qty",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+      "wait_ms": 1000
+    },
+    {
+      "snapshot_id": "after_action-c02e1d50af50",
+      "operation": "navigate",
+      "url": "http://13.124.7.113:8081/cart",
+      "action_id": "action-70ec6d5bbf674854",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-c1461aba5f15",
+      "after_snapshot_id": "after_action-ae5384382c45",
+      "phase": "inspection",
+      "scenario_id": "cart_qty",
+      "step_index": 2,
+      "plan_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+      "wait_ms": 0
+    },
+    {
+      "snapshot_id": "inspection_observe-817c014dc485",
+      "operation": "navigate",
+      "url": "http://13.124.7.113:8081/product/harvest-dining-table",
+      "action_id": "action-5d43b5a636dc48f1",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-a2352ea916d8",
+      "after_snapshot_id": "after_action-fb40083518b3",
+      "phase": "inspection",
+      "scenario_id": "wish_save",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+      "wait_ms": 0
+    },
+    {
+      "snapshot_id": "inspection_observe-adca3d4d740f",
+      "operation": "click",
+      "element_key": "e:6954a54f1a8d0aa461fe",
+      "action_id": "action-df459ce2b91f46b7",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-b76c279c3618",
+      "after_snapshot_id": "after_action-18c56367ebee",
+      "phase": "inspection",
+      "scenario_id": "wish_save",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+      "wait_ms": 1000
+    },
+    {
+      "snapshot_id": "after_action-18c56367ebee",
+      "operation": "navigate",
+      "url": "http://13.124.7.113:8081/wishlist",
+      "action_id": "action-e4c4e797aa1148aa",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-b84a4bc97ce2",
+      "after_snapshot_id": "after_action-5164a375609e",
+      "phase": "inspection",
+      "scenario_id": "wish_save",
+      "step_index": 2,
+      "plan_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+      "wait_ms": 0
+    },
+    {
+      "snapshot_id": "inspection_observe-738a5f3eb8cb",
+      "operation": "navigate",
+      "url": "http://13.124.7.113:8081/product/harvest-dining-table",
+      "action_id": "action-eceb20c968f541dc",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-793cef659c65",
+      "after_snapshot_id": "after_action-b573746dd0c1",
+      "phase": "inspection",
+      "scenario_id": "related_card",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+      "wait_ms": 0
+    },
+    {
+      "snapshot_id": "inspection_observe-21840d895d91",
+      "operation": "click",
+      "element_key": "e:ffc14ecd2f3355f8e4ab",
+      "action_id": "action-e2d1de0195594935",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-a0f62b590847",
+      "after_snapshot_id": "after_action-849417f68afa",
+      "phase": "inspection",
+      "scenario_id": "related_card",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+      "wait_ms": 1000
+    },
+    {
+      "operation": "click",
+      "element_key": "e:6324b5b854a1b5e351b6",
+      "snapshot_id": "reproduction_start-139fea57b32a",
+      "action_id": "action-1cd473c7093d4f0f",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-b6f59e1ee551",
+      "after_snapshot_id": "after_action-0ce918bd540c",
+      "phase": "reproduction",
+      "scenario_id": "cart_qty",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+      "wait_ms": 0
+    },
+    {
+      "operation": "click",
+      "element_key": "e:79ad63916d51f1055819",
+      "snapshot_id": "after_action-0ce918bd540c",
+      "action_id": "action-f7b5a493d34b4dfe",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-3b8acfb62ae5",
+      "after_snapshot_id": "after_action-6a6898331c1a",
+      "phase": "reproduction",
+      "scenario_id": "cart_qty",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+      "wait_ms": 1000
+    },
+    {
+      "operation": "navigate",
+      "url": "http://13.124.7.113:8081/cart",
+      "snapshot_id": "after_action-6a6898331c1a",
+      "action_id": "action-f5e3bc9e97e84861",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-531b6e29314b",
+      "after_snapshot_id": "after_action-da2f4ea41e01",
+      "phase": "reproduction",
+      "scenario_id": "cart_qty",
+      "step_index": 2,
+      "plan_tool_use_id": "toolu_016VhBq6ue8tb6dtFCEU7ez5",
+      "wait_ms": 0
+    }
+  ],
+  "errors": []
+}

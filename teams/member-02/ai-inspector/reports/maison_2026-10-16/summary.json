@@ -1,0 +1,36 @@
+{
+  "model": "claude-sonnet-5-5",
+  "unique_urls": 29,
+  "pages_with_flows": 31,
+  "case_count": 89,
+  "calls": 199,
+  "input_tokens": 10032226,
+  "output_tokens": 119257,
+  "standard_price_estimate_usd": 21.257022,
+  "verdicts": {
+    "passed": 46,
+    "candidate": 12,
+    "inconclusive": 26,
+    "rejected_finding": 2,
+    "no_accepted_judgment": 3
+  },
+  "flow_statuses": {
+    "completed": 25,
+    "execution_incomplete": 4,
+    "cancelled": 1,
+    "error": 1
+  },
+  "execution_statuses": {
+    "completed": 79,
+    "incomplete": 6,
+    "not_run": 4
+  },
+  "candidate_count": 12,
+  "confirmed_count": 9,
+  "reproduction_statuses": {
+    "reproduced": 9,
+    "incomplete": 1,
+    "not_run": 2
+  },
+  "newsletter_case_count": 7
+}

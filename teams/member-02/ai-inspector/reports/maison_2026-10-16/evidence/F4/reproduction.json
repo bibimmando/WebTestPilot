@@ -1,0 +1,90 @@
+{
+  "result": {
+    "schema_version": "reproduction/1",
+    "finding_id": "finding-1b4c07f908614338",
+    "status": "reproduced",
+    "attempts": 1,
+    "reset_method": "browser_only",
+    "server_reset": false,
+    "action_ids": [
+      "action-8d2cb30e10834ba6",
+      "action-b6c54a88780a44bd"
+    ],
+    "snapshot_ids": [
+      "reproduction_start-6be669885d58",
+      "after_action-77fd67801e38",
+      "after_action-c9eaef2afe9d",
+      "inspection_observe-c98959e0dcd1"
+    ],
+    "reason": "In the replay, clicking LIGHTING changed the URL to ?collection=lighting and showed \"2 pieces\" with Arc Pendant Light and Orb Table Lamp. Clicking ALL then left the URL, the \"2 pieces\" count and the two cards unchanged, with no URL change in the diff. The final snapshot and screenshot still show Lighting with 2 pieces, the same as the original run. The 13 products did not return.",
+    "initial_condition": "observed_match",
+    "images": {
+      "original": {
+        "path": "images\\inspection_observe-743711e57957.png",
+        "snapshot_id": "inspection_observe-743711e57957",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 0
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:03:46.418318+00:00"
+      },
+      "replay": {
+        "path": "images\\inspection_observe-c98959e0dcd1.png",
+        "snapshot_id": "inspection_observe-c98959e0dcd1",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 0
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:04:48.297301+00:00"
+      }
+    }
+  },
+  "response": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01YCrjosTpc6jvdZ3S9yEoz8",
+        "name": "reproduction_verdict",
+        "input": {
+          "verdict": "reproduced",
+          "reason": "In the replay, clicking LIGHTING changed the URL to ?collection=lighting and showed \"2 pieces\" with Arc Pendant Light and Orb Table Lamp. Clicking ALL then left the URL, the \"2 pieces\" count and the two cards unchanged, with no URL change in the diff. The final snapshot and screenshot still show Lighting with 2 pieces, the same as the original run. The 13 products did not return."
+        },
+        "caller": {
+          "type": "direct"
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "usage": {
+      "input_tokens": 149222,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 220,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "container": null,
+    "model": "claude-sonnet-5-5"
+  },
+  "export_note": "Exact model replay verdict/result; duplicated request observations omitted, snapshots included separately."
+}
