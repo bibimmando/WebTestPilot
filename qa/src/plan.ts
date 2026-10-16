@@ -306,6 +306,9 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
     if (c.source.kind === 'constraint') {
       if (len < 3) errors.push(`${c.id}: constraint needs source.quote of the on-screen text or HTML constraint (3+ characters)`);
       else if (seenText !== undefined && !seenText.includes(q)) errors.push(`${c.id}: constraint quote was not seen during exploration: ${JSON.stringify(q)}`);
+      // 화면 제약은 안내·규칙 문구(한도·조건·결과 안내)여야 한다. 검사 대상 자신의 이름·라벨이나 기대값을 인용하면
+      // "그 요소가 있다"는 관찰일 뿐 규칙이 아니다(Maison 실측 2026-10-16: 상품명을 제약으로 인용해 확신 높음 판정).
+      else if (isOwnLabel(q, c, s, pinned)) errors.push(`${c.id}: constraint quote ${JSON.stringify(q)} is the checked element's own name or value, not a rule or notice; cite a notice/limit text, or use inferred or expected_from`);
       return;
     }
     if (c.source.kind !== 'requirement') return;
@@ -406,6 +409,25 @@ export function startTargetsElsewhere(draft: Draft, pinned: Map<string, Pinned>)
     }
   }
   return [...out.values()];
+}
+
+/**
+ * 인용이 고정 기대값이거나, 이 시나리오에서 쓰는 대상(및 그 범위)의 이름·텍스트와 겹치는가.
+ * 패턴(정규식 source)은 값 자리와 이스케이프를 걷어 글자만 남기고, 대소문자·공백을 맞춰 "인용이 라벨의 일부인가"로 비교한다.
+ * 반대 방향(인용이 라벨을 포함)은 막지 않는다: "Arc Pendant Light을 담았습니다" 같은 결과 안내는 이름을 포함한 정당한 안내다.
+ * 글자가 3자 미만으로 남는 넓은 패턴은 비교하지 않는다(모든 안내 문구를 거부하지 않도록).
+ */
+function isOwnLabel(quote: string, c: Check, s: Scenario, pinned: Map<string, Pinned>): boolean {
+  const norm = (x: string) => x.toLowerCase().replace(/\s+/g, ' ').trim();
+  const q = norm(quote);
+  if (c.expected !== undefined && norm(c.expected) === q) return true;
+  const ids = new Set([...s.steps.map(st => st.target), ...s.checks.map(x => x.target)].filter((x): x is string => !!x));
+  const labels: string[] = [];
+  for (const id of ids) for (let t = pinned.get(id)?.target; t; t = t.within) labels.push(...[t.name, t.text].filter((x): x is string => !!x));
+  return labels.some(p => {
+    const literal = norm(p.replace(/\.\*\?|\\s[+*]?/g, ' ').replace(/[\^$]/g, '').replace(/\\(.)/g, '$1'));
+    return literal.replace(/\s/g, '').length >= 3 && literal.includes(q);
+  });
 }
 
 /** 같은 페이지인지 비교하기 위한 URL (hash 제외). */

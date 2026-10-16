@@ -287,7 +287,7 @@ test('여러 페이지 사이트: 사이트 지도를 만들고 페이지 종류
     const title = text.match(/"name":"\^(.*)\$"/)![1];
     return call('submit_plan', { features: [{ id: `F${F}`, name: `${title} 제목`, page: 'x' }], unplanned: [],
       scenarios: [{ id: `S${S}`, title: `${title} 제목`, covers: [`F${F}`], start: { url: firsts.at(-1)!.match(/시작 URL: (\S+)/)![1] }, steps: [],
-        checks: [{ id: `S${S}.C1`, after: 'start', target: T, read: 'text', op: 'equals', expected: title, source: { kind: 'constraint', quote: title } }] }] });
+        checks: [{ id: `S${S}.C1`, after: 'start', target: T, read: 'visible', op: 'equals', expected: 'true', source: { kind: 'inferred', rule: 'no-error-page', quote: '페이지가 오류 없이 열려 제목이 보인다' } }] }] });
   };
   const r = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html',
     requirements: [{ id: 'R1', text: '로그인하면 주문 내역을 본다' }], send, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20 });
@@ -295,7 +295,9 @@ test('여러 페이지 사이트: 사이트 지도를 만들고 페이지 종류
   assert.deepEqual(r.sitemap!.templates.map(t => t.key.replace(origin, '')), ['/home.html', '/item/:x', '/cart.html']);
   assert.deepEqual(r.conversations.map(c => [c.template.replace(origin, ''), c.planned]), [['/home.html', true], ['/item/:x', true], ['/cart.html', true]]);
   assert.match(firsts[1], /이번 대화의 범위: 페이지 종류 .*\/item\/:x/);
-  assert.deepEqual(r.plan!.scenarios.map(s => [s.id, s.title]), [['S1', '홈 화면 제목'], ['S2', '상품 A 제목'], ['S3', '장바구니 제목']]);
+  assert.deepEqual(r.plan!.scenarios.filter(s => !s.variantOf).map(s => [s.id, s.title]), [['S1', '홈 화면 제목'], ['S2', '상품 A 제목'], ['S3', '장바구니 제목']]);
+  assert.deepEqual(r.plan!.scenarios.filter(s => s.variantOf).map(s => [s.variantOf, s.start.url.replace(origin, '')]), [['S2', '/item/b.html'], ['S2', '/item/c.html']],
+    'C4: 상품 템플릿 계획을 같은 템플릿 다른 페이지 2개(대표 포함 3)에 복제한다');
   assert.deepEqual(Object.keys(r.plan!.targets).sort(), ['T1', 'T2', 'T3'], '대상 ID는 대화 사이에 겹치지 않는다');
   assert.deepEqual(r.plan!.unplanned, [{ requirement: 'R1', reason: '어느 페이지 종류의 대화에서도 계획하지 않음' }]);
   assert.deepEqual(validate(r.plan!, r.plan!.requirements, new Map(Object.entries(r.plan!.targets)), [origin]), [], '합친 계획은 실행 검증을 통과한다');

@@ -207,6 +207,7 @@ test('시스템 판정: 끝난 항목은 반드시 판정하고, 끝나지 않�
   assert.equal(level({ class: 'passed_inferred' }), 'not_bug');
   assert.equal(level({ class: 'automation_failure' }), 'not_bug');
   assert.equal(level({ class: 'app_defect_candidate', source: 'requirement', reproduction: 'reproduced' }), 'bug_high');
+  assert.equal(level({ class: 'app_defect_candidate', source: 'constraint', reproduction: 'reproduced' }), 'bug_medium', '화면 제약 근거는 확신 중간까지');
   assert.equal(level({ class: 'app_defect_candidate', source: 'inferred', reproduction: 'reproduced' }), 'bug_medium', '일반 규칙은 최대 확신 중간');
   assert.equal(level({ class: 'app_defect_candidate', source: 'requirement', reproduction: 'flaky' }), 'hold');
   assert.equal(level({ class: 'app_defect_candidate', source: 'requirement', reproduction: 'reproduction_inconclusive' }), 'incomplete');

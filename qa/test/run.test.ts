@@ -278,7 +278,7 @@ test('C4: 같은 템플릿 다른 페이지에서 계획을 실행하고, 대상
         { id: 'S2.C2', after: 'start', target: 'T3', read: 'visible', op: 'equals', expected: 'true', source: why },
       ] },
       { id: 'S5', title: '요구사항 고정값만', covers: ['F1'], start: { url: a }, steps: [], checks: [
-        { id: 'S5.C1', after: 'start', target: 'T1', read: 'text', op: 'equals', expected: '상품 A', source: { kind: 'constraint', quote: '상품 A' } },
+        { id: 'S5.C1', after: 'start', target: 'T1', read: 'text', op: 'equals', expected: '상품 A', source: { kind: 'constraint', quote: '상품 정보는 판매자가 제공합니다' } },
       ] },
     ],
     unplanned: [],

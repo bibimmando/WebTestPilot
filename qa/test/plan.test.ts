@@ -249,3 +249,24 @@ test('계획 합치기: 어느 대화도 다루지 않은 요구사항은 미계
   assert.deepEqual(m.scenarios.map(s => s.id), ['S1', 'S2']);
   assert.deepEqual(m.unplanned, [{ requirement: 'R3', reason: '어느 페이지 종류의 대화에서도 계획하지 않음' }]);
 });
+
+test('화면 제약 근거: 검사 대상 자신의 이름이나 기대값을 인용하면 규칙이 아니라 관찰이므로 거부한다', () => {
+  const named = new Map(pins);
+  named.set('T4', { target: { role: 'heading', name: '^Arc Pendant Light$' }, group: false, url: origin + '/p' });
+  named.set('T5', { target: { role: 'link', name: '^담기$', within: { role: 'article', text: 'Arc Pendant Light' } }, group: false, url: origin + '/p' });
+  const check = (target: string, quote: string, expected = 'true') => ({ id: 'S1.C2', after: 'S1.A1', target, read: 'visible' as const, op: 'equals' as const, expected,
+    source: { kind: 'constraint' as const, quote } });
+  const errs = (c: ReturnType<typeof check>) => { const d = good(); d.scenarios[0].checks.push(c); return validate(d, reqs, named, [origin]); };
+  assert.ok(errs(check('T4', 'Arc Pendant Light')).some(e => e.includes("checked element's own name")), '대상 이름 그대로');
+  assert.ok(errs(check('T5', 'Arc Pendant')).some(e => e.includes("checked element's own name")), '범위 요소의 텍스트 일부');
+  assert.ok(errs({ ...check('T2', '수량 2'), read: 'value' as any, expected: '수량 2' }).some(e => e.includes("checked element's own name")), '기대값 그대로');
+  assert.deepEqual(errs(check('T4', '최대 10개까지 담을 수 있습니다')).filter(e => e.includes('S1.C2')), [], '안내 문구는 받는다');
+  assert.ok(errs(check('T4', '  arc   PENDANT ')).some(e => e.includes("checked element's own name")), '대소문자·공백 차이');
+  // 같은 시나리오에서 쓰는 다른 요소의 이름을 인용해도 관찰일 뿐이다.
+  const other = (q: string) => { const d = good(); d.scenarios[0].steps.push({ id: 'S1.A2', op: 'click', target: 'T4' });
+    d.scenarios[0].checks.push({ ...check('T2', q), read: 'value' as any, expected: '2' }); return validate(d, reqs, named, [origin]); };
+  assert.ok(other('Arc Pendant Light').some(e => e.includes("checked element's own name")), '다른 대상의 이름');
+  assert.deepEqual(errs(check('T4', '1 × Arc Pendant Light added to your bag.')).filter(e => e.includes('S1.C2')), [], '이름을 포함한 결과 안내는 받는다');
+  named.set('T6', { target: { role: 'status', text: '.*?' }, group: false, url: origin + '/p' });
+  assert.deepEqual(errs(check('T6', '최대 10개')).filter(e => e.includes('S1.C2')), [], '글자가 없는 넓은 패턴으로 안내를 거부하지 않는다');
+});

@@ -167,7 +167,7 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
       },
     };
     const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools: [classify],
-      user: triageMessage(o.plan, s, v, files, r), budget: o.budget, maxTurns: 3, maxTokens: 4000 });
+      user: triageMessage(o.plan, s, v, files, r), budget: o.budget, maxTurns: 3, maxTokens: 8000 });
     mkdirSync(join(o.run.runDir, logDir), { recursive: true });
     v.triageLog = `${logDir}/${v.id}.json`;
     writeFileSync(join(o.run.runDir, v.triageLog), JSON.stringify({ stop: result.stop, detail: result.detail, turns: result.turns }, null, 2));
@@ -319,7 +319,9 @@ export function systemVerdict(plan: Plan, v: Verdict): NonNullable<Verdict['syst
   if (v.kind === 'check' && v.observed !== 'mismatch') return incomplete(`실제 값을 읽지 못함(${v.observed})`);
   if (v.reproduction === 'flaky') return { level: 'hold', reason: `재실행에서 재현 안 됨${v.reproductionDetail ? `: ${v.reproductionDetail}` : ''}` };
   if (v.reproduction !== 'reproduced') return incomplete(`재현 판단 불가${v.reproductionDetail ? `: ${v.reproductionDetail}` : ''}`);
-  if (v.source === 'requirement' || v.source === 'constraint') return { level: 'bug_high', reason: `${v.source === 'requirement' ? '요구사항' : '화면 제약'} 위반, 재현됨, 증거 인용으로 자동화 실패 아님` };
+  if (v.source === 'requirement') return { level: 'bug_high', reason: '요구사항 위반, 재현됨, 증거 인용으로 자동화 실패 아님' };
+  // 화면 제약 인용이 이 기대값을 실제로 뒷받침하는지는 기계적으로 확인할 수 없다. 그래서 확신 중간까지만 준다(2026-10-16).
+  if (v.source === 'constraint') return { level: 'bug_medium', reason: '화면 제약 문구 근거 위반, 재현됨 (인용과 기대의 관계는 사람이 확인)' };
   if (v.source === 'observed') return incomplete('탐색 때 본 값과 시작 상태가 다름(결함 근거 아님)');
   // 행동 실패(대상 사라짐 등)는 규칙 근거가 없다. 앱 변경인지 결함인지 사람이 볼 항목으로 둔다.
   if (v.kind !== 'check') return { level: 'hold', reason: `행동 실패가 재현됨(${v.observed}). 의도된 변경인지 근거 없음` };
