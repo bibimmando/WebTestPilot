@@ -28,10 +28,12 @@ export async function runPlan(o: { plan: Plan; policy: Policy; runDir: string; t
 
   // 실행과 대조는 모두 이 시점에 직렬화한 사본만 쓴다. 호출자가 나중에 plan을 바꿔도 판정 기준은 바뀌지 않는다.
   const timeoutMs = o.timeoutMs ?? 5000;
+  // 쓰기 허용 실행은 시나리오끼리 서버 상태(같은 계정의 글·장바구니)를 공유하므로 동시에 돌리지 않는다.
+  const workers = o.policy.allowWrites ? 1 : Math.max(1, o.workers ?? 1);
   const files: Record<string, string> = {
     'plan.json': JSON.stringify(o.plan, null, 2),
     'policy.json': JSON.stringify(o.policy, null, 2),
-    'playwright.config.mjs': config(Math.max(1, o.workers ?? 1)),
+    'playwright.config.mjs': config(workers),
   };
   // 실행 헬퍼도 복사해서 그 사본을 실행한다. manifest의 해시가 실제로 실행된 코드의 해시가 된다.
   for (const f of RUNTIME_SOURCES) files[`src/${f}`] = readFileSync(join(SRC, f), 'utf8');
@@ -42,7 +44,7 @@ export async function runPlan(o: { plan: Plan; policy: Policy; runDir: string; t
 
   const manifest = {
     files: Object.fromEntries(Object.entries(files).map(([k, v]) => [k, sha256(v)])),
-    timeoutMs, workers: Math.max(1, o.workers ?? 1), node: process.version,
+    timeoutMs, workers, node: process.version,
     playwright: JSON.parse(readFileSync(join(dirname(PLAYWRIGHT_CLI), 'package.json'), 'utf8')).version,
   };
   writeFileSync(join(o.runDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
@@ -81,7 +83,6 @@ function childEnv(): NodeJS.ProcessEnv {
 }
 
 // 시나리오(spec 파일)마다 워커 하나, 재시도 없이. trace·screenshot은 항상 남긴다 (실패 분류의 증거).
-// shortcut: 워커가 여럿이면 서버에 저장되는 상태를 시나리오끼리 공유한다. 쓰기 허용 실행(M5)에서는 같은 계정 시나리오를 순차로 돌려야 한다.
 const config = (workers: number) => `export default {
   testDir: 'specs',
   outputDir: 'artifacts',

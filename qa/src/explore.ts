@@ -73,10 +73,10 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
         const page = await guarded.context.newPage();
         await page.goto(url).catch(() => {});
         // 동시에 시작한 대화는 S#·F#를 앞 대화의 제출 전에 정하므로, 대화마다 100개씩 번호 구간을 나눈다.
-        // shortcut: 한 대화가 시나리오·기능을 100개 넘게 내면 다음 구간과 겹쳐 제출 검증에서 거부된다. 실측에서 보이면 구간을 늘린다.
+        // 구간을 넘는 ID는 제출에서 거부한다(완료 순서에 따라 어느 대화가 거부될지 달라지지 않게).
         const next = (prefix: string) => concurrency > 1 ? index * 100 + 1
           : Math.max(0, ...[...part.taken].filter(id => id.startsWith(prefix)).map(id => Number(id.slice(1)))) + 1;
-        const tools = exploreTools(page, o, violations, single ? undefined : part);
+        const tools = exploreTools(page, o, violations, single ? undefined : part, concurrency > 1 ? [index * 100 + 1, index * 100 + 100] : undefined);
         const retry = job.retryOf === undefined ? undefined : done[job.retryOf].result.turns.length;
         const user = taskMessage(o, single ? undefined : { map, template, url, nextScenario: next('S'), nextFeature: next('F'), retry });
         const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools, user, budget: o.budget,
@@ -114,9 +114,13 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
 
     for (const t of ordered.slice(templates.length)) conversations.push({ template: t.key, url: t.pages[0], stop: 'not_attempted', detail: `페이지 종류 수 한도(${templates.length})`, turns: 0, planned: false });
     // 실패한 대화의 질문도 버리지 않고 남긴다.
-    const merged = plans.length ? (single ? plans[0] : { ...mergePlans(plans, o.requirements), questions: part.questions }) : undefined;
-    const plan = merged && cloneScenarios(merged, otherPages(merged, map, o.pagesPerTemplate ?? 3));
-    return { ...last!, stop: plan ? 'done' : last!.stop, turns, plan, blocked, violations, sitemap: map, conversations,
+    const submitted = new Set(plans.flatMap(p => p.questions.map(q => q.id)));
+    const questions = part.questions.map(q => submitted.has(q.id) || !q.feature ? q : (({ feature: _, ...rest }) => rest)(q));
+    const merged = plans.length ? (single ? plans[0] : { ...mergePlans(plans, o.requirements), questions }) : undefined;
+    const tainted = !!merged && violations.length > 0;
+    const plan = tainted ? undefined : merged && cloneScenarios(merged, otherPages(merged, map, o.pagesPerTemplate ?? 3));
+    return { ...last!, stop: plan ? 'done' : tainted ? 'error' : last!.stop, ...(tainted ? { detail: `정책 위반이 있어 계획을 버림: ${violations.join(', ')}` } : {}),
+      turns, plan, blocked, violations, sitemap: map, conversations,
       complete: (single ? [{ key: startKey ?? o.startUrl }] : ordered).every(t => conversations.some(c => c.template === t.key && c.planned)), exploredUrls: [...part.urls] };
   }
 }
@@ -170,7 +174,8 @@ export function taskMessage(o: Task, scope?: Scope): string {
 }
 
 /** 탐색 도구 전체. API 루프(explore)와 개발용 MCP 서버(mcp.ts)가 같은 도구를 쓴다. 계획이 통과하면 done에 Plan이 담긴다. */
-export function exploreTools(page: Page, o: Task, violations: string[], part?: Part): Tool[] {
+/** idRange: 동시 실행에서 이 대화가 쓸 S#·F# 번호 구간 [처음, 끝]. */
+export function exploreTools(page: Page, o: Task, violations: string[], part?: Part, idRange?: [number, number]): Tool[] {
   const pinned = new Map<string, Pinned>();
   // 탐색 중 본 snapshot 텍스트. constraint(화면 안내) 인용이 실제로 화면에 있었는지 확인한다.
   const seen: string[] = [];
@@ -195,6 +200,11 @@ export function exploreTools(page: Page, o: Task, violations: string[], part?: P
     def: { name: 'submit_plan', description: '완성한 테스트 계획을 제출한다. 오류가 있으면 오류 목록이 돌아온다.', input_schema: DRAFT_SCHEMA },
     run: async (draft: Draft) => {
       if (violations.length) return { text: `정책 위반이 있어 계획을 받을 수 없다: ${violations.join(', ')}`, isError: true };
+      if (idRange) {
+        const out = [...(draft.scenarios ?? []).map(s => s.id), ...(draft.features ?? []).map(f => f.id)]
+          .filter(id => { const n = Number(String(id).slice(1)); return !(n >= idRange[0] && n <= idRange[1]); });
+        if (out.length) return { text: `ID는 S${idRange[0]}~S${idRange[1]}, F${idRange[0]}~F${idRange[1]} 안에서 쓰세요: ${out.join(', ')}`, isError: true };
+      }
       // 복제 표식은 하네스만 붙인다.
       if ((draft.scenarios ?? []).some(x => (x as { variantOf?: unknown }).variantOf !== undefined)) return { text: 'variantOf는 계획에 쓸 수 없다', isError: true };
       let errors: string[];

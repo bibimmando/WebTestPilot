@@ -249,6 +249,8 @@ test('M2 실행: 준비 대기 뒤 시작 증거, 관측 참조·url·items 비�
   assert.deepEqual(par.problems, [], readFileSync(`${par.runDir}/playwright.log`, 'utf8'));
   assert.deepEqual(par.scenarios.map(s => [s.id, s.valid, s.precondition, s.checks.map(c => c.status)]), r.scenarios.map(s => [s.id, s.valid, s.precondition, s.checks.map(c => c.status)]));
   assert.equal(JSON.parse(readFileSync(`${par.runDir}/manifest.json`, 'utf8')).workers, 3, '재현은 manifest의 워커 수를 따른다');
+  const writes = await runPlan({ plan: p, policy: { origins: [origin], allowWrites: true }, runDir: runDir('m2-writes'), timeoutMs: 2000, workers: 3 });
+  assert.equal(JSON.parse(readFileSync(`${writes.runDir}/manifest.json`, 'utf8')).workers, 1, '쓰기 허용 실행은 서버 상태를 공유하므로 동시에 돌리지 않는다');
 });
 
 test('reconcile·1차 분류: 관측 참조는 정상적으로 읽은 값만 쓰고, 실행 안 된 선행조건은 준비 실패가 아니다', () => {

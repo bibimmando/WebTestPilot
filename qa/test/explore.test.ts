@@ -17,6 +17,8 @@ before(async () => {
   browser = await chromium.launch();
   server = createServer(async (req, res) => {
     if (req.method !== 'GET') { posts.push(`${req.method} ${req.url}`); return res.end('ok'); }
+    // 허용 origin 밖으로 보내는 리다이렉트(정책 위반 기록용)
+    if (req.url === '/away') { res.writeHead(302, { location: 'http://localhost:9/' }); return res.end(); }
     try {
       res.setHeader('content-type', 'text/html; charset=utf-8');
       res.end(await readFile(new URL(`./fixtures${new URL(req.url!, "http://x").pathname}`, import.meta.url)));
@@ -330,9 +332,15 @@ test('여러 페이지 사이트: 사이트 지도를 만들고 페이지 종류
   assert.deepEqual(validate(par.plan!, par.plan!.requirements, new Map(Object.entries(par.plan!.targets)), [origin]), []);
 
   // 큐 순환: 턴 한도로 계획 없이 끝난 페이지 종류는 첫 순회 뒤 새 대화로 한 번 더 시도한다.
+  const msg = (req: Anthropic.MessageCreateParamsNonStreaming, content: unknown[], stop = 'tool_use') => ({ id: 'm', type: 'message', role: 'assistant', model: req.model,
+    stop_reason: stop, stop_sequence: null, content, usage: { input_tokens: 100, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } }) as unknown as Anthropic.Message;
   const stuck: Send = async req => {
     const first = String(req.messages[0].content);
-    if (/범위: 페이지 종류 \S*\/cart\.html/.test(first) && !first.includes('앞선 대화는 턴')) return send({ ...req, messages: req.messages.slice(0, 1) });
+    if (/범위: 페이지 종류 \S*\/cart\.html/.test(first) && !first.includes('앞선 대화는 턴')) {
+      // 계획을 내지 못한 대화가 F3에 질문을 남긴다. 재시도 대화도 자기 기능을 F3으로 쓴다.
+      if (req.messages.length === 1) return msg(req, [{ type: 'tool_use', id: 'q1', name: 'ask_user', input: { question: '장바구니는 로그인 없이 유지되나요?', options: ['예', '아니요'], feature: 'F3' } }]);
+      return send({ ...req, messages: req.messages.slice(0, 1) });
+    }
     return send(req);
   };
   const retried = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html',
@@ -341,6 +349,34 @@ test('여러 페이지 사이트: 사이트 지도를 만들고 페이지 종류
     [['/home.html', 'done', true], ['/item/:x', 'done', true], ['/cart.html', 'max_turns', false], ['/cart.html', 'done', true]]);
   assert.ok(firsts.some(f => f.includes('앞선 대화는 턴 4개를 쓰고 계획 없이 끝났습니다')), '재시도 대화에 앞선 시도를 알린다');
   assert.equal(retried.complete, true, '재시도에서 계획했으면 완료다');
+  assert.deepEqual(retried.plan!.questions.map(q => [q.question, q.feature]), [['장바구니는 로그인 없이 유지되나요?', undefined]],
+    '계획을 내지 못한 대화의 질문은 다른 대화의 같은 번호 기능에 붙이지 않는다');
+
+  // 정책 위반: 앞 대화가 계획을 냈어도, 어느 대화에서든 허용 origin 밖으로 나간 기록이 있으면 계획을 버린다.
+  const away: Send = async req => {
+    const first = String(req.messages[0].content);
+    if (/범위: 페이지 종류 \S*\/cart\.html/.test(first)) {
+      if (req.messages.length === 1) return msg(req, [{ type: 'tool_use', id: 'n1', name: 'navigate', input: { url: origin + '/away' } }]);
+      return msg(req, [{ type: 'text', text: '끝' }], 'end_turn');
+    }
+    return send(req);
+  };
+  const tainted = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html',
+    requirements: [], send: away, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20 });
+  assert.deepEqual([tainted.plan, tainted.stop, tainted.conversations[0].planned], [undefined, 'error', true]);
+  assert.match(tainted.detail ?? '', /정책 위반이 있어 계획을 버림: redirect http:\/\/localhost:9\//);
+
+  // 동시 실행의 번호 구간 밖 ID는 제출에서 거부한다(상품 대화가 S1·F1을 쓰려 함).
+  const results: string[] = [];
+  const outside: Send = async req => {
+    const last = req.messages.at(-1)!;
+    if (Array.isArray(last.content)) for (const b of last.content) if (b.type === 'tool_result') results.push(String(b.content));
+    const first = String(req.messages[0].content);
+    return send(first.includes('S101부터') ? { ...req, messages: [{ role: 'user', content: first.replace('S101부터', 'S1부터').replace('F101부터', 'F1부터') }, ...req.messages.slice(1)] } : req);
+  };
+  await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html',
+    requirements: [], send: outside, model: 'claude-opus-5-5', budget: new Budget(5), maxTurns: 20, turnsPerTemplate: 4, concurrency: 3 });
+  assert.ok(results.some(t => t.includes('ID는 S101~S200, F101~F200 안에서 쓰세요: S1, F1')), results.join('\n').slice(0, 500));
 });
 
 test('C4 페이지 고르기: 경로만 다른 템플릿에서 방문한 페이지를 먼저, 쿼리만 다른 페이지는 고르지 않는다', () => {
