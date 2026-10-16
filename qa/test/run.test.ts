@@ -243,6 +243,12 @@ test('M2 실행: 준비 대기 뒤 시작 증거, 관측 참조·url·items 비�
   const v = Object.fromEntries(preclassify(p, r).map(x => [x.id, x]));
   assert.deepEqual([v['S3.C1'].class, v['S3.C2'].class, v['S3.C2'].cause], ['precondition_failed', 'not_run', 'S3.C1'], '준비 실패는 결함 후보가 아니다');
   assert.equal(v['S2.C4'].class, 'mismatch');
+
+  // 시나리오를 동시에 실행해도 판정은 순차와 같다. 시나리오 하나의 단계는 한 워커에서 차례로 돈다.
+  const par = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir('m2-par'), timeoutMs: 2000, workers: 3 });
+  assert.deepEqual(par.problems, [], readFileSync(`${par.runDir}/playwright.log`, 'utf8'));
+  assert.deepEqual(par.scenarios.map(s => [s.id, s.valid, s.precondition, s.checks.map(c => c.status)]), r.scenarios.map(s => [s.id, s.valid, s.precondition, s.checks.map(c => c.status)]));
+  assert.equal(JSON.parse(readFileSync(`${par.runDir}/manifest.json`, 'utf8')).workers, 3, '재현은 manifest의 워커 수를 따른다');
 });
 
 test('reconcile·1차 분류: 관측 참조는 정상적으로 읽은 값만 쓰고, 실행 안 된 선행조건은 준비 실패가 아니다', () => {

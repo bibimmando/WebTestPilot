@@ -277,4 +277,12 @@ test('분류: 같은 검사의 복제본은 원본 분류를 공유하고, 불�
   const again = [v('S9.C2', 'S9', 'check', 'mismatch'), v('S1.C2', 'S1', 'check', 'mismatch')];
   await triage({ plan: p, run: withValues, verdicts: again, send, model: 'claude-sonnet-5-5', budget: new Budget(1) });
   assert.deepEqual([order, again[0].triageSharedFrom], [['S1.C2', 'S9.C2'], undefined]);
+
+  // 동시에 분류해도 같은 검사 묶음은 한 번만 분류하고, 복제본은 원본 분류를 공유한다.
+  order.length = 0;
+  let open = 0, peak = 0;
+  const slow: Send = async req => { open++; peak = Math.max(peak, open); await new Promise(res => setTimeout(res, 30)); open--; return send(req); };
+  const par = [v('S9.C2', 'S9', 'check', 'mismatch'), v('S1.A1', 'S1', 'act', 'not_executed:not_actionable'), v('S1.C2', 'S1', 'check', 'mismatch')];
+  await triage({ plan: p, run, verdicts: par, send: slow, model: 'claude-sonnet-5-5', budget: new Budget(1), concurrency: 3 });
+  assert.deepEqual([[...order].sort(), peak, par[0].class, par[0].triageSharedFrom], [['S1.A1', 'S1.C2'], 2, 'uncertain', 'S1.C2']);
 });

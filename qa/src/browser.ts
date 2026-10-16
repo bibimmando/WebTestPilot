@@ -12,15 +12,14 @@ export type Guarded = { context: BrowserContext; blocked: string[]; violations: 
  * 정책을 강제하는 브라우저 컨텍스트를 연다. 허용 origin 밖 요청과 권한 없는 쓰기 요청은 막고(blocked),
  * 막을 수 없는 우회(외부로의 리다이렉트)는 violations에 남긴다. violations가 있으면 그 실행은 신뢰하지 않는다.
  */
-export async function openContext(browser: Browser, policy: Policy): Promise<Guarded> {
+export async function openContext(browser: Browser, policy: Policy, violations?: string[]): Promise<Guarded> {
   const context = await browser.newContext({ serviceWorkers: 'block' });
-  return { context, ...(await guardContext(context, policy)) };
+  return { context, ...(await guardContext(context, policy, violations)) };
 }
 
 /** 이미 만든 컨텍스트에 정책을 건다. Playwright 테스트 러너의 컨텍스트(trace 기록 포함)에도 쓴다. 서비스 워커 차단은 컨텍스트 생성 옵션이다. */
-export async function guardContext(context: BrowserContext, policy: Policy): Promise<Omit<Guarded, 'context'>> {
+export async function guardContext(context: BrowserContext, policy: Policy, violations: string[] = []): Promise<Omit<Guarded, 'context'>> {
   const blocked: string[] = [];
-  const violations: string[] = [];
   const allowed = (url: string) => {
     const u = new URL(url);
     return LOCAL_SCHEMES.has(u.protocol) || policy.origins.includes(u.origin);

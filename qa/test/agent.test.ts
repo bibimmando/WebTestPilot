@@ -71,3 +71,21 @@ test('마지막 몇 턴에는 남은 턴 수를 알려 제출을 재촉한다', 
   // 8턴이면 마지막 5턴부터 알린다: 3번째 응답 뒤(남은 5)부터
   assert.deepEqual(seen.map(m => /남은 턴: (\d+)/.exec(m)?.[1] ?? '-'), ['-', '-', '-', '5', '4', '3', '2', '1']);
 });
+
+test('동시 호출: 다른 호출의 예약 때문에 모자라면 그 호출이 끝난 뒤 예약하고, 기다릴 호출이 없으면 바로 거부한다', async () => {
+  const b = new Budget(0.03);
+  const req = { model: 'claude-sonnet-5-5', max_tokens: 2000, messages: [] } as Anthropic.MessageCreateParamsNonStreaming;
+  const first = b.reserve(req);
+  let second: number | undefined;
+  const waiting = b.reserveWhenFree(req).then(r => { second = r; });
+  await new Promise(res => setImmediate(res));
+  assert.equal(second, undefined, '앞 호출이 정산되기 전에는 기다린다');
+  b.charge('claude-sonnet-5-5', usage(10, 10), first);
+  await waiting;
+  assert.ok(second! > 0, '앞 호출이 정산되면 예약한다');
+  // 실패한 호출은 예약액을 놓지 않는다. 기다리던 예약은 깨어나 다시 따져 보고, 기다릴 호출이 없으니 거부된다.
+  const late = b.reserveWhenFree(req);
+  b.abandon();
+  await assert.rejects(late, BudgetError);
+  await assert.rejects(b.reserveWhenFree(req), BudgetError, '기다릴 호출이 없으면 바로 거부');
+});

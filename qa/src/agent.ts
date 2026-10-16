@@ -29,6 +29,9 @@ export class Budget {
   spent = 0;
   held = 0;
   readonly limitUsd: number;
+  /** 응답을 기다리는 호출 수와, 그 호출이 끝나기를 기다리는 예약 */
+  private inflight = 0;
+  private waiters: (() => void)[] = [];
   constructor(limitUsd: number) { this.limitUsd = limitUsd; }
 
   /** 요청의 최악 비용(입력은 UTF-8 바이트를 토큰 상한으로, 5분 캐시 쓰기 1.25배, 출력은 max_tokens)을 점유한다. 한도를 넘으면 BudgetError. */
@@ -40,12 +43,35 @@ export class Budget {
     const left = this.limitUsd - this.spent - this.held;
     if (worst > left) throw new BudgetError(`예약 $${worst.toFixed(4)}가 남은 예산 $${left.toFixed(4)}를 넘음`);
     this.held += worst;
+    this.inflight++;
     return worst;
+  }
+
+  /**
+   * 동시에 도는 다른 호출의 예약 때문에 모자라면 그 호출이 끝날 때까지 기다렸다가 다시 예약한다.
+   * 기다리는 호출이 없으면(순차 실행·실제 소진) reserve처럼 바로 BudgetError다.
+   */
+  async reserveWhenFree(req: Anthropic.MessageCreateParamsNonStreaming): Promise<number> {
+    for (;;) {
+      try { return this.reserve(req); } catch (e) {
+        if (!(e instanceof BudgetError) || this.inflight === 0 || !PRICES[req.model]) throw e;
+        await new Promise<void>(res => this.waiters.push(res));
+      }
+    }
+  }
+
+  /** 실패한 호출: 청구됐을 수 있어 예약액은 계속 점유하고, 응답 대기에서만 뺀다. */
+  abandon(): void { this.settled(); }
+
+  private settled(): void {
+    this.inflight = Math.max(0, this.inflight - 1);
+    for (const w of this.waiters.splice(0)) w();
   }
 
   /** 실제 사용량으로 정산하고 점유했던 예약액을 놓는다. */
   charge(model: string, u: Anthropic.Usage, reserved = 0): number {
     this.held = Math.max(0, this.held - reserved);
+    this.settled();
     if (!PRICES[model]) throw new BudgetError(`가격을 모르는 모델의 응답: ${model}`);
     const created = u.cache_creation_input_tokens ?? 0;
     const created1h = u.cache_creation?.ephemeral_1h_input_tokens ?? 0;
@@ -83,7 +109,7 @@ export async function runAgent(o: {
       cache_control: { type: 'ephemeral' },
     };
     let reserved: number;
-    try { reserved = o.budget.reserve(request); } catch (e) {
+    try { reserved = await o.budget.reserveWhenFree(request); } catch (e) {
       if (e instanceof BudgetError) return end('budget', { detail: e.message });
       throw e;
     }
@@ -96,6 +122,7 @@ export async function runAgent(o: {
       turn.cost = o.budget.charge(response.model, response.usage, reserved);
     } catch (e) {
       // 호출 실패도 그때까지의 기록과 함께 돌려준다. 실패한 호출의 예약액은 청구 가능성이 있으므로 놓지 않는다.
+      if (turn.cost === undefined && !turn.response) o.budget.abandon();
       return end('error', { detail: (e as Error).message });
     }
     if (response.model !== request.model) return end('error', { detail: `요청과 다른 모델이 응답함: ${response.model}` });

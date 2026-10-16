@@ -24,6 +24,8 @@ const { values: a } = parseArgs({ options: {
   'max-pages': { type: 'string', default: '30' }, 'max-templates': { type: 'string', default: '8' }, 'turns-per-template': { type: 'string', default: '25' },
   // 같은 템플릿에서 계획을 실행할 페이지 수(대표 포함, C4)
   'pages-per-template': { type: 'string', default: '3' },
+  // 동시에 여는 탐색·분류 대화 수와 동시에 실행할 시나리오 수. 순차와 판정이 같은지 확인하기 전까지 기본 1
+  concurrency: { type: 'string', default: '1' }, workers: { type: 'string', default: '1' },
 } });
 if (!a.url || !a.budget) {
   console.error('사용법: node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] --budget <USD> [--name 이름]');
@@ -48,7 +50,7 @@ const send: Send = async req => {
 };
 
 // 숫자 옵션은 양의 정수여야 한다(NaN이면 한도가 작동하지 않는다).
-for (const k of ['max-turns', 'max-pages', 'max-templates', 'turns-per-template', 'pages-per-template'] as const) {
+for (const k of ['max-turns', 'max-pages', 'max-templates', 'turns-per-template', 'pages-per-template', 'concurrency', 'workers'] as const) {
   if (!Number.isInteger(Number(a[k])) || Number(a[k]) < 1) { console.error(`--${k}는 1 이상의 정수여야 한다: ${a[k]}`); process.exit(2); }
 }
 const requirements: Requirement[] = a.requirements ? JSON.parse(readFileSync(a.requirements, 'utf8').replace(/^﻿/, '')) : [];  // 요구사항은 선택 입력(설계 3.3)
@@ -66,7 +68,7 @@ const browser = await chromium.launch();
 let summary: Record<string, unknown> = {};
 try {
   const e = await explore({ browser, policy, startUrl: a.url, requirements, send, model: a['plan-model']!, budget, maxTurns: Number(a['max-turns']),
-    maxPages: Number(a['max-pages']), maxTemplates: Number(a['max-templates']), turnsPerTemplate: Number(a['turns-per-template']), pagesPerTemplate: Number(a['pages-per-template']) });
+    maxPages: Number(a['max-pages']), maxTemplates: Number(a['max-templates']), turnsPerTemplate: Number(a['turns-per-template']), pagesPerTemplate: Number(a['pages-per-template']), concurrency: Number(a.concurrency) });
   timing.explore = Date.now() - t0;
   save('explore.json', { stop: e.stop, detail: e.detail, blocked: e.blocked, violations: e.violations, sitemap: e.sitemap, conversations: e.conversations,
     complete: e.complete, exploredUrls: e.exploredUrls, turns: e.turns });
@@ -75,9 +77,9 @@ try {
   if (!e.plan) throw new Error(`계획 없음: ${e.stop} ${e.detail ?? ''}`);
   save('plan.json', e.plan);
 
-  const run = await runPlan({ plan: e.plan, policy, runDir: join(out, 'run') });
+  const run = await runPlan({ plan: e.plan, policy, runDir: join(out, 'run'), workers: Number(a.workers) });
   timing.run = Date.now() - t0 - timing.explore;
-  const j = await judge({ plan: e.plan, run, send, model: a['triage-model']!, budget, reproduceDir: join(out, 'repro') });
+  const j = await judge({ plan: e.plan, run, send, model: a['triage-model']!, budget, reproduceDir: join(out, 'repro'), concurrency: Number(a.concurrency) });
   timing.judge = Date.now() - t0 - timing.explore - timing.run;
   summary = { ...summary, run: { exitCode: run.exitCode, problems: run.problems,
     scenarios: run.scenarios.map(s => ({ id: s.id, valid: s.valid, start: s.start, ready: s.ready, precondition: s.precondition, steps: s.steps.map(x => x.status), checks: s.checks.map(c => c.status) })) },

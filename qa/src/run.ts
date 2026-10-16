@@ -18,7 +18,8 @@ export type RunResult = Reconciled & { runDir: string; exitCode: number | null }
 
 /** runDir는 qa 폴더 안이어야 한다 (spec이 qa의 ESM·TypeScript 설정과 의존성을 쓴다). */
 /** only를 주면 그 시나리오만 실행한다 (재현용). 대조는 전체 plan으로 하므로 나머지는 not_run이다. */
-export async function runPlan(o: { plan: Plan; policy: Policy; runDir: string; timeoutMs?: number; only?: string[] }): Promise<RunResult> {
+/** workers: 동시에 실행할 시나리오 수(기본 1). 시나리오 하나의 단계는 늘 한 워커에서 차례로 돈다. */
+export async function runPlan(o: { plan: Plan; policy: Policy; runDir: string; timeoutMs?: number; only?: string[]; workers?: number }): Promise<RunResult> {
   if (existsSync(o.runDir)) throw new Error(`실행 폴더가 이미 있음 (덮어쓰지 않음): ${o.runDir}`);
   const errors = validate(o.plan, o.plan.requirements, new Map(Object.entries(o.plan.targets)), o.policy.origins, undefined, new Set(o.plan.startVerified ?? []));
   if (errors.length) throw new Error(`plan이 계약을 통과하지 못함:\n- ${errors.join('\n- ')}`);
@@ -30,7 +31,7 @@ export async function runPlan(o: { plan: Plan; policy: Policy; runDir: string; t
   const files: Record<string, string> = {
     'plan.json': JSON.stringify(o.plan, null, 2),
     'policy.json': JSON.stringify(o.policy, null, 2),
-    'playwright.config.mjs': CONFIG,
+    'playwright.config.mjs': config(Math.max(1, o.workers ?? 1)),
   };
   // 실행 헬퍼도 복사해서 그 사본을 실행한다. manifest의 해시가 실제로 실행된 코드의 해시가 된다.
   for (const f of RUNTIME_SOURCES) files[`src/${f}`] = readFileSync(join(SRC, f), 'utf8');
@@ -41,7 +42,7 @@ export async function runPlan(o: { plan: Plan; policy: Policy; runDir: string; t
 
   const manifest = {
     files: Object.fromEntries(Object.entries(files).map(([k, v]) => [k, sha256(v)])),
-    timeoutMs, node: process.version,
+    timeoutMs, workers: Math.max(1, o.workers ?? 1), node: process.version,
     playwright: JSON.parse(readFileSync(join(dirname(PLAYWRIGHT_CLI), 'package.json'), 'utf8')).version,
   };
   writeFileSync(join(o.runDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
@@ -79,11 +80,12 @@ function childEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(process.env).filter(([k]) => !/KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|ANTHROPIC|OPENAI/i.test(k)));
 }
 
-// 시나리오는 한 번에 하나씩, 재시도 없이. trace·screenshot은 항상 남긴다 (실패 분류의 증거).
-const CONFIG = `export default {
+// 시나리오(spec 파일)마다 워커 하나, 재시도 없이. trace·screenshot은 항상 남긴다 (실패 분류의 증거).
+// shortcut: 워커가 여럿이면 서버에 저장되는 상태를 시나리오끼리 공유한다. 쓰기 허용 실행(M5)에서는 같은 계정 시나리오를 순차로 돌려야 한다.
+const config = (workers: number) => `export default {
   testDir: 'specs',
   outputDir: 'artifacts',
-  workers: 1,
+  workers: ${workers},
   retries: 0,
   timeout: 120000,
   reporter: [['json', { outputFile: 'report.json' }]],

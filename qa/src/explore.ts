@@ -26,15 +26,17 @@ export type ExploreResult = AgentResult & { plan?: Plan; blocked: string[]; viol
 export type Part = { taken: Set<string>; next: { T: number; Q: number }; questions: Question[]; urls: Set<string> };
 type Task = { policy: Policy; startUrl: string; requirements: Requirement[] };
 /** 템플릿별 대화의 범위: 사이트 지도 요약, 이번 템플릿, 이어 쓸 ID 번호 */
-export type Scope = { map: SiteMap; template: Template; url: string; nextScenario: number; nextFeature: number };
+/** retry: 같은 템플릿의 앞선 대화가 턴 한도로 계획 없이 끝났을 때 그 대화의 턴 수 */
+export type Scope = { map: SiteMap; template: Template; url: string; nextScenario: number; nextFeature: number; retry?: number };
 
 /**
  * 사이트 지도를 만든 뒤 템플릿마다 새 대화로 탐색·계획하고, 계획을 하나로 합친다(설계 5장 1·2단계, M3 2차).
- * 대상(T#)·질문(Q#)·본 텍스트는 대화 사이에 공유하고 S#·F#는 이어 쓴다. 템플릿이 하나면 대화 하나다.
+ * 대상(T#)·질문(Q#)·정책 위반은 대화 사이에 공유하고 S#·F#는 이어 쓴다(동시 실행이면 대화마다 번호 구간). 템플릿이 하나면 대화 하나다.
+ * concurrency: 동시에 여는 템플릿 대화 수(기본 1). 대화끼리 브라우저 상태를 공유하지 않으므로 흐름은 한 대화 안에서 끝난다.
  * shortcut: 템플릿마다 대표 페이지 하나만 탐색한다(기준 실행). 같은 템플릿 다른 페이지 실행(C4)은 팀 확인 뒤.
  */
 export async function explore(o: Task & { browser: Browser; send: Send; model: string; budget: Budget; maxTurns: number;
-  maxPages?: number; maxTemplates?: number; turnsPerTemplate?: number; pagesPerTemplate?: number }): Promise<ExploreResult> {
+  maxPages?: number; maxTemplates?: number; turnsPerTemplate?: number; pagesPerTemplate?: number; concurrency?: number }): Promise<ExploreResult> {
   assertStartAllowed(o);
   // 사이트 지도는 쓰기 허용과 상관없이 읽기 전용으로 모은다. 페이지를 여는 것만으로 스크립트가 쓰기 요청을 보낼 수 있다.
   const reader = await openContext(o.browser, { ...o.policy, allowWrites: false });
@@ -52,50 +54,70 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
     const ordered = [...map.templates].sort((a, b) => Number(b.key === startKey) - Number(a.key === startKey));
     const templates = ordered.slice(0, o.maxTemplates ?? 8);
     const single = templates.length <= 1;
+    const concurrency = single ? 1 : Math.max(1, o.concurrency ?? 1);
     const part: Part = { taken: new Set(), next: { T: 1, Q: 1 }, questions: [], urls: new Set() };
-    const plans: Plan[] = [];
-    const conversations: ExploreResult['conversations'] = [];
-    let last: AgentResult | undefined;
-    const turns: AgentResult['turns'] = [];
+    type Job = { template: Template; retryOf?: number };
+    type Done = { job: Job; url: string; result: AgentResult };
+    const done: Done[] = [];
     let stopped: string | undefined;
-    for (const template of single ? [{ key: startKey ?? o.startUrl, pages: [o.startUrl] }] : templates) {
-      if (stopped) {
-        conversations.push({ template: template.key, url: template.pages[0], stop: 'not_attempted', detail: stopped, turns: 0, planned: false });
-        continue;
-      }
+    let started = 0;
+    const converse = async (job: Job): Promise<Done> => {
+      const { template } = job;
+      const index = started++;
       const url = template.key === startKey ? o.startUrl : map.visited.find(v => template.pages.includes(v)) ?? template.pages[0];
       // 대화마다 새 브라우저 상태(쿠키·저장소 없음)로 시작한다. 실행도 시나리오마다 빈 상태에서 시작하므로,
       // 앞 대화에서 담은 장바구니·위시리스트를 보고 계획하면 실행에서 시작 조건이 맞지 않는다(Maison 실측 2026-10-16).
-      const guarded = await openContext(o.browser, o.policy);
-      // 사이트 지도 수집과 앞선 대화의 정책 위반도 이 대화의 계획 제출을 막는다.
-      const prior = violations.length;
-      guarded.violations.push(...violations);
-      let result: AgentResult;
+      // 정책 위반 목록은 모든 대화가 함께 쓴다. 사이트 지도 수집과 지금까지(동시에 도는 대화 포함)의 위반이 계획 제출을 막는다.
+      const guarded = await openContext(o.browser, o.policy, violations);
       try {
         const page = await guarded.context.newPage();
         await page.goto(url).catch(() => {});
-        const next = (prefix: string) => Math.max(0, ...[...part.taken].filter(id => id.startsWith(prefix)).map(id => Number(id.slice(1)))) + 1;
-        const tools = exploreTools(page, o, guarded.violations, single ? undefined : part);
-        const user = taskMessage(o, single ? undefined : { map, template, url, nextScenario: next('S'), nextFeature: next('F') });
-        result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools, user, budget: o.budget,
+        // 동시에 시작한 대화는 S#·F#를 앞 대화의 제출 전에 정하므로, 대화마다 100개씩 번호 구간을 나눈다.
+        // shortcut: 한 대화가 시나리오·기능을 100개 넘게 내면 다음 구간과 겹쳐 제출 검증에서 거부된다. 실측에서 보이면 구간을 늘린다.
+        const next = (prefix: string) => concurrency > 1 ? index * 100 + 1
+          : Math.max(0, ...[...part.taken].filter(id => id.startsWith(prefix)).map(id => Number(id.slice(1)))) + 1;
+        const tools = exploreTools(page, o, violations, single ? undefined : part);
+        const retry = job.retryOf === undefined ? undefined : done[job.retryOf].result.turns.length;
+        const user = taskMessage(o, single ? undefined : { map, template, url, nextScenario: next('S'), nextFeature: next('F'), retry });
+        const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools, user, budget: o.budget,
           maxTurns: single ? o.maxTurns : o.turnsPerTemplate ?? 25 });
+        if (result.stop === 'budget') stopped = '예산 소진';
+        return { job, url, result };
       } finally {
         blocked.push(...guarded.blocked);
-        violations.push(...guarded.violations.slice(prior));
         await guarded.context.close();
       }
-      last = result;
-      turns.push(...result.turns);
-      conversations.push({ template: template.key, url, stop: result.stop, ...(result.detail ? { detail: result.detail } : {}), turns: result.turns.length, planned: !!result.result });
-      if (result.result) plans.push(result.result as Plan);
-      if (result.stop === 'budget') stopped = '예산 소진';
-    }
+    };
+    // 템플릿 큐를 동시에 concurrency개씩 비운다. 예산이 떨어지면 새 대화를 시작하지 않는다.
+    const drain = async (queue: Job[]) => {
+      const worker = async () => {
+        for (let job = queue.shift(); job; job = queue.shift()) {
+          if (stopped) { done.push({ job, url: job.template.pages[0], result: undefined! }); continue; }
+          done.push(await converse(job));
+        }
+      };
+      await Promise.all(Array.from({ length: concurrency }, worker));
+    };
+    await drain((single ? [{ key: startKey ?? o.startUrl, pages: [o.startUrl] }] : templates).map(template => ({ template })));
+    // 큐 순환(설계 5장 2단계): 턴 한도로 계획 없이 끝난 템플릿은 첫 순회 뒤 새 대화로 한 번 더 시도한다.
+    if (!single) await drain(done.flatMap((d, i) => d.result?.stop === 'max_turns' && !d.result.result ? [{ template: d.job.template, retryOf: i }] : []));
+    // 결과는 시작 순서가 아니라 큐 순서(템플릿 순서, 재시도는 뒤)로 정렬해 동시 실행에서도 같은 순서로 합친다.
+    const order = (d: Done) => (d.job.retryOf === undefined ? 0 : templates.length) + templates.indexOf(d.job.template);
+    done.sort((a, b) => order(a) - order(b));
+    const conversations: ExploreResult['conversations'] = done.map(({ job, url, result }) => result
+      ? { template: job.template.key, url, stop: result.stop, ...(result.detail ? { detail: result.detail } : {}), turns: result.turns.length, planned: !!result.result }
+      : { template: job.template.key, url, stop: 'not_attempted', detail: stopped, turns: 0, planned: false });
+    const ran = done.filter(d => d.result);
+    const plans = ran.flatMap(d => d.result.result ? [d.result.result as Plan] : []);
+    const turns = ran.flatMap(d => d.result.turns);
+    const last = ran.at(-1)?.result;
+
     for (const t of ordered.slice(templates.length)) conversations.push({ template: t.key, url: t.pages[0], stop: 'not_attempted', detail: `페이지 종류 수 한도(${templates.length})`, turns: 0, planned: false });
     // 실패한 대화의 질문도 버리지 않고 남긴다.
     const merged = plans.length ? (single ? plans[0] : { ...mergePlans(plans, o.requirements), questions: part.questions }) : undefined;
     const plan = merged && cloneScenarios(merged, otherPages(merged, map, o.pagesPerTemplate ?? 3));
     return { ...last!, stop: plan ? 'done' : last!.stop, turns, plan, blocked, violations, sitemap: map, conversations,
-      complete: conversations.every(c => c.planned), exploredUrls: [...part.urls] };
+      complete: (single ? [{ key: startKey ?? o.startUrl }] : ordered).every(t => conversations.some(c => c.template === t.key && c.planned)), exploredUrls: [...part.urls] };
   }
 }
 
@@ -136,6 +158,7 @@ export function taskMessage(o: Task, scope?: Scope): string {
       '(페이지 종류는 URL 모양으로 묶은 잠정 분류입니다. 같은 종류로 묶였는데 기능이 다르면 observations에 적으세요.)',
       `이번 대화의 범위: 페이지 종류 ${scope.template.key}. 이 종류에서 시작하는 기능을 계획하세요. 행동의 결과가 다른 페이지에 나타나면(목록·모음·내 정보 화면 등) 같은 시나리오 안에서 그 페이지로 이동해 이어서 확인하세요. 다른 종류에서 시작하는 기능은 다른 대화에서 다룹니다. 이 종류와 관련 없는 요구사항은 계획하지도 unplanned에 적지도 마세요.`,
       `ID는 이어서 씁니다: 시나리오 S${scope.nextScenario}부터, 기능 F${scope.nextFeature}부터.`,
+      ...(scope.retry === undefined ? [] : [`이 페이지 종류의 앞선 대화는 턴 ${scope.retry}개를 쓰고 계획 없이 끝났습니다. 핵심 기능부터 계획하고 일찍 제출하세요.`]),
     ] : []),
     `허용 origin: ${o.policy.origins.join(', ')} (쓰기 요청 ${o.policy.allowWrites ? '허용' : '차단'})`,
     ...(o.requirements.length

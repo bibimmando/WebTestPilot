@@ -286,7 +286,7 @@ test('여러 페이지 사이트: 사이트 지도를 만들고 페이지 종류
     const T = text.match(/(T\d+) =/)![1];
     const title = text.match(/"name":"\^(.*)\$"/)![1];
     return call('submit_plan', { features: [{ id: `F${F}`, name: `${title} 제목`, page: 'x' }], unplanned: [],
-      scenarios: [{ id: `S${S}`, title: `${title} 제목`, covers: [`F${F}`], start: { url: firsts.at(-1)!.match(/시작 URL: (\S+)/)![1] }, steps: [],
+      scenarios: [{ id: `S${S}`, title: `${title} 제목`, covers: [`F${F}`], start: { url: first.match(/시작 URL: (\S+)/)![1] }, steps: [],
         checks: [{ id: `S${S}.C1`, after: 'start', target: T, read: 'visible', op: 'equals', expected: 'true', source: { kind: 'inferred', rule: 'no-error-page', quote: '페이지가 오류 없이 열려 제목이 보인다' } }] }] });
   };
   const r = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html',
@@ -309,6 +309,38 @@ test('여러 페이지 사이트: 사이트 지도를 만들고 페이지 종류
     requirements: [], send, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20, maxTemplates: 2 });
   assert.deepEqual(limited.conversations.map(c => [c.template.replace(origin, ''), c.stop, c.detail ?? '']).at(-1), ['/cart.html', 'not_attempted', '페이지 종류 수 한도(2)']);
   assert.equal(limited.complete, false, '시도하지 않은 페이지 종류가 있으면 완료가 아니다');
+
+  // 동시 실행: 대화가 실제로 겹쳐 돌고, 합친 결과는 순차와 같은 순서·대상이며 S#·F#는 대화마다 다른 구간을 쓴다.
+  // 각 대화의 첫 호출은 세 대화가 모두 시작할 때까지 기다린다. 순차 실행이면 기다림이 시간 초과로 끝난다.
+  let arrived = 0, together = true, release = () => {};
+  const gate = new Promise<void>(res => { release = res; });
+  const slow: Send = async req => {
+    if (req.messages.length === 1) {
+      if (++arrived === 3) release();
+      if (!await Promise.race([gate.then(() => true), new Promise<boolean>(res => setTimeout(() => res(false), 3000))])) together = false;
+    }
+    return send(req);
+  };
+  const par = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html',
+    requirements: [], send: slow, model: 'claude-opus-5-5', budget: new Budget(5), maxTurns: 20, concurrency: 3 });
+  assert.ok(together && arrived === 3, '세 대화가 동시에 돈다');
+  assert.deepEqual(par.conversations.map(c => [c.template.replace(origin, ''), c.planned]), [['/home.html', true], ['/item/:x', true], ['/cart.html', true]]);
+  assert.deepEqual(par.plan!.scenarios.filter(s => !s.variantOf).map(s => [s.id, s.title]), [['S1', '홈 화면 제목'], ['S101', '상품 A 제목'], ['S201', '장바구니 제목']]);
+  assert.deepEqual(Object.keys(par.plan!.targets).sort(), ['T1', 'T2', 'T3'], '동시에 고정해도 대상 ID는 겹치지 않는다');
+  assert.deepEqual(validate(par.plan!, par.plan!.requirements, new Map(Object.entries(par.plan!.targets)), [origin]), []);
+
+  // 큐 순환: 턴 한도로 계획 없이 끝난 페이지 종류는 첫 순회 뒤 새 대화로 한 번 더 시도한다.
+  const stuck: Send = async req => {
+    const first = String(req.messages[0].content);
+    if (/범위: 페이지 종류 \S*\/cart\.html/.test(first) && !first.includes('앞선 대화는 턴')) return send({ ...req, messages: req.messages.slice(0, 1) });
+    return send(req);
+  };
+  const retried = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html',
+    requirements: [], send: stuck, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20, turnsPerTemplate: 4 });
+  assert.deepEqual(retried.conversations.map(c => [c.template.replace(origin, ''), c.stop, c.planned]),
+    [['/home.html', 'done', true], ['/item/:x', 'done', true], ['/cart.html', 'max_turns', false], ['/cart.html', 'done', true]]);
+  assert.ok(firsts.some(f => f.includes('앞선 대화는 턴 4개를 쓰고 계획 없이 끝났습니다')), '재시도 대화에 앞선 시도를 알린다');
+  assert.equal(retried.complete, true, '재시도에서 계획했으면 완료다');
 });
 
 test('C4 페이지 고르기: 경로만 다른 템플릿에서 방문한 페이지를 먼저, 쿼리만 다른 페이지는 고르지 않는다', () => {

@@ -106,10 +106,9 @@ const origin = (c: Plan['scenarios'][number]['checks'][number]) =>
  * 분류하지 못한 mismatch는 mismatch로 남겨 재현 대상에 둔다. 대화 기록은 triage/에 남긴다.
  */
 export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[]; send: Send; model: string; budget: Budget;
-  maxItems?: number; onUpdate?: () => void; logDir?: string }): Promise<void> {
+  maxItems?: number; onUpdate?: () => void; logDir?: string; concurrency?: number }): Promise<void> {
   // 판정 회차마다 다른 폴더에 대화를 남긴다. 다시 판정해도 이전 분류의 대화·사용량이 덮이지 않는다.
   const logDir = o.logDir ?? 'triage';
-  let used = 0;
   const unclassified = (v: Verdict, error: string) => {
     v.class = v.observed === 'mismatch' ? 'mismatch' : 'uncertain';
     v.triage = { error };
@@ -125,27 +124,27 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
   items.sort((a, b) => rank(a) - rank(b));
   // 한도는 분류할 항목 수에 맞춘다(최소 20, 최대 60). 비용은 예산 장부가 따로 막는다.
   const limit = o.maxItems ?? Math.min(60, Math.max(20, new Set(items.map(keyOf)).size));
-  const classified = new Map<string, Verdict>();
-  const attempted = new Set<string>();
-  for (const v of items) {
-    const shared = classified.get(keyOf(v));
-    if (shared && shared.triage && 'reason' in shared.triage) {
-      v.class = shared.class;
-      v.triage = { reason: `(같은 검사 ${shared.id}의 분류를 공유) ${shared.triage.reason}`, quotes: shared.triage.quotes };
-      v.triageSharedFrom = shared.id;
-      v.triageLog = shared.triageLog;
-      continue;
-    }
-    // 같은 검사의 원본 분류가 실패했으면 복제본도 재시도하지 않는다(한도를 고유 검사 기준으로 쓴다).
-    if (attempted.has(keyOf(v))) {
-      unclassified(v, '같은 검사의 앞선 분류가 끝나지 않아 다시 하지 않음');
-      continue;
-    }
-    if (used++ >= limit) {
-      unclassified(v, '분류 항목 수 한도 초과');
-      continue;
-    }
-    attempted.add(keyOf(v));
+  // 같은 검사끼리 묶어 묶음마다 맨 앞 항목(원본 우선)만 분류하고, 나머지는 그 결과를 공유한다. 한도는 묶음 수 기준이다.
+  const groups = new Map<string, Verdict[]>();
+  for (const v of items) groups.has(keyOf(v)) ? groups.get(keyOf(v))!.push(v) : groups.set(keyOf(v), [v]);
+  const heads = [...groups.values()];
+  for (const g of heads.slice(limit)) for (const v of g) unclassified(v, '분류 항목 수 한도 초과');
+  // 묶음끼리는 서로 독립이라 동시에 concurrency개씩 분류한다. 비용은 같은 예산 장부가 호출마다 예약해 막는다.
+  const queue = heads.slice(0, limit).map(g => g[0]);
+  await Promise.all(Array.from({ length: Math.max(1, o.concurrency ?? 1) }, async () => {
+    for (let v = queue.shift(); v; v = queue.shift()) await classifyOne(v);
+  }));
+  for (const [head, ...rest] of heads.slice(0, limit)) for (const v of rest) {
+    if (head.triage && 'reason' in head.triage) {
+      v.class = head.class;
+      v.triage = { reason: `(같은 검사 ${head.id}의 분류를 공유) ${head.triage.reason}`, quotes: head.triage.quotes };
+      v.triageSharedFrom = head.id;
+      v.triageLog = head.triageLog;
+    } else unclassified(v, '같은 검사의 앞선 분류가 끝나지 않아 다시 하지 않음');
+  }
+  if (heads.length) o.onUpdate?.();
+
+  async function classifyOne(v: Verdict) {
     const s = o.plan.scenarios.find(x => x.id === v.scenario)!;
     const r = o.run.scenarios.find(x => x.id === v.scenario)!;
     const { files, own } = evidenceFor(o.run.runDir, v, r, o.plan);
@@ -174,7 +173,6 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
     if (accepted) {
       v.class = accepted.class;
       v.triage = { reason: accepted.reason, quotes: accepted.quotes };
-      classified.set(keyOf(v), v);
     } else {
       unclassified(v, `분류 미완료: ${result.stop}${result.detail ? ` (${result.detail})` : ''}`);
     }
@@ -276,7 +274,7 @@ export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir
   const policy: Policy = JSON.parse(readFileSync(join(o.run.runDir, 'policy.json'), 'utf8'));
   const firstManifest = JSON.parse(readFileSync(join(o.run.runDir, 'manifest.json'), 'utf8'));
   const again = await runPlan({ plan, policy, runDir: o.runDir, timeoutMs: o.timeoutMs ?? firstManifest.timeoutMs,
-    only: [...new Set(candidates.map(v => v.scenario))] });
+    only: [...new Set(candidates.map(v => v.scenario))], workers: firstManifest.workers });
   const secondManifest = JSON.parse(readFileSync(join(o.runDir, 'manifest.json'), 'utf8'));
   const changed = Object.keys(firstManifest.files).filter(k => k.startsWith('src/') && firstManifest.files[k] !== secondManifest.files[k]);
   for (const v of candidates) {
@@ -369,7 +367,7 @@ export type Judgment = { file: string; verdicts: Verdict[]; requirements: { id: 
  * 요구사항 분모는 대조 결과를 그대로 쓴다.
  */
 export async function judge(o: { plan: Plan; run: RunResult; send: Send; model: string; budget: Budget;
-  reproduceDir: string; timeoutMs?: number; maxTriageItems?: number }): Promise<Judgment> {
+  reproduceDir: string; timeoutMs?: number; maxTriageItems?: number; concurrency?: number }): Promise<Judgment> {
   let n = 1;
   while (existsSync(join(o.run.runDir, n === 1 ? 'verdicts.json' : `verdicts-${n}.json`))) n++;
   const file = join(o.run.runDir, n === 1 ? 'verdicts.json' : `verdicts-${n}.json`);
@@ -399,7 +397,7 @@ export async function judge(o: { plan: Plan; run: RunResult; send: Send; model: 
   const save = (stage: string) => writeFileSync(file, JSON.stringify(judgment(stage), null, 2));
   save('preclassified');
   await triage({ plan: o.plan, run: o.run, verdicts, send: o.send, model: o.model, budget: o.budget, maxItems: o.maxTriageItems,
-    onUpdate: () => save('triage'), logDir: n === 1 ? 'triage' : `triage-${n}` });
+    onUpdate: () => save('triage'), logDir: n === 1 ? 'triage' : `triage-${n}`, concurrency: o.concurrency });
   save('triaged');
   try {
     await reproduce({ run: o.run, verdicts, runDir: o.reproduceDir, timeoutMs: o.timeoutMs });
