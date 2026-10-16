@@ -32,6 +32,8 @@ export type Verdict = {
   triage?: { reason: string; quotes: Quote[] } | { error: string };
   /** 분류 대화 기록 (실행 폴더 기준 경로) */
   triageLog?: string;
+  /** 같은 검사의 원본(또는 앞선 복제본) 분류를 공유했으면 그 항목 ID (C4 복제 실행) */
+  triageSharedFrom?: string;
   reproduction?: 'reproduced' | 'flaky' | 'reproduction_inconclusive';
   reproductionDetail?: string;
   /** 단계별 결과 위에 붙이는 시스템 판정 (설계 3.3, 5장 6단계) */
@@ -112,11 +114,38 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
     v.class = v.observed === 'mismatch' ? 'mismatch' : 'uncertain';
     v.triage = { error };
   };
-  for (const v of o.verdicts.filter(x => x.class === 'needs_triage' || x.class === 'mismatch')) {
-    if (used++ >= (o.maxItems ?? 20)) {
+  const scenarioOf = new Map(o.plan.scenarios.map(s => [s.id, s]));
+  // 같은 검사(원본 시나리오·같은 검사 번호·같은 결과)는 한 번 분류하고 복제본이 공유한다. 페이지가 달라도 원인 판단(읽기 방식·앱 동작)은 같다.
+  // 실제 값·기대값까지 같아야 같은 원인으로 본다. 값이 다르면 페이지마다 원인이 다를 수 있어 따로 분류한다.
+  const valuesOf = (v: Verdict) => { const c = o.run.scenarios.find(x => x.id === v.scenario)?.checks.find(x => x.id === v.id); return JSON.stringify([c?.expected ?? null, c?.actual ?? null, c?.count ?? null]); };
+  const keyOf = (v: Verdict) => { const s = scenarioOf.get(v.scenario)!; return `${s.variantOf ?? s.id}${v.id.slice(v.scenario.length)}|${v.observed}|${valuesOf(v)}`; };
+  const items = o.verdicts.filter(x => x.class === 'needs_triage' || x.class === 'mismatch');
+  // 값을 읽어 비교한 불일치를 먼저, 그다음 검사 실패, 행동·시작 실패 순. 같은 순위에서는 원본을 복제본보다 먼저 분류해 공유할 수 있게 한다.
+  const rank = (v: Verdict) => (v.observed === 'mismatch' ? 0 : v.kind === 'check' ? 1 : 2) * 2 + (scenarioOf.get(v.scenario)?.variantOf ? 1 : 0);
+  items.sort((a, b) => rank(a) - rank(b));
+  // 한도는 분류할 항목 수에 맞춘다(최소 20, 최대 60). 비용은 예산 장부가 따로 막는다.
+  const limit = o.maxItems ?? Math.min(60, Math.max(20, new Set(items.map(keyOf)).size));
+  const classified = new Map<string, Verdict>();
+  const attempted = new Set<string>();
+  for (const v of items) {
+    const shared = classified.get(keyOf(v));
+    if (shared && shared.triage && 'reason' in shared.triage) {
+      v.class = shared.class;
+      v.triage = { reason: `(같은 검사 ${shared.id}의 분류를 공유) ${shared.triage.reason}`, quotes: shared.triage.quotes };
+      v.triageSharedFrom = shared.id;
+      v.triageLog = shared.triageLog;
+      continue;
+    }
+    // 같은 검사의 원본 분류가 실패했으면 복제본도 재시도하지 않는다(한도를 고유 검사 기준으로 쓴다).
+    if (attempted.has(keyOf(v))) {
+      unclassified(v, '같은 검사의 앞선 분류가 끝나지 않아 다시 하지 않음');
+      continue;
+    }
+    if (used++ >= limit) {
       unclassified(v, '분류 항목 수 한도 초과');
       continue;
     }
+    attempted.add(keyOf(v));
     const s = o.plan.scenarios.find(x => x.id === v.scenario)!;
     const r = o.run.scenarios.find(x => x.id === v.scenario)!;
     const { files, own } = evidenceFor(o.run.runDir, v, r, o.plan);
@@ -145,6 +174,7 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
     if (accepted) {
       v.class = accepted.class;
       v.triage = { reason: accepted.reason, quotes: accepted.quotes };
+      classified.set(keyOf(v), v);
     } else {
       unclassified(v, `분류 미완료: ${result.stop}${result.detail ? ` (${result.detail})` : ''}`);
     }

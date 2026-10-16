@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type Anthropic from '@anthropic-ai/sdk';
 import { runPlan, type RunResult } from '../src/run.ts';
-import { actionsUpTo, checkQuotes, judge, preclassify, systemVerdict, type Verdict } from '../src/triage.ts';
+import { actionsUpTo, checkQuotes, judge, preclassify, systemVerdict, triage, type Verdict } from '../src/triage.ts';
 import { Budget, type Send } from '../src/agent.ts';
 import type { Plan } from '../src/plan.ts';
 
@@ -245,4 +245,35 @@ test('Q22 제한: 결정적 관계 규칙 위반만 확신 높음, 다른 일반
   assert.equal(systemVerdict(p, v('S1.C9')).level, 'bug_medium');
   assert.equal(systemVerdict(p, v('S1.C10')).level, 'bug_medium', '같은 대상·같은 시점 재비교는 관계 비교가 아니다');
   assert.equal(systemVerdict(p, { ...v('S1.C8'), class: 'not_applicable' }).level, 'hold');
+});
+
+test('분류: 같은 검사의 복제본은 원본 분류를 공유하고, 불일치를 먼저·원본을 복제본보다 먼저 분류한다', async () => {
+  const p = plan();
+  const orig = p.scenarios[0];
+  p.scenarios.push({ ...structuredClone(orig), id: 'S9', variantOf: 'S1', start: { url: orig.start.url },
+    steps: orig.steps.map(st => ({ ...st, id: st.id.replace('S1.', 'S9.') })),
+    checks: orig.checks.map(c => ({ ...c, id: c.id.replace('S1.', 'S9.'), after: c.after.replace('S1.', 'S9.') })) });
+  const order: string[] = [];
+  const send: Send = async req => {
+    order.push(String(req.messages[0].content).match(/실패한 항목 (\S+):/)![1]);
+    return { id: 'm', type: 'message', role: 'assistant', model: req.model, stop_reason: 'tool_use', stop_sequence: null,
+      content: [{ type: 'tool_use', id: 't', name: 'classify', input: { class: 'uncertain', reason: '증거 부족', quotes: [] } }],
+      usage: { input_tokens: 10, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } as unknown as Anthropic.Message;
+  };
+  const sr = (id: string) => ({ id, valid: true, invalid: [], start: 'ok' as const, precondition: 'none' as const, steps: [], checks: [], blocked: [], violations: [] });
+  const run = { runDir: dir('share'), exitCode: 1, problems: [], requirements: [], scenarios: [sr('S1'), sr('S9')] } satisfies RunResult;
+  const v = (id: string, scenario: string, kind: 'check' | 'act', observed: string): Verdict =>
+    ({ id, scenario, kind, requirements: [], observed, class: observed === 'mismatch' ? 'mismatch' : 'needs_triage' });
+  const verdicts = [v('S9.C2', 'S9', 'check', 'mismatch'), v('S1.A1', 'S1', 'act', 'not_executed:not_actionable'), v('S1.C2', 'S1', 'check', 'mismatch')];
+  await triage({ plan: p, run, verdicts, send, model: 'claude-sonnet-5-5', budget: new Budget(1) });
+  assert.deepEqual(order, ['S1.C2', 'S1.A1'], '원본 불일치 → 행동 실패 순, 복제본은 따로 분류하지 않는다');
+  assert.deepEqual([verdicts[0].class, verdicts[0].triageSharedFrom], ['uncertain', 'S1.C2']);
+
+  // 실제 값이 다르면(페이지마다 원인이 다를 수 있다) 공유하지 않고 따로 분류한다.
+  order.length = 0;
+  const withValues = { ...run, scenarios: [{ ...sr('S1'), checks: [{ id: 'S1.C2', status: 'mismatch' as const, source: 'inferred', actual: '1', expected: '2' }] },
+    { ...sr('S9'), checks: [{ id: 'S9.C2', status: 'mismatch' as const, source: 'inferred', actual: '배송비는 얼마인가요?', expected: '$25' }] }] } satisfies RunResult;
+  const again = [v('S9.C2', 'S9', 'check', 'mismatch'), v('S1.C2', 'S1', 'check', 'mismatch')];
+  await triage({ plan: p, run: withValues, verdicts: again, send, model: 'claude-sonnet-5-5', budget: new Budget(1) });
+  assert.deepEqual([order, again[0].triageSharedFrom], [['S1.C2', 'S9.C2'], undefined]);
 });

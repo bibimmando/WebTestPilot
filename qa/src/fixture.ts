@@ -3,7 +3,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test as base, expect, type Page, type Locator } from '@playwright/test';
-import { ariaText, guardContext, settle, shapeChanged, toLocator, type AriaNode, type Policy } from './browser.ts';
+import { ariaText, ariaTextV1, guardContext, settle, shapeChanged, toLocator, type AriaNode, type Policy } from './browser.ts';
 import { compareValues, expectedFrom, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
@@ -169,7 +169,9 @@ async function read(page: Page, loc: Locator | undefined, c: Check, expected: st
   const count = await loc.count();
   if (c.read === 'count') return done(String(count), count);
   // 탐색 때 모델이 본 접근성 snapshot과 같은 기준으로 읽는다. innerText는 CSS 대소문자 변환이, textContent는 숨긴 텍스트가 섞인다.
-  const text = async (l: Locator) => ariaText(await l.ariaSnapshotJSON({ mode: 'ai' }) as AriaNode[]);
+  // 읽기 규칙 버전이 없는 예전 계획은 예전 규칙으로 읽는다(기대값이 그 규칙으로 만들어졌다).
+  const read2 = plan.textRead === 'name+content' ? ariaText : ariaTextV1;
+  const text = async (l: Locator) => read2(await l.ariaSnapshotJSON({ mode: 'ai' }) as AriaNode[]);
   if (c.read === 'items') {
     const items: string[] = [];
     for (const l of await loc.all()) items.push(await text(l));

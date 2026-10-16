@@ -44,11 +44,9 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
   } finally {
     await reader.context.close();
   }
-  const { context, blocked, violations } = await openContext(o.browser, o.policy);
-  blocked.push(...reader.blocked);
-  violations.push(...reader.violations.map(v => `사이트 지도 수집 중 ${v}`));
-  try {
-    const page = await context.newPage();
+  const blocked = [...reader.blocked];
+  const violations = reader.violations.map(v => `사이트 지도 수집 중 ${v}`);
+  {
     // 시작 페이지의 템플릿을 먼저, 나머지는 발견 순서대로.
     const startKey = map.templates.find(t => t.pages.includes(new URL(o.startUrl).href))?.key;
     const ordered = [...map.templates].sort((a, b) => Number(b.key === startKey) - Number(a.key === startKey));
@@ -66,12 +64,26 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
         continue;
       }
       const url = template.key === startKey ? o.startUrl : map.visited.find(v => template.pages.includes(v)) ?? template.pages[0];
-      await page.goto(url).catch(() => {});
-      const next = (prefix: string) => Math.max(0, ...[...part.taken].filter(id => id.startsWith(prefix)).map(id => Number(id.slice(1)))) + 1;
-      const tools = exploreTools(page, o, violations, single ? undefined : part);
-      const user = taskMessage(o, single ? undefined : { map, template, url, nextScenario: next('S'), nextFeature: next('F') });
-      const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools, user, budget: o.budget,
-        maxTurns: single ? o.maxTurns : o.turnsPerTemplate ?? 25 });
+      // 대화마다 새 브라우저 상태(쿠키·저장소 없음)로 시작한다. 실행도 시나리오마다 빈 상태에서 시작하므로,
+      // 앞 대화에서 담은 장바구니·위시리스트를 보고 계획하면 실행에서 시작 조건이 맞지 않는다(Maison 실측 2026-10-16).
+      const guarded = await openContext(o.browser, o.policy);
+      // 사이트 지도 수집과 앞선 대화의 정책 위반도 이 대화의 계획 제출을 막는다.
+      const prior = violations.length;
+      guarded.violations.push(...violations);
+      let result: AgentResult;
+      try {
+        const page = await guarded.context.newPage();
+        await page.goto(url).catch(() => {});
+        const next = (prefix: string) => Math.max(0, ...[...part.taken].filter(id => id.startsWith(prefix)).map(id => Number(id.slice(1)))) + 1;
+        const tools = exploreTools(page, o, guarded.violations, single ? undefined : part);
+        const user = taskMessage(o, single ? undefined : { map, template, url, nextScenario: next('S'), nextFeature: next('F') });
+        result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools, user, budget: o.budget,
+          maxTurns: single ? o.maxTurns : o.turnsPerTemplate ?? 25 });
+      } finally {
+        blocked.push(...guarded.blocked);
+        violations.push(...guarded.violations.slice(prior));
+        await guarded.context.close();
+      }
       last = result;
       turns.push(...result.turns);
       conversations.push({ template: template.key, url, stop: result.stop, ...(result.detail ? { detail: result.detail } : {}), turns: result.turns.length, planned: !!result.result });
@@ -84,8 +96,6 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
     const plan = merged && cloneScenarios(merged, otherPages(merged, map, o.pagesPerTemplate ?? 3));
     return { ...last!, stop: plan ? 'done' : last!.stop, turns, plan, blocked, violations, sitemap: map, conversations,
       complete: conversations.every(c => c.planned), exploredUrls: [...part.urls] };
-  } finally {
-    await context.close();
   }
 }
 

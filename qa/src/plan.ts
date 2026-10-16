@@ -43,6 +43,8 @@ export type Pinned = { target: Target; group: boolean; url: string };
 
 export type Plan = {
   version: 1;
+  /** 텍스트 읽기 규칙. 'name+content' = 이름과 안의 내용(2026-10-16~). 없으면 예전 규칙(이름만) */
+  textRead?: 'name+content';
   requirements: Requirement[];
   features: Feature[];
   scenarios: Scenario[];
@@ -328,7 +330,7 @@ export function mergePlans(plans: Plan[], requirements: Requirement[]): Plan {
     if (!covered.has(r.id) && !unplanned.some(u => u.requirement === r.id)) unplanned.push({ requirement: r.id, reason: '어느 페이지 종류의 대화에서도 계획하지 않음' });
   }
   const questions = new Map(plans.flatMap(p => p.questions).map(q => [q.id, q]));
-  return { version: 1, requirements, features: plans.flatMap(p => p.features), scenarios: plans.flatMap(p => p.scenarios), unplanned,
+  return { version: 1, ...(plans.every(p => p.textRead === 'name+content') ? { textRead: 'name+content' as const } : {}), requirements, features: plans.flatMap(p => p.features), scenarios: plans.flatMap(p => p.scenarios), unplanned,
     observations: plans.flatMap(p => p.observations), questions: [...questions.values()],
     ...(plans.some(p => p.startVerified?.length) ? { startVerified: plans.flatMap(p => p.startVerified ?? []) } : {}),
     targets: Object.assign({}, ...plans.map(p => p.targets)) };
@@ -385,7 +387,7 @@ export function cloneScenarios(plan: Plan, pages: Record<string, string[]>): Pla
 export function freeze(draft: Draft, requirements: Requirement[], pinned: Map<string, Pinned>, questions: Question[] = [], startVerified: string[] = []): Plan {
   const used = new Set(draft.scenarios.flatMap(s => [...s.steps.map(st => st.target), ...s.checks.map(c => c.target)]));
   const targets = Object.fromEntries([...pinned].filter(([id]) => used.has(id)));
-  return structuredClone({ version: 1 as const, requirements, features: draft.features ?? [], scenarios: draft.scenarios, unplanned: draft.unplanned,
+  return structuredClone({ version: 1 as const, textRead: 'name+content' as const, requirements, features: draft.features ?? [], scenarios: draft.scenarios, unplanned: draft.unplanned,
     observations: draft.observations ?? [], questions, ...(startVerified.length ? { startVerified } : {}), targets });
 }
 

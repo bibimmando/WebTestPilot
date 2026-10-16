@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
-import { openContext, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, type AriaNode } from '../src/browser.ts';
+import { openContext, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
 
 let browser: Browser | undefined;
 let server: Server | undefined;
@@ -206,7 +206,7 @@ test('ariaText는 모델이 본 텍스트와 같다: 숨긴 텍스트 제외, CS
   const read = async (id: string) => ariaText(await p.locator('#' + id).ariaSnapshotJSON({ mode: 'ai' }) as AriaNode[]);
   assert.equal(await read('a'), 'Textiles');
   assert.equal(await read('b'), '사과 1,100원 담기', '이름 없는 목록 항목은 자손 텍스트');
-  assert.equal(await read('c'), 'View cart', '자식이 있어도 이름 있는 링크는 이름');
+  assert.equal(await read('c'), 'View cart', '안의 아이콘 대체 텍스트는 내용이 아니다');
   const snap = await snapshot(p);
   const seen = snap.split('\n').find(l => l.includes('button') && l.includes('담기') && !l.includes('listitem'))!;
   assert.ok(seen.includes(await read('d')), `실행에서 읽은 버튼 텍스트(${await read('d')})가 탐색 snapshot(${seen})과 같아야 한다`);
@@ -263,4 +263,30 @@ test('그룹 고정: 목록 컨테이너를 고르면 그 안의 항목들을 �
   const r = await resolveGroup(p, refOf(snap, '- list'));
   assert.ok(r.ok, JSON.stringify(r) + '\n' + snap);
   assert.equal(await toLocator(p, r.target).count(), 3);
+});
+
+test('ariaText: 이름 있는 요소는 이름과 안의 내용을 함께 읽고, 내용이 이름과 같으면 이름만 읽는다', async () => {
+  const p = await page([
+    '<section id=faq aria-label="배송비는 얼마인가요?"><p>$500 미만은 $25입니다.</p></section>',
+    '<a id=w href="/wishlist" aria-label="위시리스트"><svg width="9" height="9"></svg><span>1</span></a>',
+    '<h2 id=h>상품 상세</h2>',
+    '<button id=b>담기</button>',
+  ].join(''));
+  const read = async (id: string) => ariaText(await p.locator('#' + id).ariaSnapshotJSON({ mode: 'ai' }) as AriaNode[]);
+  assert.equal(await read('faq'), '배송비는 얼마인가요? $500 미만은 $25입니다.', '내용을 담은 영역은 이름만 읽으면 실제 값을 놓친다');
+  assert.equal(await read('w'), '위시리스트 1', '링크 안의 배지 숫자도 읽는다');
+  assert.equal(await read('h'), '상품 상세');
+  assert.equal(await read('b'), '담기');
+  // 예전 계획(읽기 규칙 버전 없음)은 예전 규칙으로 읽어 기대값을 바꾸지 않는다.
+  assert.equal(ariaTextV1(await p.locator('#w').ariaSnapshotJSON({ mode: 'ai' }) as AriaNode[]), '위시리스트');
+});
+
+test('ariaText: 이름 있는 요소에도 CSS 대소문자 변환·숨긴 텍스트가 섞이지 않고, 이름 없는 요소의 text와 자식을 함께 읽는다', async () => {
+  const p = await page([
+    '<a id=l href="/x" aria-label="Shop" style="text-transform:uppercase">Shop<span hidden> secret</span> <b>3</b></a>',
+    '<section id=s aria-label="FAQ"><p>Shipping <a href="/x">25 dollars</a></p></section>',
+  ].join(''));
+  const read = async (id: string) => ariaText(await p.locator('#' + id).ariaSnapshotJSON({ mode: 'ai' }) as AriaNode[]);
+  assert.equal(await read('l'), 'Shop 3');
+  assert.equal(await read('s'), 'FAQ Shipping 25 dollars');
 });

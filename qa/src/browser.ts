@@ -317,9 +317,33 @@ export function parseSnapshot(nodes: AriaNode[]): Map<string, Node> {
 
 /**
  * 모델이 snapshot(ai 모드)에서 본 것과 같은 기준의 텍스트. 숨긴 요소는 빠지고 CSS 대소문자 변환은 적용되지 않는다.
- * 이름이 있는 요소(링크·버튼·제목)는 snapshot에 이름으로 보이므로 이름을, 이름이 없는 요소는 자기 텍스트나 자손 텍스트를 읽는다.
+ * 이름이 있는 요소는 이름과 안의 내용 텍스트를(내용이 이름과 같으면 이름만), 이름이 없는 요소는 자기 텍스트나 자손 텍스트를 읽는다.
  */
-export function ariaText(nodes: AriaNode[]): string {
-  return nodes.map(n => typeof n === 'string' ? n : n.name ?? n.text ?? (n.children?.length ? ariaText(n.children) : ''))
-    .join(' ').replace(/\s+/g, ' ').trim();
+export function ariaText(nodes: AriaNode[], inside = false): string {
+  // 이름 있는 요소 안의 이미지 대체 텍스트는 이름의 일부일 뿐 내용이 아니다(예: "View cart" 링크 안의 "Bag" 아이콘).
+  return clean(nodes.map(n => typeof n === 'string' ? n : inside && n.role === 'img' ? '' : n.name !== undefined ? named(n)
+    : `${n.text ?? ''} ${ariaText(n.children ?? [], inside)}`).join(' '));
+}
+
+const clean = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+/**
+ * 읽기 규칙 1(M1~M3 2차): 이름 있는 요소는 이름만, 이름 없는 요소는 text 또는 자손 텍스트.
+ * 이 규칙으로 기대값을 만든 예전 계획(plan.textRead 없음)은 이 규칙으로 읽어 기대값을 바꾸지 않고 재실행한다.
+ */
+export function ariaTextV1(nodes: AriaNode[]): string {
+  return clean(nodes.map(n => typeof n === 'string' ? n : n.name ?? n.text ?? (n.children?.length ? ariaTextV1(n.children) : '')).join(' '));
+}
+
+/**
+ * 이름 있는 요소는 이름과 안의 내용 텍스트를 함께 읽는다. 내용이 이름과 같거나 이름에 들어 있으면 이름만 읽는다.
+ * 이름만 읽으면 내용을 담은 요소의 실제 값을 놓친다(Maison 실측 2026-10-16: FAQ 영역은 질문 문장만, 위시리스트 링크는 배지 숫자 없이 읽힘).
+ */
+function named(n: Exclude<AriaNode, string>): string {
+  const name = n.name!;
+  // 자식 텍스트가 하나뿐이면 snapshot은 그것을 children이 아니라 text 속성으로 준다.
+  const inner = [n.text ?? '', ariaText(n.children ?? [], true)].join(' ').replace(/\s+/g, ' ').trim();
+  // 이름 말고 남는 것이 기호뿐이면(숨긴 아이콘 글자 "+" 등) 장식으로 보고 이름만 읽는다.
+  if (!inner || name.includes(inner) || !inner.replace(name, '').replace(/[\s\p{P}\p{S}]/gu, '')) return name;
+  return inner.includes(name) ? inner : `${name} ${inner}`;
 }
