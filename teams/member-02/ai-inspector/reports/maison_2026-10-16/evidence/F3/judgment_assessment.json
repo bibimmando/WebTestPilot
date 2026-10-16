@@ -1,0 +1,106 @@
+{
+  "schema_version": "judgment_assessment/1",
+  "scenarios": [
+    {
+      "scenario_id": "cart_qty",
+      "model_verdict": "candidate",
+      "accepted_verdict": "candidate",
+      "downgrade_reason": null,
+      "assessment": {
+        "expectation_supported": true,
+        "purpose_covered": true,
+        "reason": "장바구니에 항목이 없고 수량 2 표시도 확인되지 않아 기대와 불일치. 다만 직접 URL 이동에 따른 상태 유실 가능성은 배제 못함.",
+        "criteria": [
+          {
+            "criterion": "수량 표시가 1에서 2로 증가한다",
+            "status": "unmet",
+            "evidence": "클릭 후에도 텍스트상 QUANTITY 1, 토스트도 1 × 로 표시됨.",
+            "snapshot_ids": [
+              "after_action-4409c6f7b529",
+              "after_action-c02e1d50af50"
+            ],
+            "action_ids": [
+              "action-bf234bef49ff4c15",
+              "action-f474feed23754697"
+            ]
+          },
+          {
+            "criterion": "장바구니에 수량 2, $5,700 항목 표시",
+            "status": "unmet",
+            "evidence": "/cart는 Your Bag is Empty이며 이미지로도 확인.",
+            "snapshot_ids": [
+              "after_action-ae5384382c45",
+              "inspection_observe-817c014dc485"
+            ],
+            "action_ids": [
+              "action-70ec6d5bbf674854"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "wish_save",
+      "model_verdict": "candidate",
+      "accepted_verdict": "candidate",
+      "downgrade_reason": null,
+      "assessment": {
+        "expectation_supported": true,
+        "purpose_covered": true,
+        "reason": "첫 로드 직후 카드가 있었으나 안정 관찰과 이미지에선 목록 항목이 보이지 않아 일관성 없음. 로딩 지연 가능성이 있어 확정은 어려움.",
+        "criteria": [
+          {
+            "criterion": "위시리스트에 Harvest Dining Table 1건 표시",
+            "status": "unmet",
+            "evidence": "after 스냅샷엔 카드 있음, 이후 관찰·이미지에는 1 piece saved만 있고 카드 없음.",
+            "snapshot_ids": [
+              "after_action-5164a375609e",
+              "inspection_observe-738a5f3eb8cb"
+            ],
+            "action_ids": [
+              "action-e4c4e797aa1148aa"
+            ]
+          },
+          {
+            "criterion": "상품명과 가격 $2,850이 상세와 일치",
+            "status": "unknown",
+            "evidence": "최종 이미지에 카드가 없어 확인 불가; 이전 스냅샷 텍스트는 $2,850.",
+            "snapshot_ids": [
+              "after_action-5164a375609e",
+              "inspection_observe-738a5f3eb8cb"
+            ],
+            "action_ids": [
+              "action-e4c4e797aa1148aa"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "related_card",
+      "model_verdict": "candidate",
+      "accepted_verdict": "candidate",
+      "downgrade_reason": null,
+      "assessment": {
+        "expectation_supported": true,
+        "purpose_covered": true,
+        "reason": "카드 라벨 대비 도착 페이지가 다름(링크가 현재 상품으로 연결). 기대 근거는 휴리스틱.",
+        "criteria": [
+          {
+            "criterion": "Woven Lounge Chair 상세 페이지로 이동",
+            "status": "unmet",
+            "evidence": "클릭 후 URL·제목이 Harvest Dining Table 그대로.",
+            "snapshot_ids": [
+              "after_action-849417f68afa",
+              "inspection_observe-b48bf3474205"
+            ],
+            "action_ids": [
+              "action-e2d1de0195594935"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "status": "accepted"
+}

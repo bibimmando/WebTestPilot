@@ -1,0 +1,77 @@
+{
+  "source": "20261014_055749/01_site_fifo/flows/flow-e9df9557e9f24188",
+  "assessment_origin": "Scripted regression assessment, not a new AI call or a changed historical verdict.",
+  "scenario": {
+    "scenario_id": "filter_all",
+    "title": "ALL 필터 클릭",
+    "expected": "전체 상품 목록이 표시되고 상품 수가 2개 이상으로 보인다.",
+    "expected_source": "tentative heuristic와 site_requirements의 컬렉션 필터 설명"
+  },
+  "original_judgment": {
+    "scenario_id": "filter_all",
+    "verdict": "passed",
+    "actual": "Escape로 정렬 목록을 닫으니 option 요소들이 사라졌다. 이어 ALL을 클릭한 뒤에도 URL은 collection=furniture로 그대로였다. 상품은 2개(Harvest Dining Table $2,850, Woven Lounge Chair $1,450)로 표시됐다. 기대는 2개 이상이므로 충족된다. 다만 ALL 클릭 전후에 변화가 없어 실제 필터가 전체 컬렉션으로 바뀌었다고 확인할 수는 없다.",
+    "snapshot_ids": [
+      "before_action-fc94c99124ab",
+      "after_action-d1df3ce17f8a",
+      "before_action-94924b1f2760",
+      "after_action-75d7f1e3770a"
+    ],
+    "action_ids": [
+      "action-5c28485fc3fb45fe",
+      "action-ddd055aca5a6422c"
+    ]
+  },
+  "reviewed_judgment": {
+    "scenario_id": "filter_all",
+    "verdict": "passed",
+    "actual": "Escape로 정렬 목록을 닫으니 option 요소들이 사라졌다. 이어 ALL을 클릭한 뒤에도 URL은 collection=furniture로 그대로였다. 상품은 2개(Harvest Dining Table $2,850, Woven Lounge Chair $1,450)로 표시됐다. 기대는 2개 이상이므로 충족된다. 다만 ALL 클릭 전후에 변화가 없어 실제 필터가 전체 컬렉션으로 바뀌었다고 확인할 수는 없다.",
+    "snapshot_ids": [
+      "before_action-fc94c99124ab",
+      "after_action-d1df3ce17f8a",
+      "before_action-94924b1f2760",
+      "after_action-75d7f1e3770a"
+    ],
+    "action_ids": [
+      "action-5c28485fc3fb45fe",
+      "action-ddd055aca5a6422c"
+    ],
+    "assessment": {
+      "expectation_supported": true,
+      "purpose_covered": false,
+      "reason": "The numeric bound is met but restoration of the full collection is not established.",
+      "criteria": [
+        {
+          "criterion": "At least two products are visible.",
+          "status": "met",
+          "evidence": "Escape로 정렬 목록을 닫으니 option 요소들이 사라졌다. 이어 ALL을 클릭한 뒤에도 URL은 collection=furniture로 그대로였다. 상품은 2개(Harvest Dining Table $2,850, Woven Lounge Chair $1,450)로 표시됐다. 기대는 2개 이상이므로 충족된다. 다만 ALL 클릭 전후에 변화가 없어 실제 필터가 전체 컬렉션으로 바뀌었다고 확인할 수는 없다.",
+          "snapshot_ids": [
+            "before_action-fc94c99124ab",
+            "after_action-d1df3ce17f8a",
+            "before_action-94924b1f2760",
+            "after_action-75d7f1e3770a"
+          ],
+          "action_ids": [
+            "action-5c28485fc3fb45fe",
+            "action-ddd055aca5a6422c"
+          ]
+        },
+        {
+          "criterion": "The full collection is restored.",
+          "status": "unknown",
+          "evidence": "The URL and two-product filtered list remained unchanged.",
+          "snapshot_ids": [
+            "before_action-fc94c99124ab",
+            "after_action-d1df3ce17f8a",
+            "before_action-94924b1f2760",
+            "after_action-75d7f1e3770a"
+          ],
+          "action_ids": [
+            "action-5c28485fc3fb45fe",
+            "action-ddd055aca5a6422c"
+          ]
+        }
+      ]
+    }
+  }
+}

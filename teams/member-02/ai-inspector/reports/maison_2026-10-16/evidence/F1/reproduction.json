@@ -1,0 +1,90 @@
+{
+  "result": {
+    "schema_version": "reproduction/1",
+    "finding_id": "finding-fffc2b5861c64d3d",
+    "status": "reproduced",
+    "attempts": 1,
+    "reset_method": "browser_only",
+    "server_reset": false,
+    "action_ids": [
+      "action-e883149e368a46d9",
+      "action-254f9524f0ca4d72"
+    ],
+    "snapshot_ids": [
+      "reproduction_start-358dd3d983fe",
+      "after_action-942f33de9ac5",
+      "after_action-76591b4a4874",
+      "inspection_observe-b96ba9b55ed8"
+    ],
+    "reason": "The replay matched the original. After ADD TO WISHLIST, the button changed to \"SAVED TO WISHLIST\" and the header badge showed 1. On /wishlist the page said \"1 piece saved\" with ADD ALL TO BAG and CLEAR ALL buttons. The DOM had 0 item candidates in main, and the body text did not include \"Harvest Dining Table\" or \"$2,850\". Both screenshots show only the footer area, with the replay also showing the toast. The mismatch between the count and the missing item content appeared again. The screenshots can't show the list itself, so the evidence comes from the DOM and text.",
+    "initial_condition": "observed_match",
+    "images": {
+      "original": {
+        "path": "images\\inspection_observe-4ea0d093c0e0.png",
+        "snapshot_id": "inspection_observe-4ea0d093c0e0",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 301
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:22:32.459853+00:00"
+      },
+      "replay": {
+        "path": "images\\inspection_observe-b96ba9b55ed8.png",
+        "snapshot_id": "inspection_observe-b96ba9b55ed8",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 301
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:22:52.591005+00:00"
+      }
+    }
+  },
+  "response": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01CW5AtJnS9oxEu8soW83m2h",
+        "name": "reproduction_verdict",
+        "input": {
+          "verdict": "reproduced",
+          "reason": "The replay matched the original. After ADD TO WISHLIST, the button changed to \"SAVED TO WISHLIST\" and the header badge showed 1. On /wishlist the page said \"1 piece saved\" with ADD ALL TO BAG and CLEAR ALL buttons. The DOM had 0 item candidates in main, and the body text did not include \"Harvest Dining Table\" or \"$2,850\". Both screenshots show only the footer area, with the replay also showing the toast. The mismatch between the count and the missing item content appeared again. The screenshots can't show the list itself, so the evidence comes from the DOM and text."
+        },
+        "caller": {
+          "type": "direct"
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "usage": {
+      "input_tokens": 134172,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 281,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "container": null,
+    "model": "claude-sonnet-5-5"
+  },
+  "export_note": "Exact model replay verdict/result; duplicated request observations omitted, snapshots included separately."
+}

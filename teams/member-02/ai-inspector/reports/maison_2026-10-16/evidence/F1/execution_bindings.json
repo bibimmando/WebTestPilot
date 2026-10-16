@@ -1,0 +1,16 @@
+{
+  "targets": {
+    "wishlist_save_inspect": [
+      {
+        "role": "button",
+        "name": "ADD TO WISHLIST"
+      },
+      {
+        "role": "link",
+        "name": "위시리스트",
+        "href": "http://13.124.7.113:8081/wishlist"
+      }
+    ]
+  },
+  "rejected_scenarios": []
+}

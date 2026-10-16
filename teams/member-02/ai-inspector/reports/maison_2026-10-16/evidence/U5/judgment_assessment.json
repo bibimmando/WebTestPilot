@@ -1,0 +1,101 @@
+{
+  "schema_version": "judgment_assessment/1",
+  "scenarios": [
+    {
+      "scenario_id": "ui_initial",
+      "model_verdict": "candidate",
+      "accepted_verdict": "candidate",
+      "downgrade_reason": null,
+      "assessment": {
+        "expectation_supported": true,
+        "purpose_covered": true,
+        "reason": "스크린샷에서 제목과 브레드크럼이 헤더와 겹치고 잘려 보이는 것이 확인되어, 기대와 어긋납니다.",
+        "criteria": [
+          {
+            "criterion": "헤더와 브레드크럼, Care Guide 제목, 소재별 본문이 겹치거나 잘리지 않고 보인다.",
+            "status": "unmet",
+            "evidence": "스크린샷에서 Care Guide 제목이 헤더에 가려져 흐릿하게 잘려 보이고, 브레드크럼이 헤더 뒤에서 겹쳐 보입니다.",
+            "snapshot_ids": [
+              "inspection_observe-78900404f355"
+            ],
+            "action_ids": []
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "route_shipping",
+      "model_verdict": "passed",
+      "accepted_verdict": "passed",
+      "downgrade_reason": null,
+      "assessment": {
+        "expectation_supported": true,
+        "purpose_covered": true,
+        "reason": "링크 클릭 후 URL과 제목, 본문이 모두 기대와 일치합니다.",
+        "criteria": [
+          {
+            "criterion": "/info/shipping-returns로 이동한다.",
+            "status": "met",
+            "evidence": "클릭 후 URL이 http://13.124.7.113:8081/info/shipping-returns입니다.",
+            "snapshot_ids": [
+              "before_action-76f189ccef9e",
+              "after_action-830232b2f306"
+            ],
+            "action_ids": [
+              "action-b1f8edf967714afc"
+            ]
+          },
+          {
+            "criterion": "페이지 제목이 배송/반품 관련 내용이다.",
+            "status": "met",
+            "evidence": "제목이 'Shipping & Returns — Maison'이고 본문에 Processing Time, Return Policy 등이 있습니다.",
+            "snapshot_ids": [
+              "after_action-830232b2f306"
+            ],
+            "action_ids": [
+              "action-b1f8edf967714afc"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "route_objects",
+      "model_verdict": "passed",
+      "accepted_verdict": "passed",
+      "downgrade_reason": null,
+      "assessment": {
+        "expectation_supported": true,
+        "purpose_covered": true,
+        "reason": "이동한 URL과 목록 맥락이 기대와 일치합니다.",
+        "criteria": [
+          {
+            "criterion": "/products?collection=objects로 이동한다.",
+            "status": "met",
+            "evidence": "클릭 후 URL이 http://13.124.7.113:8081/products?collection=objects입니다.",
+            "snapshot_ids": [
+              "before_action-b71e936dbbb0",
+              "after_action-aefbd021d0c8"
+            ],
+            "action_ids": [
+              "action-1562668f6972415b"
+            ]
+          },
+          {
+            "criterion": "상품 목록이 Objects 컬렉션 맥락으로 표시된다.",
+            "status": "met",
+            "evidence": "제목이 Objects & Vases이고, 상품 두 개 모두 OBJECTS & VASES로 표시됩니다. 스크린샷에서도 해당 탭이 활성 상태입니다.",
+            "snapshot_ids": [
+              "after_action-aefbd021d0c8",
+              "inspection_observe-81faceef1998"
+            ],
+            "action_ids": [
+              "action-1562668f6972415b"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "status": "accepted"
+}

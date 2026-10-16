@@ -1,0 +1,90 @@
+{
+  "result": {
+    "schema_version": "reproduction/1",
+    "finding_id": "finding-437f687b27a443b0",
+    "status": "reproduced",
+    "attempts": 1,
+    "reset_method": "browser_only",
+    "server_reset": false,
+    "action_ids": [
+      "action-14ccd338adb942c9",
+      "action-3177c0cfe9524ee9"
+    ],
+    "snapshot_ids": [
+      "reproduction_start-aa8c4cb78207",
+      "after_action-adb42638b4f0",
+      "after_action-7fe632d2af8e",
+      "inspection_observe-5d0f8a6d150b"
+    ],
+    "reason": "In the replay, ADD TO BAG showed the \"1 × Arc Pendant Light added to your bag\" toast. Clicking the cart link then went to /cart. That page showed \"Your Bag is Empty\", with 0 DOM item candidates and no Arc Pendant Light, quantity, price or total. This matches the original behavior. The replay screenshot shows only the footer plus the toast, as in the original, so the empty state comes from the page text and DOM rather than the image.",
+    "initial_condition": "observed_match",
+    "images": {
+      "original": {
+        "path": "images\\inspection_observe-f94e53c97871.png",
+        "snapshot_id": "inspection_observe-f94e53c97871",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 356
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T14:58:10.151930+00:00"
+      },
+      "replay": {
+        "path": "images\\inspection_observe-5d0f8a6d150b.png",
+        "snapshot_id": "inspection_observe-5d0f8a6d150b",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 356
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T14:58:30.617352+00:00"
+      }
+    }
+  },
+  "response": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01DPkSUzxfSiC5SAPQ7hdcFJ",
+        "name": "reproduction_verdict",
+        "input": {
+          "verdict": "reproduced",
+          "reason": "In the replay, ADD TO BAG showed the \"1 × Arc Pendant Light added to your bag\" toast. Clicking the cart link then went to /cart. That page showed \"Your Bag is Empty\", with 0 DOM item candidates and no Arc Pendant Light, quantity, price or total. This matches the original behavior. The replay screenshot shows only the footer plus the toast, as in the original, so the empty state comes from the page text and DOM rather than the image."
+        },
+        "caller": {
+          "type": "direct"
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "usage": {
+      "input_tokens": 130650,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 231,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "container": null,
+    "model": "claude-sonnet-5-5"
+  },
+  "export_note": "Exact model replay verdict/result; duplicated request observations omitted, snapshots included separately."
+}

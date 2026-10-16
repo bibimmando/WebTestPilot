@@ -1,0 +1,8 @@
+# Versions used for the 2026-10-16 campaign. Python 3.13.13; Node 24.18.0.
+# Install Chromium with this Playwright version. MCP npm package is pinned separately.
+playwright==1.63.0
+protego==0.7.0
+mcp==1.30.0
+jsonschema==4.26.0
+httpx==0.28.1
+python-dotenv==1.2.4

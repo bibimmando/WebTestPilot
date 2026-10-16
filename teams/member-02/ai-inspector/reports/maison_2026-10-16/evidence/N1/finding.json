@@ -1,0 +1,72 @@
+{
+  "family": "functional",
+  "verdict": "candidate",
+  "expected": "1. 클릭 전 카드에 표시된 이름(Woven Lounge Chair)과 가격($1,450)을 기록한다. 2. 카드 클릭 후 도착한 상품 상세의 제목이 카드 이름과 같다. 3. 도착한 상세의 가격이 카드 가격과 같다. 불일치 시 카드와 목적지의 실제 값을 함께 증거로 남긴다.",
+  "expected_source": "요구사항(상품 상세는 연관 상품 제공) 및 관찰된 카드 UI에 근거한 휴리스틱 기대값; 카드 표시 내용을 의도 목적지로 간주",
+  "actual": "클릭 전 관련 상품 카드에는 Woven Lounge Chair, $1,450이 표시되어 있었습니다. 카드 링크의 href는 /product/harvest-dining-table이었습니다. 클릭 후 URL은 그대로 /product/harvest-dining-table이었고 제목은 Harvest Dining Table, 가격은 $2,850이었습니다. 카드의 이름과 가격이 도착 페이지의 제목·가격과 모두 다릅니다. 클릭 후 스크린샷에서는 같은 카드가 보이고 상세 페이지로 바뀐 모습은 확인되지 않습니다.",
+  "snapshot_ids": [
+    "before_action-fdae1f1623fd",
+    "after_action-74036c7e81f9",
+    "inspection_observe-a20dab831289"
+  ],
+  "action_ids": [
+    "action-0c65eb7e00654fe4"
+  ],
+  "schema_version": "finding/1",
+  "finding_id": "finding-b109b903bf394499",
+  "run_id": "run-ff7fd75496924448",
+  "flow_id": "flow-6eb193e7ebfa4ed8",
+  "status": "confirmed",
+  "reproduction": {
+    "schema_version": "reproduction/1",
+    "finding_id": "finding-b109b903bf394499",
+    "status": "reproduced",
+    "attempts": 1,
+    "reset_method": "browser_only",
+    "server_reset": false,
+    "action_ids": [
+      "action-c4ac2a95ba3c48d2"
+    ],
+    "snapshot_ids": [
+      "reproduction_start-2a95677457c3",
+      "after_action-dcea399cabae",
+      "inspection_observe-1521e37cb0c1"
+    ],
+    "reason": "In the replay, the related card showed Woven Lounge Chair and $1,450. Its href was /product/harvest-dining-table. After the click, the page was Harvest Dining Table at $2,850, so the name and price both differed from the card. The replay screenshot matches the original: same viewport, with the same card still visible and no change to a different product's detail view. This is the same mismatch as in the original run.",
+    "initial_condition": "observed_match",
+    "images": {
+      "original": {
+        "path": "images\\inspection_observe-a20dab831289.png",
+        "snapshot_id": "inspection_observe-a20dab831289",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 1252
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:23:12.732973+00:00"
+      },
+      "replay": {
+        "path": "images\\inspection_observe-1521e37cb0c1.png",
+        "snapshot_id": "inspection_observe-1521e37cb0c1",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 1252
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:23:27.646149+00:00"
+      }
+    }
+  },
+  "scenario_id": "related_card_vs_destination",
+  "judgment_source": "model"
+}

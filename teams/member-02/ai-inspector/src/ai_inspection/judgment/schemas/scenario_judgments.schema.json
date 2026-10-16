@@ -1,0 +1,61 @@
+{
+  "type": "object",
+  "properties": {
+    "judgments": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "properties": {
+          "scenario_id": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "verdict": {
+            "enum": [
+              "passed",
+              "candidate",
+              "inconclusive"
+            ]
+          },
+          "actual": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "snapshot_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "uniqueItems": true
+          },
+          "action_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "scenario_id",
+          "verdict",
+          "actual",
+          "snapshot_ids",
+          "action_ids"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "judgments"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "scenario_judgments tool input",
+  "description": "Exported from integration.staged.JUDGE_TOOL. Nonempty snapshots and per-scenario reference ownership are validated by the runtime."
+}

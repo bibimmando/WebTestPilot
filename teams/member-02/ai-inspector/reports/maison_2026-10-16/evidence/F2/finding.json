@@ -1,0 +1,77 @@
+{
+  "family": "functional",
+  "verdict": "candidate",
+  "expected": "1) /cart 페이지로 이동한다. 2) 장바구니에 'Arc Pendant Light' 항목이 표시된다. 3) 수량이 상세 페이지에서 담은 1과 일치한다. 4) 단가/금액이 상세 페이지 가격 $485와 일치하고, 합계가 $485로 표시된다. 알림만으로는 통과 판단하지 않으며 장바구니 화면의 실제 항목을 근거로 한다.",
+  "expected_source": "site_requirements(상세 장바구니 추가, 장바구니 상품별 금액과 합계) 및 관찰된 UI(수량 1, 가격 $485)",
+  "actual": "상세 페이지에서 ADD TO BAG 클릭 후 \"1 × Arc Pendant Light added to your bag.\" 알림이 표시되었고(가격 $485, 수량 1). 이어 장바구니 링크를 클릭하자 /cart로 이동했지만, 이동 직후와 추가 관찰 모두 \"Your Bag is Empty\"가 표시되었고 상품 항목 DOM 후보가 0개였습니다. Arc Pendant Light, 수량 1, $485 및 합계 $485는 장바구니 화면에서 확인되지 않았습니다. 스크린샷은 푸터 영역만 보여 항목 표시를 보여주지 않습니다.",
+  "snapshot_ids": [
+    "before_action-5676e80d6ad9",
+    "after_action-505c9cb6623f",
+    "before_action-053ccad9b714",
+    "after_action-49d488361aa4",
+    "inspection_observe-f94e53c97871"
+  ],
+  "action_ids": [
+    "action-38980afd2974433f",
+    "action-58fcc230bbec49f1"
+  ],
+  "schema_version": "finding/1",
+  "finding_id": "finding-437f687b27a443b0",
+  "run_id": "run-bc6a82c73ad1469d",
+  "flow_id": "flow-ed435518ddf64bad",
+  "status": "confirmed",
+  "reproduction": {
+    "schema_version": "reproduction/1",
+    "finding_id": "finding-437f687b27a443b0",
+    "status": "reproduced",
+    "attempts": 1,
+    "reset_method": "browser_only",
+    "server_reset": false,
+    "action_ids": [
+      "action-14ccd338adb942c9",
+      "action-3177c0cfe9524ee9"
+    ],
+    "snapshot_ids": [
+      "reproduction_start-aa8c4cb78207",
+      "after_action-adb42638b4f0",
+      "after_action-7fe632d2af8e",
+      "inspection_observe-5d0f8a6d150b"
+    ],
+    "reason": "In the replay, ADD TO BAG showed the \"1 × Arc Pendant Light added to your bag\" toast. Clicking the cart link then went to /cart. That page showed \"Your Bag is Empty\", with 0 DOM item candidates and no Arc Pendant Light, quantity, price or total. This matches the original behavior. The replay screenshot shows only the footer plus the toast, as in the original, so the empty state comes from the page text and DOM rather than the image.",
+    "initial_condition": "observed_match",
+    "images": {
+      "original": {
+        "path": "images\\inspection_observe-f94e53c97871.png",
+        "snapshot_id": "inspection_observe-f94e53c97871",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 356
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T14:58:10.151930+00:00"
+      },
+      "replay": {
+        "path": "images\\inspection_observe-5d0f8a6d150b.png",
+        "snapshot_id": "inspection_observe-5d0f8a6d150b",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 356
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T14:58:30.617352+00:00"
+      }
+    }
+  },
+  "scenario_id": "add_bag_then_inspect_cart",
+  "judgment_source": "model"
+}

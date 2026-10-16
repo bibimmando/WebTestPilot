@@ -1,0 +1,26 @@
+{
+  "schema_version": "scenario_judgments/1",
+  "status": "recorded",
+  "tool_use_id": "toolu_01HTqPyxL6GeFhHQhWD6w3Fm",
+  "judgments": [
+    {
+      "scenario_id": "wishlist_save_inspect",
+      "verdict": "candidate",
+      "actual": "ADD TO WISHLIST 클릭 후 버튼이 'SAVED TO WISHLIST'로 바뀌고 헤더 위시리스트 배지가 1로 표시됐으며 저장 토스트도 나타났습니다. 이어서 위시리스트 링크를 클릭해 /wishlist로 이동하니 'Wishlist / 1 piece saved' 문구와 ADD ALL TO BAG, CLEAR ALL 버튼은 있었습니다. 그러나 DOM 후보 항목이 0개였고 'Harvest Dining Table' 이름과 $2,850 가격이 본문 텍스트 어디에도 없었습니다. 스크린샷은 푸터 영역만 보여 목록 항목 확인에 쓸 수 없었습니다. 개수 문구는 1개로 나오지만 실제 렌더링된 항목은 확인되지 않아 불일치 후보입니다. 다만 목록이 지연 로딩이거나 수집이 누락됐을 가능성은 배제하지 못합니다.",
+      "snapshot_ids": [
+        "before_action-39383b63fc81",
+        "after_action-b2d16364540b",
+        "before_action-b7b6b7efc57f",
+        "after_action-d0a0afe36e68",
+        "inspection_observe-4ea0d093c0e0"
+      ],
+      "action_ids": [
+        "action-c54d8452d93c471d",
+        "action-9cd077c3aa0e487b"
+      ],
+      "judgment_source": "model",
+      "finding_id": "finding-fffc2b5861c64d3d",
+      "finding_error": null
+    }
+  ]
+}

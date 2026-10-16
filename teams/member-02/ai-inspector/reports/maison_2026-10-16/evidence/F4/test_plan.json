@@ -1,0 +1,79 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "ui_initial",
+      "proposal_index": 0,
+      "title": "초기 목록 UI 확인",
+      "family": "ui",
+      "expected": "1. 13 pieces 문구가 보인다. 2. 상품 카드에 이름·가격·카테고리가 겹침 없이 표시된다.",
+      "expected_source": "observed UI(초기 관찰 텍스트)",
+      "steps": []
+    },
+    {
+      "scenario_id": "filter_apply_clear",
+      "proposal_index": 1,
+      "title": "LIGHTING 필터 적용 후 ALL 해제",
+      "family": "functional",
+      "expected": "1. LIGHTING 적용 시 목록이 조명 카테고리 상품(관찰상 Arc Pendant Light, Orb Table Lamp)만 표시되고 개수 문구가 표시 카드 수와 일치한다. 2. ALL 클릭 후 13개 전체 상품으로 복귀한다.",
+      "expected_source": "site_requirements의 컬렉션 필터 + 관찰된 카드 카테고리",
+      "steps": [
+        {
+          "operation": "click",
+          "element_key": "e:4af20692448eafcf803a",
+          "wait_ms": 800
+        },
+        {
+          "operation": "click",
+          "element_key": "e:d6373df91833fe33dcbd",
+          "wait_ms": 800
+        }
+      ]
+    },
+    {
+      "scenario_id": "card_dest",
+      "proposal_index": 2,
+      "title": "카드 이름과 상세 제목 비교",
+      "family": "routing",
+      "expected": "1. Arc Pendant Light 카드 클릭 시 /product/arc-pendant-light로 이동한다. 2. 상세 제목이 Arc Pendant Light이고 가격 $485가 일치한다.",
+      "expected_source": "observed UI(카드 이름·가격·href)",
+      "steps": [
+        {
+          "operation": "navigate",
+          "url": "http://13.124.7.113:8081/products"
+        },
+        {
+          "operation": "click",
+          "element_key": "e:7d6075dba9ffef4340f1",
+          "wait_ms": 1000
+        }
+      ]
+    },
+    {
+      "scenario_id": "newsletter_empty",
+      "proposal_index": 3,
+      "title": "뉴스레터 빈 이메일 제출",
+      "family": "input_validation",
+      "expected": "1. 필수 이메일이 비어 제출이 차단되거나 검증 메시지가 나타난다. 2. 성공 접수 문구가 나타나지 않는다. 정확한 문구는 불명(판단 보류 가능).",
+      "expected_source": "observed UI(required 필드, validation 상태); 문구는 tentative heuristic",
+      "steps": [
+        {
+          "operation": "navigate",
+          "url": "http://13.124.7.113:8081/products"
+        },
+        {
+          "operation": "click",
+          "element_key": "e:507a2c562881b44bd9c7",
+          "wait_ms": 500
+        }
+      ]
+    }
+  ],
+  "unplanned": [],
+  "schema_version": "test_plan/2",
+  "initial_snapshot_id": "initial_load-26d2e48068b7",
+  "flow_id": "flow-50b44838f4e44ff3",
+  "proposal_tool_use_id": "toolu_01GSKyK79Tms7oEGWpX8PD5n",
+  "plan_tool_use_id": "toolu_01GSKyK79Tms7oEGWpX8PD5n",
+  "source_tool": "qa_test_plan",
+  "planning_attempts": 1
+}

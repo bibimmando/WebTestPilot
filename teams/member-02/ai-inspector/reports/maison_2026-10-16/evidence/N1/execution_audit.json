@@ -1,0 +1,57 @@
+{
+  "pipeline": "staged/3",
+  "flow_id": "flow-6eb193e7ebfa4ed8",
+  "initial_url": "http://13.124.7.113:8081/product/harvest-dining-table",
+  "status": "completed",
+  "test_status": "failed",
+  "initial_reset": {
+    "method": "browser_only",
+    "receipt": null
+  },
+  "target_audit": [
+    {
+      "scenario_id": "related_card_vs_destination",
+      "step_index": 0,
+      "snapshot_id": "initial_load-dbcf50252233",
+      "status": "matched",
+      "identity": {
+        "role": "link",
+        "name": "NEW VIEW DETAILS FURNITURE Woven Lounge Chair Danish paper cord meets sculptural walnut $1,450 Solid walnut",
+        "href": "http://13.124.7.113:8081/product/harvest-dining-table"
+      },
+      "selected_key": "e:ffc14ecd2f3355f8e4ab",
+      "equivalent_target_count": 1
+    }
+  ],
+  "steps": [
+    {
+      "snapshot_id": "initial_load-dbcf50252233",
+      "operation": "click",
+      "element_key": "e:ffc14ecd2f3355f8e4ab",
+      "action_id": "action-0c65eb7e00654fe4",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-fdae1f1623fd",
+      "after_snapshot_id": "after_action-74036c7e81f9",
+      "phase": "inspection",
+      "scenario_id": "related_card_vs_destination",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_01UXHoyatcFSDhqoWQVYMyBU",
+      "wait_ms": 1500
+    },
+    {
+      "operation": "click",
+      "element_key": "e:ffc14ecd2f3355f8e4ab",
+      "snapshot_id": "reproduction_start-2a95677457c3",
+      "action_id": "action-c4ac2a95ba3c48d2",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-e6e21164c537",
+      "after_snapshot_id": "after_action-dcea399cabae",
+      "phase": "reproduction",
+      "scenario_id": "related_card_vs_destination",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_01UXHoyatcFSDhqoWQVYMyBU",
+      "wait_ms": 1500
+    }
+  ],
+  "errors": []
+}

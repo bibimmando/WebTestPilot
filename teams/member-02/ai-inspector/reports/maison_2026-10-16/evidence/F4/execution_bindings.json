@@ -1,0 +1,31 @@
+{
+  "targets": {
+    "ui_initial": [],
+    "filter_apply_clear": [
+      {
+        "role": "button",
+        "name": "LIGHTING"
+      },
+      {
+        "role": "button",
+        "name": "ALL"
+      }
+    ],
+    "card_dest": [
+      null,
+      {
+        "role": "link",
+        "name": "FEATURED VIEW DETAILS LIGHTING Arc Pendant Light A graceful arc of hand-bent brass and linen $485 Solid brass",
+        "href": "http://13.124.7.113:8081/product/arc-pendant-light"
+      }
+    ],
+    "newsletter_empty": [
+      null,
+      {
+        "role": "button",
+        "name": "뉴스레터 구독 신청"
+      }
+    ]
+  },
+  "rejected_scenarios": []
+}

@@ -1,0 +1,393 @@
+{
+  "schema_version": "scenario_results/2",
+  "flow_id": "flow-6eb193e7ebfa4ed8",
+  "plan_tool_use_id": "toolu_01UXHoyatcFSDhqoWQVYMyBU",
+  "scenarios": [
+    {
+      "scenario_id": "related_card_vs_destination",
+      "proposal_index": 0,
+      "title": "관련 상품 카드와 이동한 상세 페이지의 이름·가격 비교",
+      "family": "functional",
+      "expected": "1. 클릭 전 카드에 표시된 이름(Woven Lounge Chair)과 가격($1,450)을 기록한다. 2. 카드 클릭 후 도착한 상품 상세의 제목이 카드 이름과 같다. 3. 도착한 상세의 가격이 카드 가격과 같다. 불일치 시 카드와 목적지의 실제 값을 함께 증거로 남긴다.",
+      "expected_source": "요구사항(상품 상세는 연관 상품 제공) 및 관찰된 카드 UI에 근거한 휴리스틱 기대값; 카드 표시 내용을 의도 목적지로 간주",
+      "execution_status": "completed",
+      "failure_reason": null,
+      "policy_blocked": false,
+      "planned_steps": [
+        {
+          "operation": "click",
+          "element_key": "e:ffc14ecd2f3355f8e4ab",
+          "wait_ms": 1500
+        }
+      ],
+      "planned_step_count": 1,
+      "attempted_step_count": 1,
+      "attempted_plan_step_count": 1,
+      "completed_plan_step_count": 1,
+      "executed_action_count": 1,
+      "skipped_step_count": 0,
+      "action_ids": [
+        "action-0c65eb7e00654fe4"
+      ],
+      "snapshot_ids": [
+        "initial_load-dbcf50252233",
+        "before_action-fdae1f1623fd",
+        "after_action-74036c7e81f9",
+        "inspection_observe-a20dab831289"
+      ],
+      "steps": [
+        {
+          "execution": "executed",
+          "observation_status": "available",
+          "error": null,
+          "settle_error": null,
+          "capture_error": null,
+          "operator_error": null,
+          "before_snapshot_id": "before_action-fdae1f1623fd",
+          "after_snapshot_id": "after_action-74036c7e81f9",
+          "diff": {
+            "before_snapshot_id": "before_action-fdae1f1623fd",
+            "after_snapshot_id": "after_action-74036c7e81f9",
+            "added": [],
+            "removed": [],
+            "changed": [
+              {
+                "element_key": "e:eadb2e04ad7ac45c690b",
+                "before_element_id": "before_action-fdae1f1623fd-e9",
+                "after_element_id": "after_action-74036c7e81f9-e9",
+                "changes": {
+                  "in_viewport": {
+                    "before": true,
+                    "after": false
+                  },
+                  "bbox.y": {
+                    "before": 24,
+                    "after": -1228
+                  }
+                }
+              },
+              {
+                "element_key": "e:18f26dea5487f6380401",
+                "before_element_id": "before_action-fdae1f1623fd-e26",
+                "after_element_id": "after_action-74036c7e81f9-e26",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2083.328125,
+                    "after": 831.328125
+                  }
+                }
+              },
+              {
+                "element_key": "e:707f76c5576a1a1cea60",
+                "before_element_id": "before_action-fdae1f1623fd-e27",
+                "after_element_id": "after_action-74036c7e81f9-e27",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2083.328125,
+                    "after": 831.328125
+                  }
+                }
+              },
+              {
+                "element_key": "e:d73a2e733354cd115fb2",
+                "before_element_id": "before_action-fdae1f1623fd-e28",
+                "after_element_id": "after_action-74036c7e81f9-e28",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2300.828125,
+                    "after": 1048.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:060a2af1a33e7793bad4",
+                "before_element_id": "before_action-fdae1f1623fd-e29",
+                "after_element_id": "after_action-74036c7e81f9-e29",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2336.828125,
+                    "after": 1084.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:367fc8a61534a7d32998",
+                "before_element_id": "before_action-fdae1f1623fd-e31",
+                "after_element_id": "after_action-74036c7e81f9-e31",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2408.828125,
+                    "after": 1156.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:4dc11ac92d2ea6567cd1",
+                "before_element_id": "before_action-fdae1f1623fd-e32",
+                "after_element_id": "after_action-74036c7e81f9-e32",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2444.828125,
+                    "after": 1192.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:849c6cbcc0d0e7f55f29",
+                "before_element_id": "before_action-fdae1f1623fd-e33",
+                "after_element_id": "after_action-74036c7e81f9-e33",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2480.828125,
+                    "after": 1228.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:cba7806961ae91e6af03",
+                "before_element_id": "before_action-fdae1f1623fd-e35",
+                "after_element_id": "after_action-74036c7e81f9-e35",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2336.828125,
+                    "after": 1084.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:8804aafd922178887347",
+                "before_element_id": "before_action-fdae1f1623fd-e36",
+                "after_element_id": "after_action-74036c7e81f9-e36",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2372.828125,
+                    "after": 1120.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:5570c385ef49ed01cd23",
+                "before_element_id": "before_action-fdae1f1623fd-e37",
+                "after_element_id": "after_action-74036c7e81f9-e37",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2300.828125,
+                    "after": 1048.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:946473594bbfcf095a3b",
+                "before_element_id": "before_action-fdae1f1623fd-e38",
+                "after_element_id": "after_action-74036c7e81f9-e38",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2336.828125,
+                    "after": 1084.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:f283cdcbc1609b2215b3",
+                "before_element_id": "before_action-fdae1f1623fd-e39",
+                "after_element_id": "after_action-74036c7e81f9-e39",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2372.828125,
+                    "after": 1120.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:16bc8d5eb717692e7de3",
+                "before_element_id": "before_action-fdae1f1623fd-e41",
+                "after_element_id": "after_action-74036c7e81f9-e41",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2300.828125,
+                    "after": 1048.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:624f1278cfc92e7928f7",
+                "before_element_id": "before_action-fdae1f1623fd-e42",
+                "after_element_id": "after_action-74036c7e81f9-e42",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2589.828125,
+                    "after": 1337.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:6398e56814b774b57148",
+                "before_element_id": "before_action-fdae1f1623fd-e43",
+                "after_element_id": "after_action-74036c7e81f9-e43",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2589.828125,
+                    "after": 1337.828125
+                  }
+                }
+              },
+              {
+                "element_key": "e:790ff7bab08e0bd07ded",
+                "before_element_id": "before_action-fdae1f1623fd-e44",
+                "after_element_id": "after_action-74036c7e81f9-e44",
+                "changes": {
+                  "bbox.y": {
+                    "before": 2589.828125,
+                    "after": 1337.828125
+                  }
+                }
+              }
+            ],
+            "changed_truncated": false,
+            "url_changed": false,
+            "document_scope_changed": false,
+            "status_changed": false,
+            "error_candidates_changed": null,
+            "uncertain": [
+              {
+                "element_key": "e:5bb27fd7e92e6b2c67a3",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:060dab6be825224bc4a4",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:caca3845bd22f3ec1329",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:0c48ba434ad7b2c6fed9",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:4be851ee5df0724ed4bb",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:42fc71c0036ee6ce85f7",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:d4f2c54b4f85d5813d97",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:a7216b816f9c3cdd3b9f",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:a115a1caa39bd4095499",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:dafd2d0d7727c1c43927",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:94fb464e85bca12e77b8",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:43517faefb8099133ec3",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:40f976c75ad768022a07",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:1dd487190bec40d24b33",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:6324b5b854a1b5e351b6",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:79ad63916d51f1055819",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:6954a54f1a8d0aa461fe",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:dc2a678300e5953d8983",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:ffc14ecd2f3355f8e4ab",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:3534cd5c49945eae8fa0",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:ae60f5c06b0dba7537a3",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:c0600559c41ae631e854",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:9ef6085d7cd7fb37affd",
+                "reason": "weak_identity"
+              },
+              {
+                "element_key": "e:652ab24e092efe534276",
+                "reason": "weak_identity"
+              }
+            ],
+            "comparison_limited": false,
+            "limits": {
+              "before_partial": false,
+              "after_partial": false
+            },
+            "note": "observed changes only; not a causal verdict"
+          },
+          "event_ids": [],
+          "resource_ids": [],
+          "step_index": 0,
+          "plan_step_index": 0,
+          "purpose": "planned",
+          "operation": "click",
+          "element_key": "e:ffc14ecd2f3355f8e4ab",
+          "url": null,
+          "value": null,
+          "wait_ms": 1500,
+          "correction_of": null,
+          "action_id": "action-0c65eb7e00654fe4",
+          "tool_use_id": "toolu_01BMdx3LNrWHwTwuUzUaoPvd",
+          "policy_blocked": false
+        }
+      ],
+      "start_snapshot_id": "initial_load-dbcf50252233",
+      "end_snapshot_id": "inspection_observe-a20dab831289",
+      "image": {
+        "path": "images\\inspection_observe-a20dab831289.png",
+        "snapshot_id": "inspection_observe-a20dab831289",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 1252
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:23:12.732973+00:00"
+      },
+      "observation_errors": []
+    }
+  ],
+  "export_note": "Derived compact copy; original before/after observations are in referenced snapshots."
+}

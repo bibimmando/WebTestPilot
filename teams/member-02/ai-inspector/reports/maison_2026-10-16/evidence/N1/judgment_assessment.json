@@ -1,0 +1,64 @@
+{
+  "schema_version": "judgment_assessment/1",
+  "scenarios": [
+    {
+      "scenario_id": "related_card_vs_destination",
+      "model_verdict": "candidate",
+      "accepted_verdict": "candidate",
+      "downgrade_reason": null,
+      "assessment": {
+        "expectation_supported": true,
+        "purpose_covered": true,
+        "reason": "카드 이름·가격과 도착 페이지 제목·가격이 일치하지 않는 것이 관찰되었습니다.",
+        "criteria": [
+          {
+            "criterion": "클릭 전 카드의 이름(Woven Lounge Chair)과 가격($1,450)을 기록한다.",
+            "status": "met",
+            "evidence": "클릭 전 스냅샷에 Woven Lounge Chair와 $1,450이 표시되어 있었습니다.",
+            "snapshot_ids": [
+              "before_action-fdae1f1623fd"
+            ],
+            "action_ids": [
+              "action-0c65eb7e00654fe4"
+            ]
+          },
+          {
+            "criterion": "카드 클릭 후 도착한 상품 상세의 제목이 카드 이름과 같다.",
+            "status": "unmet",
+            "evidence": "도착 페이지의 제목은 Harvest Dining Table이며 카드 이름과 다릅니다.",
+            "snapshot_ids": [
+              "after_action-74036c7e81f9"
+            ],
+            "action_ids": [
+              "action-0c65eb7e00654fe4"
+            ]
+          },
+          {
+            "criterion": "도착한 상세의 가격이 카드 가격과 같다.",
+            "status": "unmet",
+            "evidence": "도착 페이지의 가격은 $2,850이며 카드 가격 $1,450과 다릅니다.",
+            "snapshot_ids": [
+              "after_action-74036c7e81f9"
+            ],
+            "action_ids": [
+              "action-0c65eb7e00654fe4"
+            ]
+          },
+          {
+            "criterion": "불일치 시 카드와 목적지의 실제 값을 함께 증거로 남긴다.",
+            "status": "met",
+            "evidence": "카드 값(Woven Lounge Chair, $1,450)과 목적지 값(Harvest Dining Table, $2,850)을 모두 기록했습니다.",
+            "snapshot_ids": [
+              "before_action-fdae1f1623fd",
+              "after_action-74036c7e81f9"
+            ],
+            "action_ids": [
+              "action-0c65eb7e00654fe4"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "status": "accepted"
+}

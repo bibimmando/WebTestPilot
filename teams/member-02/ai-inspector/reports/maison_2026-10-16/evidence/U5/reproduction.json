@@ -1,0 +1,85 @@
+{
+  "result": {
+    "schema_version": "reproduction/1",
+    "finding_id": "finding-d1178870e6034dcd",
+    "status": "reproduced",
+    "attempts": 1,
+    "reset_method": "browser_only",
+    "server_reset": false,
+    "action_ids": [],
+    "snapshot_ids": [
+      "reproduction_start-4802a6158634",
+      "inspection_observe-9b7fd8fb1252"
+    ],
+    "reason": "The original and replay screenshots (1280x800, scroll 0) look the same. In both, the \"Care Guide\" title is partly hidden and blurred behind the fixed header. The breadcrumb also shows blurred behind the header. The intro sentence sits almost directly on the \"Brass\" heading. This matches the recorded violation.",
+    "initial_condition": "observed_match",
+    "images": {
+      "original": {
+        "path": "images\\inspection_observe-78900404f355.png",
+        "snapshot_id": "inspection_observe-78900404f355",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 0
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:20:11.387072+00:00"
+      },
+      "replay": {
+        "path": "images\\inspection_observe-9b7fd8fb1252.png",
+        "snapshot_id": "inspection_observe-9b7fd8fb1252",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 0
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:20:42.100367+00:00"
+      }
+    }
+  },
+  "response": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01XwDRWeDpVAj3oqZUY3W9FM",
+        "name": "reproduction_verdict",
+        "input": {
+          "verdict": "reproduced",
+          "reason": "The original and replay screenshots (1280x800, scroll 0) look the same. In both, the \"Care Guide\" title is partly hidden and blurred behind the fixed header. The breadcrumb also shows blurred behind the header. The intro sentence sits almost directly on the \"Brass\" heading. This matches the recorded violation."
+        },
+        "caller": {
+          "type": "direct"
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "usage": {
+      "input_tokens": 21148,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 183,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "container": null,
+    "model": "claude-sonnet-5-5"
+  },
+  "export_note": "Exact model replay verdict/result; duplicated request observations omitted, snapshots included separately."
+}

@@ -1,0 +1,21 @@
+{
+  "targets": {
+    "ui_initial": [],
+    "route_shipping": [
+      {
+        "role": "link",
+        "name": "Shipping & Returns",
+        "href": "http://13.124.7.113:8081/info/shipping-returns"
+      }
+    ],
+    "route_objects": [
+      null,
+      {
+        "role": "link",
+        "name": "Objects & Vases",
+        "href": "http://13.124.7.113:8081/products?collection=objects"
+      }
+    ]
+  },
+  "rejected_scenarios": []
+}

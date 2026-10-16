@@ -1,0 +1,53 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "ui_initial",
+      "proposal_index": 0,
+      "title": "초기 화면 UI 점검",
+      "family": "ui",
+      "expected": "1. 헤더와 브레드크럼, Care Guide 제목, 소재별 본문이 겹치거나 잘리지 않고 보인다.",
+      "expected_source": "관찰된 UI 기반의 잠정 휴리스틱",
+      "steps": []
+    },
+    {
+      "scenario_id": "route_shipping",
+      "proposal_index": 1,
+      "title": "푸터 Shipping & Returns 이동",
+      "family": "routing",
+      "expected": "1. /info/shipping-returns로 이동한다. 2. 페이지 제목이 배송/반품 관련 내용이다.",
+      "expected_source": "관찰된 링크 href 기반",
+      "steps": [
+        {
+          "operation": "click",
+          "element_key": "e:504da8e4390eaf73c7d7"
+        }
+      ]
+    },
+    {
+      "scenario_id": "route_objects",
+      "proposal_index": 2,
+      "title": "Objects & Vases 컬렉션 링크 이동",
+      "family": "routing",
+      "expected": "1. /products?collection=objects로 이동한다. 2. 상품 목록이 Objects 컬렉션 맥락으로 표시된다.",
+      "expected_source": "관찰된 링크 href와 컬렉션 필터 요구사항",
+      "steps": [
+        {
+          "operation": "navigate",
+          "url": "http://13.124.7.113:8081/info/care-guide"
+        },
+        {
+          "operation": "click",
+          "element_key": "e:68f33b1e953deca2de65"
+        }
+      ]
+    }
+  ],
+  "unplanned": [],
+  "schema_version": "test_plan/2",
+  "initial_snapshot_id": "initial_load-5938334911ac",
+  "flow_id": "flow-e640ef8f2a6446c4",
+  "proposal_tool_use_id": "toolu_01Av1YcboYDxjE1Eo8z1qxbA",
+  "plan_tool_use_id": "toolu_01Av1YcboYDxjE1Eo8z1qxbA",
+  "source_tool": "qa_test_plan",
+  "planning_attempts": 1
+}

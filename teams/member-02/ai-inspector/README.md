@@ -1,11 +1,25 @@
-# WebTestPilot AI 검사 프로토타입
+# WebTestPilot member-02 AI 검사기
 
-현재 기본 흐름은 **팀원 크롤러 → hybrid_ai_input.jsonl → 요청 준비 또는 Claude 분석**입니다.
+2026-10-16: 이 디렉토리 안에서 **전처리 → 계획 → Playwright MCP 실행 → 독립 판정 → 추가 재현 → 결과 JSON**을 실행할 수 있습니다. integration은 전처리팀 코드를 바탕으로 한 독립 실행 사본이며 member-01 파일을 수정하거나 import하지 않습니다.
+
+- [설치·오프라인 검증·유료 재검사 명령](REPRODUCE.md)
+- [17개 중 6종 재현 확인 및 대표 증거](reports/maison_2026-10-16/README.md)
+- [현재 코드 구조](src/ai_inspection/README.md)
+- [파이프라인 배경·이전 개발 기록](docs/ai_inspection/PROJECT_PIPELINE_GUIDE.md)
+
+AI는 매 실행 새 계획을 생성합니다. 기록된 6종 결과는 공유 증거로 확인하고, 새 실행의 발견 수는 별도로 집계합니다. 로그인·암호 입력 지원, 모바일/포커스 전용 검사, 비용 상한·입력 중복 압축은 후속 작업입니다.
+
+## 이전 독립 분석 흐름과 개발 기록
+
+아래는 초기 JSONL 분석·연동 개발 기록입니다. 현재 독립 실행 설치와 명령은 위 REPRODUCE.md를 기준으로 합니다.
+
+기존 독립 분석 흐름은 **팀원 크롤러 → hybrid_ai_input.jsonl → 요청 준비 또는 Claude 분석**입니다.
 크롤러가 수집한 증거를 재사용하고, 작업 종류에 따라 증거 검토와 추가 검사 계획을
 구분합니다. 준비 모드는 API를 호출하지 않고, `--analyze`를 선택하면 유료 Claude API를 호출합니다.
 구조화된 행동 선택·실행 관리자·MCP 호출 어댑터·기존 탭 관찰기를 추가했습니다.
-새 `--execute` 모드는 실제 공통 탭과 MCP 세션을 제공하는 연결 모듈이 필요합니다.
-실제 서버 연결·자동 추가 재현·최종 PDF는 아직 후속 작업입니다.
+새 `--execute --mcp-config` 모드는 준비된 Chromium CDP 탭에 실제 Playwright MCP로 연결합니다.
+로컬 실제 MCP 행동·전후 증거·판정 검증을 완료했습니다. 전처리 CDP 연계·유료 Claude 실행 통합·자동 추가 재현·최종 PDF는 후속 작업입니다.
+설정과 실행 명령은 [상세 문서의 실제 MCP 연결 절](docs/ai_inspection/AI_ANALYSIS_IMPLEMENTATION.md#12-실제-playwright-mcp-연결)을 참고합니다.
 기존 URL 직접 검사·우선순위 JSON 검사는 제거했습니다.
 
 ## 디렉토리
@@ -70,10 +84,21 @@ Claude API 키의 로컬 설정은 루트의 `.env`에 입력합니다. 빈 `.en
 `browser_runner.py`의 기존 독립 실행기는 유지하며, 새 관찰기는 이미 열린 탭을 사용합니다.
 `inspection_runtime.py`는 등록된 검사·행동·관찰·판정을 조율하고 결과 JSON을 저장합니다.
 `mcp_executor.py`는 기존 MCP 세션의 호출을 주입받으며 서버를 자체 실행하지 않습니다.
-`--execute --runtime-factory module:function`의 실제 연결 모듈은 다음 통합 작업에서 구현해야 합니다.
+`playwright_mcp_runtime.py`는 실제 stdio 서버를 실행하고 준비된 단일 CDP 탭에 연결합니다.
+내장 연결은 `--execute --mcp-config 설정.json`, 별도 팀 연결은 `--runtime-factory module:function`을 사용합니다.
 AI 패키지에 이전 크롤러 코드 의존성은 없습니다.
 
-## 테스트
+## 전처리팀 전달 파일
+
+분석 결과를 보존하고 `execution_plans.jsonl`을 별도로 생성합니다. 기대 동작·기능 판정은 포함하지 않습니다.
+실행 대상·시작 조건을 임의로 만들지 않으므로 첫 출력은 정보 확인 필요 초안입니다.
+명령·검토 입력·반환 규격은 [개발 상세 문서 13번](docs/ai_inspection/AI_ANALYSIS_IMPLEMENTATION.md#13-전처리팀-실행-계획-전달)을 참고합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m src.ai_inspection.execution_handoff --hybrid-input "결과파일\ex_crawler\maison\crawl-results\hybrid_ai_input.jsonl" --ai-results "결과파일\ai_inspection\maison\hybrid_analysis\ai_results.jsonl" --output-dir "결과파일\ai_inspection\maison\execution_handoff"
+```
+
+## 테스트 실행
 
 AI 검사기 테스트는 구현과 분리하여 `src/ai_inspection/test/`에 보관합니다.
 

@@ -1,0 +1,64 @@
+{
+  "schema_version": "scenario_judgments/1",
+  "status": "recorded",
+  "tool_use_id": "toolu_01PbKhNRq7F2UhEAKtAWh2Qq",
+  "judgments": [
+    {
+      "scenario_id": "cart_qty",
+      "verdict": "candidate",
+      "actual": "수량 증가 버튼 클릭 후 상세 페이지의 수량 표시가 확인되지 않았으나(텍스트상 QUANTITY 1 유지), 장바구니 담기 시 '1 × Harvest Dining Table added to your bag' 토스트가 표시됨. 이후 /cart 이동 결과 'Your Bag is Empty'로 빈 장바구니이며 이미지에서도 확인됨. 기대한 수량 2·$5,700 항목은 표시되지 않음.",
+      "snapshot_ids": [
+        "before_action-b8fbe4eac5db",
+        "after_action-4409c6f7b529",
+        "before_action-d86d8ae95667",
+        "after_action-c02e1d50af50",
+        "before_action-c1461aba5f15",
+        "after_action-ae5384382c45",
+        "inspection_observe-817c014dc485"
+      ],
+      "action_ids": [
+        "action-bf234bef49ff4c15",
+        "action-f474feed23754697",
+        "action-70ec6d5bbf674854"
+      ],
+      "judgment_source": "model",
+      "finding_id": "finding-a076c338b0ea4df7",
+      "finding_error": null
+    },
+    {
+      "scenario_id": "wish_save",
+      "verdict": "candidate",
+      "actual": "위시리스트 추가 후 토스트와 헤더 배지 1, 버튼 'SAVED TO WISHLIST'가 표시됨. /wishlist에서 '1 piece saved'는 보이나 이전 스냅샷에서는 Harvest Dining Table 카드가 있었던 반면 이후 관찰·이미지에서는 카드 없이 버튼만 보임. 상품명·$2,850 일치 확인 불가.",
+      "snapshot_ids": [
+        "before_action-b76c279c3618",
+        "after_action-18c56367ebee",
+        "before_action-b84a4bc97ce2",
+        "after_action-5164a375609e",
+        "inspection_observe-738a5f3eb8cb"
+      ],
+      "action_ids": [
+        "action-df459ce2b91f46b7",
+        "action-e4c4e797aa1148aa"
+      ],
+      "judgment_source": "model",
+      "finding_id": "finding-70dcd08035524b12",
+      "finding_error": null
+    },
+    {
+      "scenario_id": "related_card",
+      "verdict": "candidate",
+      "actual": "연관 카드(Woven Lounge Chair, $1,450)를 클릭했으나 URL이 계속 /product/harvest-dining-table이고 카드 링크 href도 harvest-dining-table이며 페이지 제목도 Harvest Dining Table로 유지됨. 이미지에도 카드가 그대로 보임.",
+      "snapshot_ids": [
+        "before_action-a0f62b590847",
+        "after_action-849417f68afa",
+        "inspection_observe-b48bf3474205"
+      ],
+      "action_ids": [
+        "action-e2d1de0195594935"
+      ],
+      "judgment_source": "model",
+      "finding_id": "finding-d9467359f09d489a",
+      "finding_error": null
+    }
+  ]
+}

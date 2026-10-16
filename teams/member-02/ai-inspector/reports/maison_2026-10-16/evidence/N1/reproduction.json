@@ -1,0 +1,88 @@
+{
+  "result": {
+    "schema_version": "reproduction/1",
+    "finding_id": "finding-b109b903bf394499",
+    "status": "reproduced",
+    "attempts": 1,
+    "reset_method": "browser_only",
+    "server_reset": false,
+    "action_ids": [
+      "action-c4ac2a95ba3c48d2"
+    ],
+    "snapshot_ids": [
+      "reproduction_start-2a95677457c3",
+      "after_action-dcea399cabae",
+      "inspection_observe-1521e37cb0c1"
+    ],
+    "reason": "In the replay, the related card showed Woven Lounge Chair and $1,450. Its href was /product/harvest-dining-table. After the click, the page was Harvest Dining Table at $2,850, so the name and price both differed from the card. The replay screenshot matches the original: same viewport, with the same card still visible and no change to a different product's detail view. This is the same mismatch as in the original run.",
+    "initial_condition": "observed_match",
+    "images": {
+      "original": {
+        "path": "images\\inspection_observe-a20dab831289.png",
+        "snapshot_id": "inspection_observe-a20dab831289",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 1252
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:23:12.732973+00:00"
+      },
+      "replay": {
+        "path": "images\\inspection_observe-1521e37cb0c1.png",
+        "snapshot_id": "inspection_observe-1521e37cb0c1",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 1252
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:23:27.646149+00:00"
+      }
+    }
+  },
+  "response": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01Qhk9jwf6jpMmRZHuA5X4sz",
+        "name": "reproduction_verdict",
+        "input": {
+          "verdict": "reproduced",
+          "reason": "In the replay, the related card showed Woven Lounge Chair and $1,450. Its href was /product/harvest-dining-table. After the click, the page was Harvest Dining Table at $2,850, so the name and price both differed from the card. The replay screenshot matches the original: same viewport, with the same card still visible and no change to a different product's detail view. This is the same mismatch as in the original run."
+        },
+        "caller": {
+          "type": "direct"
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "usage": {
+      "input_tokens": 80194,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 204,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "container": null,
+    "model": "claude-sonnet-5-5"
+  },
+  "export_note": "Exact model replay verdict/result; duplicated request observations omitted, snapshots included separately."
+}

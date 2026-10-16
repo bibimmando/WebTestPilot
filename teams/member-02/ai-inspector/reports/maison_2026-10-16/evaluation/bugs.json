@@ -1,0 +1,92 @@
+{
+  "evaluation_only": true,
+  "total": 17,
+  "enabled": 17,
+  "defects": [
+    {
+      "id": "F1",
+      "area": "functional",
+      "title": "위시리스트 목록에서 마지막 항목이 빠짐"
+    },
+    {
+      "id": "F2",
+      "area": "functional",
+      "title": "장바구니 담기 거짓 성공"
+    },
+    {
+      "id": "F3",
+      "area": "functional",
+      "title": "수량 조절 버튼 무반응"
+    },
+    {
+      "id": "F4",
+      "area": "functional",
+      "title": "컬렉션 필터 해제 무반응"
+    },
+    {
+      "id": "V1",
+      "area": "validation",
+      "title": "BUG-001 주문 이메일 형식 검증 누락"
+    },
+    {
+      "id": "V2",
+      "area": "validation",
+      "title": "BUG-002 계정 이름 공백 저장"
+    },
+    {
+      "id": "V3",
+      "area": "validation",
+      "title": "BUG-004 배송 도시 빈값 수용"
+    },
+    {
+      "id": "V4",
+      "area": "validation",
+      "title": "BUG-005 재설정 암호 확인 불일치 수용"
+    },
+    {
+      "id": "V5",
+      "area": "validation",
+      "title": "BUG-003 정확히 8자인 가입 암호 거부"
+    },
+    {
+      "id": "N1",
+      "area": "routing",
+      "title": "연관 상품을 누르면 다른 상품이 열림"
+    },
+    {
+      "id": "N3",
+      "area": "routing",
+      "title": "화면을 옮겨도 스크롤이 맨 위로 가지 않음"
+    },
+    {
+      "id": "N4",
+      "area": "routing",
+      "title": "로그인 후 원래 가려던 곳 대신 홈으로 감"
+    },
+    {
+      "id": "U1",
+      "area": "ui",
+      "title": "가로 스크롤이 생겨 오른쪽 내용이 잘림"
+    },
+    {
+      "id": "U2",
+      "area": "ui",
+      "title": "상품 이름이 줄임표 없이 잘림"
+    },
+    {
+      "id": "U3",
+      "area": "ui",
+      "title": "키보드 포커스 표시가 보이지 않음"
+    },
+    {
+      "id": "U4",
+      "area": "ui",
+      "title": "누를 수 없는 버튼이 누를 수 있어 보임"
+    },
+    {
+      "id": "U5",
+      "area": "ui",
+      "title": "상단 헤더가 본문 첫 부분을 덮음"
+    }
+  ]
+}

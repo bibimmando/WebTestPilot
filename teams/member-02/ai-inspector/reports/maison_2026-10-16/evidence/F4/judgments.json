@@ -1,0 +1,71 @@
+{
+  "schema_version": "scenario_judgments/1",
+  "status": "recorded",
+  "tool_use_id": "toolu_013KZ8c2cyDDHHyEX9mv587D",
+  "judgments": [
+    {
+      "scenario_id": "ui_initial",
+      "verdict": "passed",
+      "actual": "초기 /products 화면에서 \"13 pieces\" 문구가 표시되고, 상품 카드 13개에 이름·가격·카테고리 텍스트가 확인됨. 스크린샷(첫 화면 범위)에서도 13 pieces가 보이며 카드 상단 이미지와 배지가 겹침 없이 보임. 카드 하단 텍스트는 뷰포트 밖이라 이미지로는 확인하지 못함.",
+      "snapshot_ids": [
+        "initial_load-26d2e48068b7",
+        "inspection_observe-8db0f02231e9"
+      ],
+      "action_ids": [],
+      "judgment_source": "model",
+      "finding_id": "finding-4853179e18504fc3",
+      "finding_error": null
+    },
+    {
+      "scenario_id": "filter_apply_clear",
+      "verdict": "candidate",
+      "actual": "LIGHTING 클릭 후 URL이 ?collection=lighting으로 바뀌고 \"2 pieces\"와 Arc Pendant Light, Orb Table Lamp 두 카드만 표시됨(개수 일치). 이어서 ALL 클릭 후 전후 스냅샷은 모두 lighting URL, 2 pieces 상태 그대로이며 13개로 복귀하지 않음. 최종 스냅샷도 Lighting 2 pieces.",
+      "snapshot_ids": [
+        "before_action-9a3fdfe53980",
+        "after_action-a5753ea02337",
+        "before_action-7b6eee1ea833",
+        "after_action-03d73ef7148e",
+        "inspection_observe-743711e57957"
+      ],
+      "action_ids": [
+        "action-03b153ff663d4769",
+        "action-d674fe68bcd44572"
+      ],
+      "judgment_source": "model",
+      "finding_id": "finding-1b4c07f908614338",
+      "finding_error": null
+    },
+    {
+      "scenario_id": "card_dest",
+      "verdict": "inconclusive",
+      "actual": "/products로 이동 후 Arc Pendant Light 카드를 클릭하자 /product/arc-pendant-light로 이동하고 제목 Arc Pendant Light, 가격 $485가 표시됨. 다만 상세 페이지의 연관 상품 카드 링크가 Orb Table Lamp 텍스트인데 href가 harvest-dining-table로 관찰됨(본 시나리오 범위 밖).",
+      "snapshot_ids": [
+        "before_action-77e920439b0d",
+        "after_action-182ea7631e61",
+        "inspection_observe-5879acf3d96f"
+      ],
+      "action_ids": [
+        "action-d4cce32717c84a17"
+      ],
+      "judgment_source": "model",
+      "finding_id": "finding-536ec0804be5438c",
+      "finding_error": null
+    },
+    {
+      "scenario_id": "newsletter_empty",
+      "verdict": "passed",
+      "actual": "빈 이메일로 제출 버튼 클릭 시 invalid 이벤트(value_missing)가 기록되고 스크린샷에 \"Please fill out this field.\" 툴팁이 보임. URL은 /products 그대로이며 성공 접수 문구는 없음.",
+      "snapshot_ids": [
+        "before_action-028fa4b49fb2",
+        "after_action-370ed48f3e41",
+        "inspection_observe-3f3cce75fa19"
+      ],
+      "action_ids": [
+        "action-91526a9c1805467b"
+      ],
+      "judgment_source": "model",
+      "finding_id": "finding-65018b6fa31a4333",
+      "finding_error": null
+    }
+  ]
+}

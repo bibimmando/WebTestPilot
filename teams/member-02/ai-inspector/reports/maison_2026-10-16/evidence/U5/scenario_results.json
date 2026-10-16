@@ -1,0 +1,50 @@
+{
+  "schema_version": "scenario_results/2",
+  "flow_id": "flow-e640ef8f2a6446c4",
+  "plan_tool_use_id": "toolu_01Av1YcboYDxjE1Eo8z1qxbA",
+  "scenarios": [
+    {
+      "scenario_id": "ui_initial",
+      "proposal_index": 0,
+      "title": "초기 화면 UI 점검",
+      "family": "ui",
+      "expected": "1. 헤더와 브레드크럼, Care Guide 제목, 소재별 본문이 겹치거나 잘리지 않고 보인다.",
+      "expected_source": "관찰된 UI 기반의 잠정 휴리스틱",
+      "execution_status": "completed",
+      "failure_reason": null,
+      "policy_blocked": false,
+      "planned_steps": [],
+      "planned_step_count": 0,
+      "attempted_step_count": 0,
+      "attempted_plan_step_count": 0,
+      "completed_plan_step_count": 0,
+      "executed_action_count": 0,
+      "skipped_step_count": 0,
+      "action_ids": [],
+      "snapshot_ids": [
+        "initial_load-5938334911ac",
+        "inspection_observe-78900404f355"
+      ],
+      "steps": [],
+      "start_snapshot_id": "initial_load-5938334911ac",
+      "end_snapshot_id": "inspection_observe-78900404f355",
+      "image": {
+        "path": "images\\inspection_observe-78900404f355.png",
+        "snapshot_id": "inspection_observe-78900404f355",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 0
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:20:11.387072+00:00"
+      },
+      "observation_errors": []
+    }
+  ],
+  "export_note": "Derived compact copy; original before/after observations are in referenced snapshots."
+}

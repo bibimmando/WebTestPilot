@@ -1,0 +1,185 @@
+{
+  "pipeline": "staged/3",
+  "flow_id": "flow-50b44838f4e44ff3",
+  "initial_url": "http://13.124.7.113:8081/products",
+  "status": "completed",
+  "test_status": "failed",
+  "initial_reset": {
+    "method": "browser_only",
+    "receipt": null
+  },
+  "target_audit": [
+    {
+      "scenario_id": "filter_apply_clear",
+      "step_index": 0,
+      "snapshot_id": "inspection_observe-8db0f02231e9",
+      "status": "matched",
+      "identity": {
+        "role": "button",
+        "name": "LIGHTING"
+      },
+      "selected_key": "e:4af20692448eafcf803a",
+      "equivalent_target_count": 1
+    },
+    {
+      "scenario_id": "filter_apply_clear",
+      "step_index": 1,
+      "snapshot_id": "after_action-a5753ea02337",
+      "status": "matched",
+      "identity": {
+        "role": "button",
+        "name": "ALL"
+      },
+      "selected_key": "e:038c7c51c725273640a0",
+      "equivalent_target_count": 1
+    },
+    {
+      "scenario_id": "card_dest",
+      "step_index": 1,
+      "status": "rejected",
+      "reason": "planned target mismatch or ambiguous identity; selected key does not uniquely match frozen target",
+      "selected_key": "e:7d6075dba9ffef4340f1",
+      "snapshot_id": "after_action-0498997c7fd1"
+    },
+    {
+      "scenario_id": "card_dest",
+      "step_index": 1,
+      "snapshot_id": "inspection_observe-8a12bec72b3c",
+      "status": "matched",
+      "identity": {
+        "role": "link",
+        "name": "FEATURED VIEW DETAILS LIGHTING Arc Pendant Light A graceful arc of hand-bent brass and linen $485 Solid brass",
+        "href": "http://13.124.7.113:8081/product/arc-pendant-light"
+      },
+      "selected_key": "e:7d6075dba9ffef4340f1",
+      "equivalent_target_count": 1
+    },
+    {
+      "scenario_id": "newsletter_empty",
+      "step_index": 1,
+      "snapshot_id": "after_action-1e0875948fbf",
+      "status": "matched",
+      "identity": {
+        "role": "button",
+        "name": "뉴스레터 구독 신청"
+      },
+      "selected_key": "e:507a2c562881b44bd9c7",
+      "equivalent_target_count": 1
+    }
+  ],
+  "steps": [
+    {
+      "snapshot_id": "inspection_observe-8db0f02231e9",
+      "operation": "click",
+      "element_key": "e:4af20692448eafcf803a",
+      "action_id": "action-03b153ff663d4769",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-9a3fdfe53980",
+      "after_snapshot_id": "after_action-a5753ea02337",
+      "phase": "inspection",
+      "scenario_id": "filter_apply_clear",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_01GSKyK79Tms7oEGWpX8PD5n",
+      "wait_ms": 800
+    },
+    {
+      "snapshot_id": "after_action-a5753ea02337",
+      "operation": "click",
+      "element_key": "e:038c7c51c725273640a0",
+      "action_id": "action-d674fe68bcd44572",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-7b6eee1ea833",
+      "after_snapshot_id": "after_action-03d73ef7148e",
+      "phase": "inspection",
+      "scenario_id": "filter_apply_clear",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_01GSKyK79Tms7oEGWpX8PD5n",
+      "wait_ms": 800
+    },
+    {
+      "snapshot_id": "inspection_observe-743711e57957",
+      "operation": "navigate",
+      "url": "http://13.124.7.113:8081/products",
+      "action_id": "action-af1114c3948449d1",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-a5149eab0be6",
+      "after_snapshot_id": "after_action-0498997c7fd1",
+      "phase": "inspection",
+      "scenario_id": "card_dest",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_01GSKyK79Tms7oEGWpX8PD5n",
+      "wait_ms": 0
+    },
+    {
+      "snapshot_id": "inspection_observe-8a12bec72b3c",
+      "operation": "click",
+      "element_key": "e:7d6075dba9ffef4340f1",
+      "action_id": "action-d4cce32717c84a17",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-77e920439b0d",
+      "after_snapshot_id": "after_action-182ea7631e61",
+      "phase": "inspection",
+      "scenario_id": "card_dest",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_01GSKyK79Tms7oEGWpX8PD5n",
+      "wait_ms": 1000
+    },
+    {
+      "snapshot_id": "inspection_observe-5879acf3d96f",
+      "operation": "navigate",
+      "url": "http://13.124.7.113:8081/products",
+      "action_id": "action-d812122d1d7f49b5",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-b7c5e0bd4cd9",
+      "after_snapshot_id": "after_action-1e0875948fbf",
+      "phase": "inspection",
+      "scenario_id": "newsletter_empty",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_01GSKyK79Tms7oEGWpX8PD5n",
+      "wait_ms": 0
+    },
+    {
+      "snapshot_id": "after_action-1e0875948fbf",
+      "operation": "click",
+      "element_key": "e:507a2c562881b44bd9c7",
+      "action_id": "action-91526a9c1805467b",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-028fa4b49fb2",
+      "after_snapshot_id": "after_action-370ed48f3e41",
+      "phase": "inspection",
+      "scenario_id": "newsletter_empty",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_01GSKyK79Tms7oEGWpX8PD5n",
+      "wait_ms": 500
+    },
+    {
+      "operation": "click",
+      "element_key": "e:4af20692448eafcf803a",
+      "snapshot_id": "reproduction_start-6be669885d58",
+      "action_id": "action-8d2cb30e10834ba6",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-3829dfcdfae4",
+      "after_snapshot_id": "after_action-77fd67801e38",
+      "phase": "reproduction",
+      "scenario_id": "filter_apply_clear",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_01GSKyK79Tms7oEGWpX8PD5n",
+      "wait_ms": 800
+    },
+    {
+      "operation": "click",
+      "element_key": "e:038c7c51c725273640a0",
+      "snapshot_id": "after_action-77fd67801e38",
+      "action_id": "action-b6c54a88780a44bd",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-ad272dec5252",
+      "after_snapshot_id": "after_action-c9eaef2afe9d",
+      "phase": "reproduction",
+      "scenario_id": "filter_apply_clear",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_01GSKyK79Tms7oEGWpX8PD5n",
+      "wait_ms": 800
+    }
+  ],
+  "errors": []
+}

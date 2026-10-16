@@ -1,0 +1,77 @@
+{
+  "family": "functional",
+  "verdict": "candidate",
+  "expected": "1. LIGHTING 적용 시 목록이 조명 카테고리 상품(관찰상 Arc Pendant Light, Orb Table Lamp)만 표시되고 개수 문구가 표시 카드 수와 일치한다. 2. ALL 클릭 후 13개 전체 상품으로 복귀한다.",
+  "expected_source": "site_requirements의 컬렉션 필터 + 관찰된 카드 카테고리",
+  "actual": "LIGHTING 클릭 후 URL이 ?collection=lighting으로 바뀌고 \"2 pieces\"와 Arc Pendant Light, Orb Table Lamp 두 카드만 표시됨(개수 일치). 이어서 ALL 클릭 후 전후 스냅샷은 모두 lighting URL, 2 pieces 상태 그대로이며 13개로 복귀하지 않음. 최종 스냅샷도 Lighting 2 pieces.",
+  "snapshot_ids": [
+    "before_action-9a3fdfe53980",
+    "after_action-a5753ea02337",
+    "before_action-7b6eee1ea833",
+    "after_action-03d73ef7148e",
+    "inspection_observe-743711e57957"
+  ],
+  "action_ids": [
+    "action-03b153ff663d4769",
+    "action-d674fe68bcd44572"
+  ],
+  "schema_version": "finding/1",
+  "finding_id": "finding-1b4c07f908614338",
+  "run_id": "run-6144dd6ed2be41ab",
+  "flow_id": "flow-50b44838f4e44ff3",
+  "status": "confirmed",
+  "reproduction": {
+    "schema_version": "reproduction/1",
+    "finding_id": "finding-1b4c07f908614338",
+    "status": "reproduced",
+    "attempts": 1,
+    "reset_method": "browser_only",
+    "server_reset": false,
+    "action_ids": [
+      "action-8d2cb30e10834ba6",
+      "action-b6c54a88780a44bd"
+    ],
+    "snapshot_ids": [
+      "reproduction_start-6be669885d58",
+      "after_action-77fd67801e38",
+      "after_action-c9eaef2afe9d",
+      "inspection_observe-c98959e0dcd1"
+    ],
+    "reason": "In the replay, clicking LIGHTING changed the URL to ?collection=lighting and showed \"2 pieces\" with Arc Pendant Light and Orb Table Lamp. Clicking ALL then left the URL, the \"2 pieces\" count and the two cards unchanged, with no URL change in the diff. The final snapshot and screenshot still show Lighting with 2 pieces, the same as the original run. The 13 products did not return.",
+    "initial_condition": "observed_match",
+    "images": {
+      "original": {
+        "path": "images\\inspection_observe-743711e57957.png",
+        "snapshot_id": "inspection_observe-743711e57957",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 0
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:03:46.418318+00:00"
+      },
+      "replay": {
+        "path": "images\\inspection_observe-c98959e0dcd1.png",
+        "snapshot_id": "inspection_observe-c98959e0dcd1",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 0
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:04:48.297301+00:00"
+      }
+    }
+  },
+  "scenario_id": "filter_apply_clear",
+  "judgment_source": "model"
+}

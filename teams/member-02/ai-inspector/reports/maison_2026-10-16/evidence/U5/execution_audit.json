@@ -1,0 +1,84 @@
+{
+  "pipeline": "staged/3",
+  "flow_id": "flow-e640ef8f2a6446c4",
+  "initial_url": "http://13.124.7.113:8081/info/care-guide",
+  "status": "completed",
+  "test_status": "failed",
+  "initial_reset": {
+    "method": "browser_only",
+    "receipt": null
+  },
+  "target_audit": [
+    {
+      "scenario_id": "route_shipping",
+      "step_index": 0,
+      "snapshot_id": "inspection_observe-78900404f355",
+      "status": "matched",
+      "identity": {
+        "role": "link",
+        "name": "Shipping & Returns",
+        "href": "http://13.124.7.113:8081/info/shipping-returns"
+      },
+      "selected_key": "e:504da8e4390eaf73c7d7",
+      "equivalent_target_count": 1
+    },
+    {
+      "scenario_id": "route_objects",
+      "step_index": 1,
+      "snapshot_id": "after_action-dc926fe12d44",
+      "status": "matched",
+      "identity": {
+        "role": "link",
+        "name": "Objects & Vases",
+        "href": "http://13.124.7.113:8081/products?collection=objects"
+      },
+      "selected_key": "e:68f33b1e953deca2de65",
+      "equivalent_target_count": 1
+    }
+  ],
+  "steps": [
+    {
+      "snapshot_id": "inspection_observe-78900404f355",
+      "operation": "click",
+      "element_key": "e:504da8e4390eaf73c7d7",
+      "action_id": "action-b1f8edf967714afc",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-76f189ccef9e",
+      "after_snapshot_id": "after_action-830232b2f306",
+      "phase": "inspection",
+      "scenario_id": "route_shipping",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_01Av1YcboYDxjE1Eo8z1qxbA",
+      "wait_ms": 0
+    },
+    {
+      "snapshot_id": "inspection_observe-8028e8e2fecc",
+      "operation": "navigate",
+      "url": "http://13.124.7.113:8081/info/care-guide",
+      "action_id": "action-c0fdce162f7f4d11",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-e6eb25ff101c",
+      "after_snapshot_id": "after_action-dc926fe12d44",
+      "phase": "inspection",
+      "scenario_id": "route_objects",
+      "step_index": 0,
+      "plan_tool_use_id": "toolu_01Av1YcboYDxjE1Eo8z1qxbA",
+      "wait_ms": 0
+    },
+    {
+      "snapshot_id": "after_action-dc926fe12d44",
+      "operation": "click",
+      "element_key": "e:68f33b1e953deca2de65",
+      "action_id": "action-1562668f6972415b",
+      "execution": "executed",
+      "before_snapshot_id": "before_action-b71e936dbbb0",
+      "after_snapshot_id": "after_action-aefbd021d0c8",
+      "phase": "inspection",
+      "scenario_id": "route_objects",
+      "step_index": 1,
+      "plan_tool_use_id": "toolu_01Av1YcboYDxjE1Eo8z1qxbA",
+      "wait_ms": 0
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,92 @@
+{
+  "result": {
+    "schema_version": "reproduction/1",
+    "finding_id": "finding-a076c338b0ea4df7",
+    "status": "reproduced",
+    "attempts": 1,
+    "reset_method": "browser_only",
+    "server_reset": false,
+    "action_ids": [
+      "action-1cd473c7093d4f0f",
+      "action-f7b5a493d34b4dfe",
+      "action-f5e3bc9e97e84861"
+    ],
+    "snapshot_ids": [
+      "reproduction_start-139fea57b32a",
+      "after_action-0ce918bd540c",
+      "after_action-6a6898331c1a",
+      "after_action-da2f4ea41e01",
+      "inspection_observe-4afc832abbae"
+    ],
+    "reason": "The replay followed the same steps as the original. It clicked the quantity increase button, then ADD TO BAG, then went to /cart. The quantity text stayed at 1 after the increase click. The toast read \"1 × Harvest Dining Table added to your bag.\" The cart page showed \"Your Bag is Empty\". The original and replay screenshots look the same at 1280x800. The expected quantity 2 and $5,700 line item did not appear in either run.",
+    "initial_condition": "observed_match",
+    "images": {
+      "original": {
+        "path": "images\\inspection_observe-817c014dc485.png",
+        "snapshot_id": "inspection_observe-817c014dc485",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 0
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:16:05.040722+00:00"
+      },
+      "replay": {
+        "path": "images\\inspection_observe-4afc832abbae.png",
+        "snapshot_id": "inspection_observe-4afc832abbae",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 0
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:17:02.657025+00:00"
+      }
+    }
+  },
+  "response": {
+    "role": "assistant",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "toolu_01SHLa47W5tv3QbHuSzAaung",
+        "name": "reproduction_verdict",
+        "input": {
+          "verdict": "reproduced",
+          "reason": "The replay followed the same steps as the original. It clicked the quantity increase button, then ADD TO BAG, then went to /cart. The quantity text stayed at 1 after the increase click. The toast read \"1 × Harvest Dining Table added to your bag.\" The cart page showed \"Your Bag is Empty\". The original and replay screenshots look the same at 1280x800. The expected quantity 2 and $5,700 line item did not appear in either run."
+        },
+        "caller": {
+          "type": "direct"
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "usage": {
+      "input_tokens": 183618,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cache_creation": {
+        "ephemeral_5m_input_tokens": 0,
+        "ephemeral_1h_input_tokens": 0
+      },
+      "output_tokens": 222,
+      "output_tokens_details": {
+        "thinking_tokens": 0
+      },
+      "service_tier": "standard",
+      "inference_geo": "global"
+    },
+    "container": null,
+    "model": "claude-sonnet-5-5"
+  },
+  "export_note": "Exact model replay verdict/result; duplicated request observations omitted, snapshots included separately."
+}

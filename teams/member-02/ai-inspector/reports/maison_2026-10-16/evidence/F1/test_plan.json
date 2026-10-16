@@ -1,0 +1,32 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "wishlist_save_inspect",
+      "proposal_index": 0,
+      "title": "위시리스트 저장 후 목록 내용 확인",
+      "family": "functional",
+      "expected": "1. ADD TO WISHLIST 클릭 후 상태 변화(버튼 표시 변경 또는 위시리스트 개수 표시 변화)가 관찰된다. 2. /wishlist 이동 후 목록에 'Harvest Dining Table' 항목이 정확히 1개 표시된다. 3. 해당 항목의 가격이 $2,850으로 표시된다. 4. 개수 표시가 있다면 실제 렌더링된 항목 수와 일치한다. 알림/토스트만으로는 통과 근거가 되지 않으며 목록 내용이 필요하다.",
+      "expected_source": "site_requirements(위시리스트 저장 기능)와 관찰된 UI(상품명 Harvest Dining Table, 가격 $2,850)",
+      "steps": [
+        {
+          "operation": "click",
+          "element_key": "e:6954a54f1a8d0aa461fe",
+          "wait_ms": 1000
+        },
+        {
+          "operation": "click",
+          "element_key": "e:c24e528355f52a95be70",
+          "wait_ms": 1500
+        }
+      ]
+    }
+  ],
+  "unplanned": [],
+  "schema_version": "test_plan/2",
+  "initial_snapshot_id": "initial_load-0adcd8e3823f",
+  "flow_id": "flow-069dfca2e01c4ee6",
+  "proposal_tool_use_id": "toolu_01G4vfkf4ZygbRaUeovHXGMg",
+  "plan_tool_use_id": "toolu_01G4vfkf4ZygbRaUeovHXGMg",
+  "source_tool": "qa_test_plan",
+  "planning_attempts": 1
+}

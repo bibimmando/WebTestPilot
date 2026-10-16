@@ -1,0 +1,8 @@
+{
+  "model": "claude-sonnet-5-5",
+  "input_usd_per_million": 2,
+  "output_usd_per_million": 10,
+  "checked_date_kst": "2026-10-15",
+  "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+  "invoice_verified": false
+}

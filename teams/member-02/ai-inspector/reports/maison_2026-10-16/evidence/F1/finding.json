@@ -1,0 +1,77 @@
+{
+  "family": "functional",
+  "verdict": "candidate",
+  "expected": "1. ADD TO WISHLIST 클릭 후 상태 변화(버튼 표시 변경 또는 위시리스트 개수 표시 변화)가 관찰된다. 2. /wishlist 이동 후 목록에 'Harvest Dining Table' 항목이 정확히 1개 표시된다. 3. 해당 항목의 가격이 $2,850으로 표시된다. 4. 개수 표시가 있다면 실제 렌더링된 항목 수와 일치한다. 알림/토스트만으로는 통과 근거가 되지 않으며 목록 내용이 필요하다.",
+  "expected_source": "site_requirements(위시리스트 저장 기능)와 관찰된 UI(상품명 Harvest Dining Table, 가격 $2,850)",
+  "actual": "ADD TO WISHLIST 클릭 후 버튼이 'SAVED TO WISHLIST'로 바뀌고 헤더 위시리스트 배지가 1로 표시됐으며 저장 토스트도 나타났습니다. 이어서 위시리스트 링크를 클릭해 /wishlist로 이동하니 'Wishlist / 1 piece saved' 문구와 ADD ALL TO BAG, CLEAR ALL 버튼은 있었습니다. 그러나 DOM 후보 항목이 0개였고 'Harvest Dining Table' 이름과 $2,850 가격이 본문 텍스트 어디에도 없었습니다. 스크린샷은 푸터 영역만 보여 목록 항목 확인에 쓸 수 없었습니다. 개수 문구는 1개로 나오지만 실제 렌더링된 항목은 확인되지 않아 불일치 후보입니다. 다만 목록이 지연 로딩이거나 수집이 누락됐을 가능성은 배제하지 못합니다.",
+  "snapshot_ids": [
+    "before_action-39383b63fc81",
+    "after_action-b2d16364540b",
+    "before_action-b7b6b7efc57f",
+    "after_action-d0a0afe36e68",
+    "inspection_observe-4ea0d093c0e0"
+  ],
+  "action_ids": [
+    "action-c54d8452d93c471d",
+    "action-9cd077c3aa0e487b"
+  ],
+  "schema_version": "finding/1",
+  "finding_id": "finding-fffc2b5861c64d3d",
+  "run_id": "run-dbe9079b72734e51",
+  "flow_id": "flow-069dfca2e01c4ee6",
+  "status": "confirmed",
+  "reproduction": {
+    "schema_version": "reproduction/1",
+    "finding_id": "finding-fffc2b5861c64d3d",
+    "status": "reproduced",
+    "attempts": 1,
+    "reset_method": "browser_only",
+    "server_reset": false,
+    "action_ids": [
+      "action-e883149e368a46d9",
+      "action-254f9524f0ca4d72"
+    ],
+    "snapshot_ids": [
+      "reproduction_start-358dd3d983fe",
+      "after_action-942f33de9ac5",
+      "after_action-76591b4a4874",
+      "inspection_observe-b96ba9b55ed8"
+    ],
+    "reason": "The replay matched the original. After ADD TO WISHLIST, the button changed to \"SAVED TO WISHLIST\" and the header badge showed 1. On /wishlist the page said \"1 piece saved\" with ADD ALL TO BAG and CLEAR ALL buttons. The DOM had 0 item candidates in main, and the body text did not include \"Harvest Dining Table\" or \"$2,850\". Both screenshots show only the footer area, with the replay also showing the toast. The mismatch between the count and the missing item content appeared again. The screenshots can't show the list itself, so the evidence comes from the DOM and text.",
+    "initial_condition": "observed_match",
+    "images": {
+      "original": {
+        "path": "images\\inspection_observe-4ea0d093c0e0.png",
+        "snapshot_id": "inspection_observe-4ea0d093c0e0",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 301
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:22:32.459853+00:00"
+      },
+      "replay": {
+        "path": "images\\inspection_observe-b96ba9b55ed8.png",
+        "snapshot_id": "inspection_observe-b96ba9b55ed8",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "scroll": {
+          "x": 0,
+          "y": 301
+        },
+        "full_page": false,
+        "association": "temporal_after_snapshot",
+        "captured_at": "2026-10-15T16:22:52.591005+00:00"
+      }
+    }
+  },
+  "scenario_id": "wishlist_save_inspect",
+  "judgment_source": "model"
+}
