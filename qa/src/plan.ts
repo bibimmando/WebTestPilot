@@ -6,7 +6,8 @@ export type Requirement = { id: string; text: string };
 
 export type Step = { id: string; op: 'click' | 'fill' | 'select' | 'press'; target?: string; value?: string };
 export type Read = 'text' | 'value' | 'checked' | 'visible' | 'count' | 'url' | 'items';
-export type Op = 'equals' | 'not_equals' | 'contains' | 'less' | 'greater' | 'same_number' | 'all_equal' | 'all_contain' | 'any_equal' | 'any_contain';
+/** record: 복제 실행(C4) 전용 "기록만" — 항상 통과하고 관측 참조용 값만 남긴다. 모델 계획에는 쓸 수 없다. */
+export type Op = 'record' | 'equals' | 'not_equals' | 'contains' | 'less' | 'greater' | 'same_number' | 'all_equal' | 'all_contain' | 'any_equal' | 'any_contain';
 /**
  * 비교 규칙의 근거. requirement = 요구사항 인용, constraint = 화면 안내·HTML 제약 인용(탐색 중 본 텍스트),
  * observed = 탐색 때 본 값(시작 시점의 기준·선행조건에만), inferred = 일반 규칙 목록(rules.ts)의 규칙 ID 인용(quote는 적용 조건 설명).
@@ -27,8 +28,8 @@ export type Check = {
   /** 선행조건: 실패하면 뒤 행동을 멈추고 "준비 실패"로 남긴다 (결함 아님) */
   precondition?: boolean;
 };
-/** covers: 요구사항(R#) 또는 탐색으로 찾은 기능(F#) */
-export type Scenario = { id: string; title: string; covers: string[]; start: { url: string }; steps: Step[]; checks: Check[] };
+/** covers: 요구사항(R#) 또는 탐색으로 찾은 기능(F#). variantOf: 같은 템플릿의 다른 페이지에서 실행하려고 복제한 원래 시나리오(C4) */
+export type Scenario = { id: string; title: string; covers: string[]; start: { url: string }; steps: Step[]; checks: Check[]; variantOf?: string };
 /** 탐색으로 찾은 기능. 요구사항에 없는 기능도 남긴다(자율 탐색). requirements는 관련 요구사항 ID */
 export type Feature = { id: string; name: string; page: string; requirements?: string[] };
 /** 탐색 중 ask_user로 남긴 업무 규칙 질문. 답을 기다리지 않는다. 답 받기는 M5·M7 */
@@ -47,6 +48,8 @@ export type Plan = {
   scenarios: Scenario[];
   unplanned: Draft['unplanned'];
   observations: Observation[];
+  /** C4 복제 기록: 원본·페이지·만든 시나리오, 뺀 검사와 사유, 복제하지 않은 사유. 분모에서 숨기지 않기 위해 남긴다 */
+  variants?: { from: string; url: string; to?: string; dropped: string[]; skipped?: string }[];
   questions: Question[];
   /** 탐색 때 시작 URL을 새로 열어 있음을 확인한 "대상ID 시작URL" 쌍. 실행 단계의 재검증도 같은 계약을 쓴다 */
   startVerified?: string[];
@@ -56,7 +59,7 @@ export type Plan = {
 const NEEDS_VALUE = new Set(['fill', 'select', 'press']);
 const OPS = ['click', 'fill', 'select', 'press'];
 const READS: Read[] = ['text', 'value', 'checked', 'visible', 'count', 'url', 'items'];
-const COMPARES: Op[] = ['equals', 'not_equals', 'contains', 'less', 'greater', 'same_number', 'all_equal', 'all_contain', 'any_equal', 'any_contain'];
+const COMPARES: Op[] = ['record', 'equals', 'not_equals', 'contains', 'less', 'greater', 'same_number', 'all_equal', 'all_contain', 'any_equal', 'any_contain'];
 const KINDS = ['requirement', 'constraint', 'observed', 'inferred'];
 /** 읽기 종류마다 쓸 수 있는 비교 */
 const ALLOWED: Record<Read, Op[]> = {
@@ -95,6 +98,7 @@ export function compareValues(op: Op, actual: string, expected: string): boolean
     const one = (x: unknown) => op.endsWith('_equal') ? String(x) === expected : String(x).includes(expected);
     return op.startsWith('all_') ? items.every(one) : items.some(one);
   }
+  if (op === 'record') return true;
   if (op === 'equals') return actual === expected;
   if (op === 'not_equals') return actual !== expected;
   if (op === 'contains') return actual.includes(expected);
@@ -182,6 +186,8 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
 
   for (const s of draft.scenarios) {
     unique(s.id, /^S\d+$/, 'scenario');
+    // 복제 표식은 하네스만 붙인다. 원본이 같은 계획에 있어야 한다(위조로 시작 페이지 검증을 피하지 못하게).
+    if (s.variantOf !== undefined && !draft.scenarios.some(x => x.id === s.variantOf && x.variantOf === undefined)) errors.push(`${s.id}: variantOf "${s.variantOf}" must name an original scenario of this plan`);
     if (!s.covers.length) errors.push(`${s.id}: covers must list at least one requirement (R#) or feature (F#)`);
     // 기능 하나에 시나리오 하나: 여러 기능이 검사 하나에 편승하지 못하게 한다.
     if (s.covers.filter(r => features.has(r)).length > 1) errors.push(`${s.id}: a scenario covers at most one feature (F#); split it`);
@@ -197,7 +203,8 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
       unique(st.id, new RegExp(`^${s.id}\\.A\\d+$`), s.id);
       stepIds.add(st.id);
       if (st.op !== 'press' && !st.target) errors.push(`${st.id}: ${st.op} needs a target`);
-      if (st.target) requireTarget(st.id, st.target, false, i === 0 ? s.start.url : undefined);
+      // 복제 시나리오는 다른 페이지에서 시작한다. 대상이 그 페이지에 있는지는 실행이 확인하고 없으면 "적용 불가"로 남긴다.
+      if (st.target) requireTarget(st.id, st.target, false, i === 0 && !s.variantOf ? s.start.url : undefined);
       if (NEEDS_VALUE.has(st.op) && st.value === undefined) errors.push(`${st.id}: ${st.op} needs a value`);
     });
     // 관측 참조는 실행 순서상 앞선 검사만 가리킬 수 있다 (자기 자신·순환 참조 불가). 순서는 generate.sequence와 같다:
@@ -245,11 +252,13 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
   }
 
   function checkRead(c: Check, s: Scenario) {
-    if (!ALLOWED[c.read].includes(c.op)) errors.push(`${c.id}: read ${c.read} allows op ${ALLOWED[c.read].join('|')}`);
+    if (c.op === 'record') {
+      if (!s.variantOf) errors.push(`${c.id}: op record is internal to copied scenarios`);
+    } else if (!ALLOWED[c.read].includes(c.op)) errors.push(`${c.id}: read ${c.read} allows op ${ALLOWED[c.read].join('|')}`);
     if (c.read === 'url') {
       if (c.target !== undefined) errors.push(`${c.id}: read url takes no target`);
     } else if (!c.target) errors.push(`${c.id}: read ${c.read} needs a target`);
-    else requireTarget(c.id, c.target, c.read === 'count' || c.read === 'items', c.after === 'start' ? s.start.url : undefined);
+    else requireTarget(c.id, c.target, c.read === 'count' || c.read === 'items', c.after === 'start' && !s.variantOf ? s.start.url : undefined);
   }
 
   function checkExpectation(c: Check, s: Scenario, order: string[]) {
@@ -260,7 +269,9 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
       if (at < 0 || at >= order.indexOf(c.id)) errors.push(`${c.id}: expected_from must name a check of the same scenario that runs before it`);
       // 같은 시점에 같은 대상을 같은 방식으로 다시 읽어 비교하면 항상 통과한다.
       const ref = s.checks.find(x => x.id === c.expected_from);
-      if (ref && ref.after === c.after && ref.target === c.target && ref.read === c.read) errors.push(`${c.id}: expected_from re-reads the same value at the same point and always passes`);
+      // 같은 요소를 다른 ID로 두 번 고정한 별칭도 같은 대상으로 본다.
+      const sameTarget = ref?.target === c.target || (!!ref?.target && !!c.target && JSON.stringify(pinned.get(ref.target)?.target) === JSON.stringify(pinned.get(c.target)?.target));
+      if (ref && ref.after === c.after && sameTarget && ref.read === c.read) errors.push(`${c.id}: expected_from re-reads the same value at the same point and always passes`);
       // 관측 참조는 비교할 값의 출처일 뿐이다. 비교 규칙의 근거는 따로 있어야 한다.
       if (c.source.kind === 'observed') errors.push(`${c.id}: expected_from needs a rule basis (requirement, constraint or inferred), not observed`);
       return;
@@ -271,7 +282,7 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
     if ((c.op === 'less' || c.op === 'greater' || c.op === 'same_number') && Number.isNaN(numberIn(e))) errors.push(`${c.id}: ${c.op} needs a number in expected`);
     if (c.op.includes('contain') && !e.trim()) errors.push(`${c.id}: contains with an empty expected always passes`);
     // 탐색은 결함이 있을 수 있는 앱을 보고 하므로, 행동 뒤 결과를 지금 본 값으로 기대하면 결함을 정답으로 고정한다.
-    if (c.source.kind === 'observed' && c.after !== 'start') {
+    if (c.source.kind === 'observed' && c.after !== 'start' && c.op !== 'record') {
       errors.push(`${c.id}: a check after an action cannot use an observed value as its expectation; cite a requirement or constraint, use inferred (general web behavior), or compare with expected_from`);
     }
   }
@@ -321,6 +332,53 @@ export function mergePlans(plans: Plan[], requirements: Requirement[]): Plan {
     observations: plans.flatMap(p => p.observations), questions: [...questions.values()],
     ...(plans.some(p => p.startVerified?.length) ? { startVerified: plans.flatMap(p => p.startVerified ?? []) } : {}),
     targets: Object.assign({}, ...plans.map(p => p.targets)) };
+}
+
+/**
+ * 같은 템플릿의 다른 페이지에서 같은 계획을 실행하도록 시나리오를 복제한다(C4). pages: 시나리오 ID → 추가로 실행할 시작 URL들.
+ * 대표 페이지에서 정한 고정값은 다른 페이지에서 맞는다는 근거가 없다.
+ * - 관찰값 고정 검사(visible·checked 제외)는 "기록만"(record)으로 바꾼다. 관측 참조는 그 페이지에서 새로 읽은 값을 쓴다.
+ * - 요구사항·화면 제약 근거의 고정값 검사는 페이지마다 다를 수 있어 뺀다(관측 참조가 가리키면 기록만으로 바꾼다). 뺀 검사는 사유와 함께 남긴다.
+ * 규칙 근거 검사가 남지 않거나 복제본이 계약을 어기면 복제하지 않고 사유를 남긴다.
+ */
+export function cloneScenarios(plan: Plan, pages: Record<string, string[]>): Plan {
+  let next = Math.max(0, ...plan.scenarios.map(s => Number(s.id.slice(1)))) + 1;
+  const pinned = new Map(Object.entries(plan.targets));
+  const clones: Scenario[] = [];
+  const variants: NonNullable<Plan['variants']> = [];
+  for (const s of plan.scenarios) for (const url of pages[s.id] ?? []) {
+    const id = `S${next}`;
+    const ren = (x: string) => x.startsWith(`${s.id}.`) ? id + x.slice(s.id.length) : x;
+    const referenced = new Set(s.checks.map(c => c.expected_from).filter(Boolean));
+    const dropped: string[] = [];
+    const checks = s.checks.flatMap((c): Check[] => {
+      const base: Check = { ...c, id: ren(c.id), after: ren(c.after), ...(c.expected_from ? { expected_from: ren(c.expected_from) } : {}) };
+      const record: Check = { ...base, op: 'record', expected: '', source: { kind: 'observed' }, precondition: undefined };
+      if (c.expected === undefined) return [base];
+      if (c.source.kind === 'requirement' || c.source.kind === 'constraint') {
+        if (referenced.has(c.id)) return [record];
+        dropped.push(`${c.id}: 페이지마다 다를 수 있는 ${c.source.kind === 'requirement' ? '요구사항' : '화면 제약'} 고정값`);
+        return [];
+      }
+      return c.source.kind === 'observed' && c.read !== 'visible' && c.read !== 'checked' ? [record] : [base];
+    });
+    const clone: Scenario = { ...structuredClone(s), id, variantOf: s.id, title: `${s.title} (같은 템플릿 다른 페이지)`, start: { url },
+      steps: s.steps.map(st => ({ ...st, id: ren(st.id) })), checks };
+    if (!checks.some(c => c.op !== 'record' && c.source.kind !== 'observed')) {
+      variants.push({ from: s.id, url, dropped, skipped: '규칙 근거 검사가 남지 않음' });
+      continue;
+    }
+    const errors = validate({ features: plan.features, scenarios: [s, clone], unplanned: [] }, plan.requirements, pinned, [new URL(url).origin],
+      undefined, new Set(plan.startVerified ?? []), { taken: new Set() }).filter(e => e.startsWith(`${id}`));
+    if (errors.length) {
+      variants.push({ from: s.id, url, dropped, skipped: `계약 위반: ${errors.join('; ')}` });
+      continue;
+    }
+    next++;
+    clones.push(clone);
+    variants.push({ from: s.id, url, to: id, dropped });
+  }
+  return { ...plan, scenarios: [...plan.scenarios, ...clones], variants: [...(plan.variants ?? []), ...variants] };
 }
 
 /** 검증된 Draft를 실행 가능한 Plan으로 고정한다. 대화 기록과 객체를 공유하지 않도록 복사하고, 쓰이지 않은 pin은 버린다. */

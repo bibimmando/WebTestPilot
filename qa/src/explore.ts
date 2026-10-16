@@ -3,9 +3,9 @@ import { readFileSync } from 'node:fs';
 import type { Browser, Page } from 'playwright';
 import type Anthropic from '@anthropic-ai/sdk';
 import { openContext, snapshot, resolveRef, resolveGroup, resolveText, resolvePosition, settle, stableOnReload, type Policy } from './browser.ts';
-import { validate, freeze, mergePlans, startTargetsElsewhere, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
+import { validate, freeze, mergePlans, cloneScenarios, startTargetsElsewhere, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
 import { rulesText } from './rules.ts';
-import { crawl, type SiteMap, type Template } from './sitemap.ts';
+import { crawl, pathOf, type SiteMap, type Template } from './sitemap.ts';
 import { runAgent, type AgentResult, type Budget, type Send, type Tool } from './agent.ts';
 
 export const SYSTEM = readFileSync(new URL('../prompts/explore.md', import.meta.url), 'utf8');
@@ -34,7 +34,7 @@ export type Scope = { map: SiteMap; template: Template; url: string; nextScenari
  * shortcut: 템플릿마다 대표 페이지 하나만 탐색한다(기준 실행). 같은 템플릿 다른 페이지 실행(C4)은 팀 확인 뒤.
  */
 export async function explore(o: Task & { browser: Browser; send: Send; model: string; budget: Budget; maxTurns: number;
-  maxPages?: number; maxTemplates?: number; turnsPerTemplate?: number }): Promise<ExploreResult> {
+  maxPages?: number; maxTemplates?: number; turnsPerTemplate?: number; pagesPerTemplate?: number }): Promise<ExploreResult> {
   assertStartAllowed(o);
   // 사이트 지도는 쓰기 허용과 상관없이 읽기 전용으로 모은다. 페이지를 여는 것만으로 스크립트가 쓰기 요청을 보낼 수 있다.
   const reader = await openContext(o.browser, { ...o.policy, allowWrites: false });
@@ -80,12 +80,35 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
     }
     for (const t of ordered.slice(templates.length)) conversations.push({ template: t.key, url: t.pages[0], stop: 'not_attempted', detail: `페이지 종류 수 한도(${templates.length})`, turns: 0, planned: false });
     // 실패한 대화의 질문도 버리지 않고 남긴다.
-    const plan = plans.length ? (single ? plans[0] : { ...mergePlans(plans, o.requirements), questions: part.questions }) : undefined;
+    const merged = plans.length ? (single ? plans[0] : { ...mergePlans(plans, o.requirements), questions: part.questions }) : undefined;
+    const plan = merged && cloneScenarios(merged, otherPages(merged, map, o.pagesPerTemplate ?? 3));
     return { ...last!, stop: plan ? 'done' : last!.stop, turns, plan, blocked, violations, sitemap: map, conversations,
       complete: conversations.every(c => c.planned), exploredUrls: [...part.urls] };
   } finally {
     await context.close();
   }
+}
+
+/**
+ * C4: 경로만 다른 페이지로 묶인 템플릿(`/product/:x`)에서 계획을 실행할 페이지 집합을 템플릿마다 정한다.
+ * 대표(원래 시나리오의 시작 페이지)를 포함해 total개가 되도록 다른 페이지를 고르고(방문한 페이지 먼저), 그 템플릿의 모든 시나리오가 같은 페이지들을 쓴다.
+ * 쿼리만 다른 페이지(정렬·필터)는 같은 화면의 다른 상태라 고르지 않는다.
+ */
+export function otherPages(plan: Plan, map: SiteMap, total: number): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const t of map.templates.filter(x => x.key.endsWith('/:x'))) {
+    const scenarios = plan.scenarios.filter(s => !s.variantOf && t.pages.some(p => pathOf(p) === pathOf(s.start.url)));
+    if (!scenarios.length) continue;
+    const used = new Set(scenarios.map(s => pathOf(s.start.url)));
+    const picks: string[] = [];
+    for (const p of [...t.pages.filter(p => map.visited.includes(p)), ...t.pages.filter(p => !map.visited.includes(p))]) {
+      if (used.size + picks.length >= total) break;
+      if (used.has(pathOf(p)) || picks.some(x => pathOf(x) === pathOf(p))) continue;
+      picks.push(p);
+    }
+    if (picks.length) for (const s of scenarios) out[s.id] = picks;
+  }
+  return out;
 }
 
 /** 시작 URL도 navigate와 같은 origin 정책을 따른다. */
@@ -139,6 +162,8 @@ export function exploreTools(page: Page, o: Task, violations: string[], part?: P
     def: { name: 'submit_plan', description: '완성한 테스트 계획을 제출한다. 오류가 있으면 오류 목록이 돌아온다.', input_schema: DRAFT_SCHEMA },
     run: async (draft: Draft) => {
       if (violations.length) return { text: `정책 위반이 있어 계획을 받을 수 없다: ${violations.join(', ')}`, isError: true };
+      // 복제 표식은 하네스만 붙인다.
+      if ((draft.scenarios ?? []).some(x => (x as { variantOf?: unknown }).variantOf !== undefined)) return { text: 'variantOf는 계획에 쓸 수 없다', isError: true };
       let errors: string[];
       const check = (onStart?: Set<string>) => validate(draft, o.requirements, pinned, o.policy.origins, seen.join('\n'), onStart, part);
       try { errors = check(); } catch (e) {

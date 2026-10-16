@@ -8,7 +8,7 @@ export type Template = { key: string; pages: string[] };
 export type SiteMap = { templates: Template[]; visited: string[]; unvisited: string[]; failed: string[] };
 
 /** 쿼리·hash를 뺀 경로. 같은 경로의 다른 쿼리(정렬·필터)는 같은 페이지 종류로 본다. */
-const pathOf = (url: string) => { const u = new URL(url); return u.origin + (u.pathname.replace(/\/+$/, '') || '/'); };
+export const pathOf = (url: string) => { const u = new URL(url); return u.origin + (u.pathname.replace(/\/+$/, '') || '/'); };
 
 /**
  * URL을 템플릿으로 묶는다. 같은 상위 경로 아래 마지막 경로 조각만 다른 페이지가 둘 이상이면 한 템플릿(`/product/:x`)이다.

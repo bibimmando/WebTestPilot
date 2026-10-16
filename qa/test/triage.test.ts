@@ -232,3 +232,17 @@ test('행동 기록: 입력 원문은 넘기지 않고, 그 항목 직전까지�
   assert.equal(forLast.length, 10);
   assert.equal((forLast.at(-1) as any).value, 'Enter', '누른 키는 그대로 준다');
 });
+
+test('Q22 제한: 결정적 관계 규칙 위반만 확신 높음, 다른 일반 규칙은 확신 중간', () => {
+  const p = plan();
+  const s = p.scenarios[0];
+  s.checks.push(
+    { id: 'S1.C8', after: 'S1.A1', target: 'T1', read: 'count', op: 'same_number', expected_from: 'S1.C2', source: { kind: 'inferred', rule: 'count-matches-list', quote: '개수 문구가 목록 수를 나타낸다' } },
+    { id: 'S1.C10', after: 'start', target: 'T1', read: 'count', op: 'same_number', expected_from: 'S1.C1', source: { kind: 'inferred', rule: 'count-matches-list', quote: '같은 대상 같은 시점 재비교(별칭)' } },
+    { id: 'S1.C9', after: 'start', target: 'T1', read: 'count', op: 'greater', expected: '0', source: { kind: 'inferred', rule: 'quantity-bounds', quote: '수량은 0보다 커야 한다는 규칙' } });
+  const v = (id: string): Verdict => ({ id, scenario: 'S1', kind: 'check', requirements: [], source: 'inferred', observed: 'mismatch', class: 'app_defect_candidate', reproduction: 'reproduced' });
+  assert.equal(systemVerdict(p, v('S1.C8')).level, 'bug_high');
+  assert.equal(systemVerdict(p, v('S1.C9')).level, 'bug_medium');
+  assert.equal(systemVerdict(p, v('S1.C10')).level, 'bug_medium', '같은 대상·같은 시점 재비교는 관계 비교가 아니다');
+  assert.equal(systemVerdict(p, { ...v('S1.C8'), class: 'not_applicable' }).level, 'hold');
+});

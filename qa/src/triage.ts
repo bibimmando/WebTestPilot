@@ -15,7 +15,7 @@ const EVIDENCE_CHARS = 30_000;
 const MIN_QUOTE = 6;
 
 export type Class = 'passed' | 'passed_inferred' | 'passed_observed' | 'mismatch' | 'not_run' | 'invalid' | 'uncertain_execution'
-  | 'precondition_failed'
+  | 'precondition_failed' | 'not_applicable'
   | 'needs_triage' | 'app_defect_candidate' | 'automation_failure' | 'uncertain';
 export type Quote = { file: string; text: string };
 export type Verdict = {
@@ -60,8 +60,10 @@ export function preclassify(plan: Plan, run: RunResult): Verdict[] {
         const st = r.steps.find(y => y.id === x.id)!;
         if (st.status === 'not_executed' || st.status === 'uncertain_execution') {
           cause ??= st.id;
+          // 복제 실행(C4)에서 이름으로 고정한 대상이 없으면, 페이지마다 다른 이름인지 요소 누락인지 모른다. 숨기지 않고 판단 보류로 둔다(AI 분류는 하지 않음).
+          const missing = s.variantOf && st.reason === 'target_changed' && st.count === 0 && byName(plan, st.id && s.steps.find(y => y.id === st.id)?.target);
           out.push({ id: st.id, scenario: s.id, kind: 'act', requirements: s.covers, observed: [st.status, st.reason, st.count].filter(v => v !== undefined).join(':'),
-            ...(st.error ? { error: st.error } : {}), class: st.status === 'uncertain_execution' ? 'uncertain_execution' : 'needs_triage' });
+            ...(st.error ? { error: st.error } : {}), class: missing ? 'not_applicable' : st.status === 'uncertain_execution' ? 'uncertain_execution' : 'needs_triage' });
         }
       } else {
         const c = s.checks.find(y => y.id === x.id)!;
@@ -75,6 +77,9 @@ export function preclassify(plan: Plan, run: RunResult): Verdict[] {
           cause ??= c.id;
           out.push({ ...base, observed: `precondition:${[res.status, res.count].filter(v => v !== undefined).join(':')}`, class: 'precondition_failed' });
         }
+        // 복제 실행에서 이름으로 고정한 대상이 그 페이지에 없으면(개수 읽기 제외) 판단 보류. 구조로 고정한 대상이 없으면 요소 누락일 수 있어 그대로 불일치로 둔다.
+        // visible은 대상이 없어도 "false"로 읽히므로 여기서 가른다. 원래 결과(observed)는 바꾸지 않는다.
+        else if (s.variantOf && res.count === 0 && c.read !== 'count' && byName(plan, c.target)) out.push({ ...base, observed: res.status === 'mismatch' ? 'mismatch' : [res.status, res.count].join(':'), class: 'not_applicable' });
         else if (res.status === 'mismatch') out.push({ ...base, observed: 'mismatch', class: 'mismatch' });
         else {
           if (res.status === 'error') cause ??= c.id;
@@ -85,6 +90,9 @@ export function preclassify(plan: Plan, run: RunResult): Verdict[] {
   }
   return out;
 }
+
+/** 이름·텍스트로 신원을 정한 대상인가(페이지마다 이름이 다를 수 있다). 역할·라벨 영역·순서로 정한 대상은 구조 대상이다. */
+const byName = (plan: Plan, id?: string) => { const t = id ? plan.targets[id]?.target : undefined; return !!t && t.anchor === undefined && (t.name !== undefined || t.text !== undefined); };
 
 const origin = (c: Plan['scenarios'][number]['checks'][number]) =>
   ({ source: c.source.kind, requirements: c.source.kind === 'requirement' && c.source.id ? [c.source.id] : [] });
@@ -273,6 +281,7 @@ export function systemVerdict(plan: Plan, v: Verdict): NonNullable<Verdict['syst
   const incomplete = (reason: string) => ({ level: 'incomplete' as const, reason });
   if (v.class === 'passed' || v.class === 'passed_inferred' || v.class === 'passed_observed') return { level: 'not_bug', reason: '검사 통과' };
   if (v.class === 'automation_failure') return { level: 'not_bug', reason: '자동화 실패로 분류(원래 결과는 보존)' };
+  if (v.class === 'not_applicable') return { level: 'hold', reason: '같은 템플릿 다른 페이지에서 이름으로 고정한 대상이 없음: 페이지마다 다른 이름인지 요소 누락인지 사람이 확인' };
   if (v.class !== 'app_defect_candidate') return incomplete(({ invalid: '무효 시나리오', not_run: `실행 안 됨(원인 ${v.cause ?? '알 수 없음'})`,
     uncertain_execution: '실행 여부 불명확', precondition_failed: '시작 조건 준비 실패', uncertain: 'AI 분류가 판단 불가',
     mismatch: '분류 미완료', needs_triage: '분류 미완료' } as Partial<Record<Class, string>>)[v.class] ?? v.class);
@@ -285,7 +294,13 @@ export function systemVerdict(plan: Plan, v: Verdict): NonNullable<Verdict['syst
   // 행동 실패(대상 사라짐 등)는 규칙 근거가 없다. 앱 변경인지 결함인지 사람이 볼 항목으로 둔다.
   if (v.kind !== 'check') return { level: 'hold', reason: `행동 실패가 재현됨(${v.observed}). 의도된 변경인지 근거 없음` };
   const c = plan.scenarios.flatMap(s => s.checks).find(x => x.id === v.id);
-  return { level: 'bug_medium', reason: `일반 규칙 ${c?.source.rule ?? '?'} 위반, 재현됨 (Q22 팀 확인 전 상한)` };
+  // 결정적 관계 규칙: 화면에서 읽은 두 값을 하네스가 비교했다. AI는 규칙을 골랐을 뿐 판정은 값 비교가 정했다(Q22 제한 승인).
+  // 같은 값 비교(equals·same_number)이고, 참조한 값이 다른 대상이거나 다른 시점에서 읽힌 경우에만 관계 비교로 인정한다(같은 요소 별칭 재비교 방지).
+  const ref = c?.expected_from ? plan.scenarios.flatMap(s => s.checks).find(x => x.id === c.expected_from) : undefined;
+  const relation = !!ref && (c!.op === 'equals' || c!.op === 'same_number')
+    && (ref.after !== c!.after || JSON.stringify(plan.targets[ref.target ?? '']?.target) !== JSON.stringify(plan.targets[c!.target ?? '']?.target));
+  if (ruleOf(c?.source.rule)?.deterministic && relation) return { level: 'bug_high', reason: `결정적 관계 비교(규칙 ${c!.source.rule}) 위반, 재현됨` };
+  return { level: 'bug_medium', reason: `일반 규칙 ${c?.source.rule ?? '?'} 위반, 재현됨 (일반 규칙 상한)` };
 }
 
 const isCandidate = (v: Verdict) => v.observed === 'mismatch' || v.class === 'app_defect_candidate';
@@ -308,7 +323,9 @@ function signature(r: ScenarioResult, v: Verdict, relative = false): string {
 
 export type Judgment = { file: string; verdicts: Verdict[]; requirements: { id: string; plan: string; classes: Partial<Record<Class, number>> }[];
   /** 시스템 판정 집계. 요구사항 검사 · 자율 검사 · 준비 확인(선행조건)을 나눈다 */
-  system: Record<'requirement' | 'autonomous' | 'preparation', Partial<Record<SystemLevel, number>>>;
+  system: Record<'requirement' | 'autonomous' | 'preparation' | 'variant', Partial<Record<SystemLevel, number>>>;
+  /** C4 복제 기록(만든 복제, 뺀 검사, 복제하지 않은 사유) */
+  variants: NonNullable<Plan['variants']>;
   /** 기능(F#)별 계획 여부와 판정 집계(준비 확인 제외), 걸린 질문 */
   features: { id: string; plan: 'planned' | 'unplanned' | 'missing'; system: Partial<Record<SystemLevel, number>>; questions: string[] }[];
   /** 답을 받지 못한 업무 규칙 질문. 관련 기능은 판단 보류 */
@@ -327,7 +344,8 @@ export async function judge(o: { plan: Plan; run: RunResult; send: Send; model: 
   const verdicts = preclassify(o.plan, o.run);
   const checks = new Map(o.plan.scenarios.flatMap(s => s.checks.map(c => [c.id, c] as const)));
   const reqIds = new Set(o.plan.requirements.map(r => r.id));
-  const groupOf = (v: Verdict) => checks.get(v.id)?.precondition ? 'preparation' as const
+  const variantIds = new Set(o.plan.scenarios.filter(s => s.variantOf).map(s => s.id));
+  const groupOf = (v: Verdict) => variantIds.has(v.scenario) ? 'variant' as const : checks.get(v.id)?.precondition ? 'preparation' as const
     : v.requirements.some(r => reqIds.has(r)) ? 'requirement' as const : 'autonomous' as const;
   const count = (vs: Verdict[]) => { const n: Partial<Record<SystemLevel, number>> = {}; for (const v of vs) if (v.system) n[v.system.level] = (n[v.system.level] ?? 0) + 1; return n; };
   const judgment = (stage: string): Judgment & { stage: string } => ({ file, stage, verdicts, requirements: o.run.requirements.map(r => {
@@ -336,7 +354,8 @@ export async function judge(o: { plan: Plan; run: RunResult; send: Send; model: 
     return { id: r.id, plan: r.plan, classes };
   }),
   system: { requirement: count(verdicts.filter(v => groupOf(v) === 'requirement')), autonomous: count(verdicts.filter(v => groupOf(v) === 'autonomous')),
-    preparation: count(verdicts.filter(v => groupOf(v) === 'preparation')) },
+    preparation: count(verdicts.filter(v => groupOf(v) === 'preparation')), variant: count(verdicts.filter(v => groupOf(v) === 'variant')) },
+  variants: o.plan.variants ?? [],
   // M3 이전에 저장한 계획에는 features·questions가 없다.
   features: (o.plan.features ?? []).map(f => {
     const scenarios = new Set(o.plan.scenarios.filter(s => s.covers.includes(f.id)).map(s => s.id));

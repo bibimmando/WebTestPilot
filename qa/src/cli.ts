@@ -22,6 +22,8 @@ const { values: a } = parseArgs({ options: {
   'max-turns': { type: 'string', default: '40' }, 'allow-writes': { type: 'boolean', default: false },
   // 여러 페이지 종류가 있는 사이트: 사이트 지도 방문 한도, 탐색할 페이지 종류 수, 종류마다 대화 턴 수
   'max-pages': { type: 'string', default: '30' }, 'max-templates': { type: 'string', default: '8' }, 'turns-per-template': { type: 'string', default: '25' },
+  // 같은 템플릿에서 계획을 실행할 페이지 수(대표 포함, C4)
+  'pages-per-template': { type: 'string', default: '3' },
 } });
 if (!a.url || !a.budget) {
   console.error('사용법: node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] --budget <USD> [--name 이름]');
@@ -45,6 +47,10 @@ const send: Send = async req => {
   }
 };
 
+// 숫자 옵션은 양의 정수여야 한다(NaN이면 한도가 작동하지 않는다).
+for (const k of ['max-turns', 'max-pages', 'max-templates', 'turns-per-template', 'pages-per-template'] as const) {
+  if (!Number.isInteger(Number(a[k])) || Number(a[k]) < 1) { console.error(`--${k}는 1 이상의 정수여야 한다: ${a[k]}`); process.exit(2); }
+}
 const requirements: Requirement[] = a.requirements ? JSON.parse(readFileSync(a.requirements, 'utf8').replace(/^﻿/, '')) : [];  // 요구사항은 선택 입력(설계 3.3)
 const policy = { origins: a.origins ? a.origins.split(',') : [new URL(a.url).origin], allowWrites: a['allow-writes'] };
 const budget = new Budget(Number(a.budget));
@@ -60,7 +66,7 @@ const browser = await chromium.launch();
 let summary: Record<string, unknown> = {};
 try {
   const e = await explore({ browser, policy, startUrl: a.url, requirements, send, model: a['plan-model']!, budget, maxTurns: Number(a['max-turns']),
-    maxPages: Number(a['max-pages']), maxTemplates: Number(a['max-templates']), turnsPerTemplate: Number(a['turns-per-template']) });
+    maxPages: Number(a['max-pages']), maxTemplates: Number(a['max-templates']), turnsPerTemplate: Number(a['turns-per-template']), pagesPerTemplate: Number(a['pages-per-template']) });
   timing.explore = Date.now() - t0;
   save('explore.json', { stop: e.stop, detail: e.detail, blocked: e.blocked, violations: e.violations, sitemap: e.sitemap, conversations: e.conversations, turns: e.turns });
   summary = { explore: { stop: e.stop, detail: e.detail, turns: e.turns.length, spentUsd: budget.spent, conversations: e.conversations,

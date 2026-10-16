@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { runPlan } from '../src/run.ts';
 import { specFor, sequence } from '../src/generate.ts';
 import { reconcile, type Entry } from '../src/reconcile.ts';
-import type { Plan } from '../src/plan.ts';
-import { preclassify } from '../src/triage.ts';
+import { cloneScenarios, validate, type Plan } from '../src/plan.ts';
+import { preclassify, systemVerdict } from '../src/triage.ts';
 
 let server: Server | undefined;
 let origin = '';
@@ -255,4 +255,48 @@ test('reconcile·1차 분류: 관측 참조는 정상적으로 읽은 값만 쓰
   const startFailed = reconcile(p, [e('start', 'S1', { status: 'failed' }), policyOk('S1')]);
   const v = preclassify({ ...p, scenarios: [s] }, { runDir: '', exitCode: 1, problems: [], requirements: [], scenarios: [startFailed.scenarios[0]] });
   assert.deepEqual(v.filter(x => x.kind === 'check').map(x => x.class), ['not_run', 'not_run', 'not_run'], JSON.stringify(v));
+});
+
+test('C4: 같은 템플릿 다른 페이지에서 계획을 실행하고, 대상이 없으면 결함이 아니라 적용 불가로 남긴다', async () => {
+  const a = `${origin}/item/a.html`;
+  const why = { kind: 'inferred' as const, rule: 'no-error-page', quote: '상품 상세 주소가 오류 없이 열린다' };
+  const base: Plan = {
+    version: 1, observations: [], features: [{ id: 'F1', name: '상품 상세', page: a }], questions: [],
+    requirements: [],
+    targets: {
+      T1: { target: { role: 'heading' }, group: false, url: a },
+      T2: { target: { role: 'heading', name: '^상품 A$' }, group: false, url: a },
+      T3: { target: { role: 'button' }, group: false, url: a },
+    },
+    scenarios: [
+      { id: 'S1', title: '제목 있음', covers: ['F1'], start: { url: a }, steps: [], checks: [
+        { id: 'S1.C1', after: 'start', target: 'T1', read: 'text', op: 'equals', expected: '상품 A', source: { kind: 'observed' }, precondition: true },
+        { id: 'S1.C2', after: 'start', read: 'url', op: 'contains', expected: '/item/', source: why },
+      ] },
+      { id: 'S2', title: '이름으로 고정한 제목', covers: ['F1'], start: { url: a }, steps: [], checks: [
+        { id: 'S2.C1', after: 'start', target: 'T2', read: 'visible', op: 'equals', expected: 'true', source: why },
+        { id: 'S2.C2', after: 'start', target: 'T3', read: 'visible', op: 'equals', expected: 'true', source: why },
+      ] },
+      { id: 'S5', title: '요구사항 고정값만', covers: ['F1'], start: { url: a }, steps: [], checks: [
+        { id: 'S5.C1', after: 'start', target: 'T1', read: 'text', op: 'equals', expected: '상품 A', source: { kind: 'constraint', quote: '상품 A' } },
+      ] },
+    ],
+    unplanned: [],
+  };
+  const b = `${origin}/item/b.html`;
+  const p = cloneScenarios(base, { S1: [b], S2: [b], S5: [b] });
+  assert.deepEqual(p.scenarios.map(s => [s.id, s.variantOf ?? '', s.start.url.replace(origin, '')]),
+    [['S1', '', '/item/a.html'], ['S2', '', '/item/a.html'], ['S5', '', '/item/a.html'], ['S6', 'S1', '/item/b.html'], ['S7', 'S2', '/item/b.html']]);
+  assert.deepEqual([p.scenarios[3].checks[0].op, p.scenarios[3].checks[0].precondition], ['record', undefined], '대표 페이지에서 본 값은 기록만 한다');
+  assert.deepEqual(p.variants!.find(x => x.from === 'S5'), { from: 'S5', url: b, dropped: ['S5.C1: 페이지마다 다를 수 있는 화면 제약 고정값'], skipped: '규칙 근거 검사가 남지 않음' },
+    '복제하지 않은 사유와 뺀 검사를 남긴다');
+  const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir('c4'), timeoutMs: 1500 });
+  const s6 = r.scenarios.find(s => s.id === 'S6')!;
+  assert.deepEqual(s6.checks.map(c => c.status), ['passed', 'passed'], JSON.stringify(s6));
+  const v = Object.fromEntries(preclassify(p, r).map(x => [x.id, x]));
+  assert.equal(v['S7.C1'].class, 'not_applicable', '이름으로 고정한 대상이 다른 페이지에 없으면 판단 보류');
+  assert.equal(v['S7.C2'].class, 'mismatch', '구조로 고정한 대상이 없으면 요소 누락일 수 있어 숨기지 않는다');
+  assert.equal(systemVerdict(p, v['S7.C1']).level, 'hold');
+  assert.deepEqual(validate({ ...p, scenarios: [{ ...p.scenarios[0], id: 'S9', variantOf: 'S99' }] }, [], new Map(Object.entries(p.targets)), [origin])
+    .filter(e => e.includes('variantOf')).length, 1, '원본 없는 복제 표식은 거부한다');
 });

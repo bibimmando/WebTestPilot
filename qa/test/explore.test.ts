@@ -4,7 +4,7 @@ import { createServer, type Server } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { chromium, type Browser } from 'playwright';
 import type Anthropic from '@anthropic-ai/sdk';
-import { explore } from '../src/explore.ts';
+import { explore, otherPages } from '../src/explore.ts';
 import { Budget, type Send } from '../src/agent.ts';
 import { validate, type Draft } from '../src/plan.ts';
 
@@ -307,4 +307,15 @@ test('여러 페이지 사이트: 사이트 지도를 만들고 페이지 종류
     requirements: [], send, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20, maxTemplates: 2 });
   assert.deepEqual(limited.conversations.map(c => [c.template.replace(origin, ''), c.stop, c.detail ?? '']).at(-1), ['/cart.html', 'not_attempted', '페이지 종류 수 한도(2)']);
   assert.equal(limited.complete, false, '시도하지 않은 페이지 종류가 있으면 완료가 아니다');
+});
+
+test('C4 페이지 고르기: 경로만 다른 템플릿에서 방문한 페이지를 먼저, 쿼리만 다른 페이지는 고르지 않는다', () => {
+  const o = 'http://x.test';
+  const map = { visited: [`${o}/p/a`, `${o}/p/c`, `${o}/list`], unvisited: [], failed: [],
+    templates: [{ key: `${o}/p/:x`, pages: [`${o}/p/a`, `${o}/p/b`, `${o}/p/c`, `${o}/p/a?x=1`] }, { key: `${o}/list`, pages: [`${o}/list`, `${o}/list?s=1`] }] };
+  const plan = { scenarios: [{ id: 'S1', start: { url: `${o}/p/a` } }, { id: 'S2', start: { url: `${o}/list` } }] } as any;
+  assert.deepEqual(otherPages(plan, map, 3), { S1: [`${o}/p/c`, `${o}/p/b`] }, '대표 포함 3페이지');
+  // 같은 템플릿에서 시작 페이지가 둘이면 합쳐서 3페이지가 되도록 하나만 더 고르고, 두 시나리오가 같은 페이지를 쓴다.
+  const two = { scenarios: [{ id: 'S1', start: { url: `${o}/p/a` } }, { id: 'S3', start: { url: `${o}/p/b` } }] } as any;
+  assert.deepEqual(otherPages(two, map, 3), { S1: [`${o}/p/c`], S3: [`${o}/p/c`] });
 });
