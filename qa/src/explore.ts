@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import type { Browser, Page } from 'playwright';
 import type Anthropic from '@anthropic-ai/sdk';
 import { openContext, snapshot, resolveRef, resolveGroup, resolveText, resolvePosition, settle, stableOnReload, type Policy } from './browser.ts';
-import { validate, freeze, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
+import { validate, freeze, startTargetsElsewhere, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
 import { rulesText } from './rules.ts';
 import { runAgent, type AgentResult, type Budget, type Send, type Tool } from './agent.ts';
 
@@ -12,6 +12,7 @@ const SNAPSHOT_CHARS = 24_000;
 const ACTION_TIMEOUT = 5_000;
 const SETTLE_TIMEOUT = 3_000;
 const MAX_QUESTIONS = 5;
+const MAX_START_CHECKS = 20;
 
 export type ExploreResult = AgentResult & { plan?: Plan; blocked: string[]; violations: string[] };
 type Task = { policy: Policy; startUrl: string; requirements: Requirement[] };
@@ -72,13 +73,27 @@ export function exploreTools(page: Page, o: Task, violations: string[]): Tool[] 
     run: async (draft: Draft) => {
       if (violations.length) return { text: `정책 위반이 있어 계획을 받을 수 없다: ${violations.join(', ')}`, isError: true };
       let errors: string[];
-      try { errors = validate(draft, o.requirements, pinned, o.policy.origins, seen.join('\n')); } catch (e) {
+      const check = (onStart?: Set<string>) => validate(draft, o.requirements, pinned, o.policy.origins, seen.join('\n'), onStart);
+      try { errors = check(); } catch (e) {
         return { text: `계획 형식 오류: ${(e as Error).message}`, isError: true };
+      }
+      // 다른 페이지에서 pin한 시작 상태 대상은 시작 URL을 새로 열어 실제로 있는지 확인한다(같은 템플릿의 다른 쿼리 등).
+      // 다른 오류가 없을 때만 연다. 그룹은 다른 목록과 섞여도 "하나 이상"으로 통과하므로 제외해 시작 페이지 pin을 요구한다.
+      const onStart = new Set<string>();
+      if (errors.length && errors.every(e => e.includes('not on the start page'))) {
+        for (const { id, url } of startTargetsElsewhere(draft, pinned).slice(0, MAX_START_CHECKS)) {
+          const p = pinned.get(id)!;
+          const ok = !p.group && o.policy.origins.includes(new URL(url).origin)
+            && await stableOnReload(page, p.target, false, SETTLE_TIMEOUT, url).catch(() => false);
+          if (violations.length) return { text: `시작 페이지 확인 중 정책 위반: ${violations.join(', ')}`, isError: true };
+          if (ok) onStart.add(`${id} ${url}`);
+        }
+        errors = check(onStart);
       }
       const declared = new Set((draft.features ?? []).map(f => f.id));
       for (const q of questions) if (q.feature && !declared.has(q.feature)) errors.push(`question ${q.id}: feature ${q.feature} is not in features`);
       if (errors.length) return { text: `계획을 고쳐서 다시 제출하세요:\n- ${errors.join('\n- ')}`, isError: true };
-      return { text: '계획을 받았습니다.', done: freeze(draft, o.requirements, pinned, questions) };
+      return { text: '계획을 받았습니다.', done: freeze(draft, o.requirements, pinned, questions, [...onStart]) };
     },
   }];
 }

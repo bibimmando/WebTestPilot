@@ -20,7 +20,7 @@ export type RunResult = Reconciled & { runDir: string; exitCode: number | null }
 /** only를 주면 그 시나리오만 실행한다 (재현용). 대조는 전체 plan으로 하므로 나머지는 not_run이다. */
 export async function runPlan(o: { plan: Plan; policy: Policy; runDir: string; timeoutMs?: number; only?: string[] }): Promise<RunResult> {
   if (existsSync(o.runDir)) throw new Error(`실행 폴더가 이미 있음 (덮어쓰지 않음): ${o.runDir}`);
-  const errors = validate(o.plan, o.plan.requirements, new Map(Object.entries(o.plan.targets)), o.policy.origins);
+  const errors = validate(o.plan, o.plan.requirements, new Map(Object.entries(o.plan.targets)), o.policy.origins, undefined, new Set(o.plan.startVerified ?? []));
   if (errors.length) throw new Error(`plan이 계약을 통과하지 못함:\n- ${errors.join('\n- ')}`);
   mkdirSync(join(o.runDir, 'specs'), { recursive: true });
   mkdirSync(join(o.runDir, 'src'));

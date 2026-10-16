@@ -184,10 +184,10 @@ export async function resolvePosition(page: Page, ref: string): Promise<Resolved
  * 고정한 대상이 같은 URL을 새로 열어도 있는지 확인한다. 새로고침마다 바뀌는 영역의 요소는 재실행에서 사라진다.
  * shortcut: 한 번만 다시 연다. 우연히 같은 항목이 다시 나오면 놓친다. 오탐이 보이면 횟수를 늘린다.
  */
-export async function stableOnReload(page: Page, t: Target, group: boolean, timeoutMs: number): Promise<boolean> {
+export async function stableOnReload(page: Page, t: Target, group: boolean, timeoutMs: number, url = page.url()): Promise<boolean> {
   const fresh = await page.context().newPage();
   try {
-    await fresh.goto(page.url());
+    await fresh.goto(url, { timeout: timeoutMs * 3 });
     await settle(fresh, timeoutMs);
     const n = await toLocator(fresh, t).count();
     return group ? n > 0 : n === 1 && !(await shapeChanged(fresh, t));

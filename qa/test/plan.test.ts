@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validate, freeze, compareValues, numberIn, expectedFrom, type Draft, type Pinned, type Requirement } from '../src/plan.ts';
+import { validate, freeze, compareValues, numberIn, expectedFrom, startTargetsElsewhere, type Draft, type Pinned, type Requirement } from '../src/plan.ts';
 
 const origin = 'http://app.test';
 const reqs: Requirement[] = [
@@ -223,4 +223,14 @@ test('규칙별 비교 형태: 관찰한 결함 값을 규칙 ID만 붙여 정�
   assert.ok(errorsOf(d => { d.scenarios[0].checks.push(start, { ...after, op: 'equals', expected: '0', source: rule('quantity-bounds') }); }).some(e => e.includes('use op less or greater')));
   assert.ok(errorsOf(d => { d.scenarios[0].checks.push(start, { ...after, expected_from: 'S1.C2', offset: 1, source: { kind: 'inferred', rule: 'step-by-one' } }); }).some(e => e.includes('explaining why')));
   assert.equal(expectedFrom({ ...after, expected_from: 'S1.C2', offset: 1, source: rule('step-by-one') }, '장바구니 (0)'), '장바구니 (1)');
+});
+
+test('시작 상태 대상: 다른 URL에서 pin했어도 시작 URL을 새로 열어 있음을 확인했으면 받는다', () => {
+  const other = new Map(pins);
+  other.set('T2', { ...pins.get('T2')!, url: origin + '/p?sort=desc' });
+  const d = good();
+  d.scenarios[0].checks[0].after = 'start';
+  assert.deepEqual(startTargetsElsewhere(d, other), [{ id: 'T2', url: origin + '/p' }]);
+  assert.ok(validate(d, reqs, other, [origin]).some(e => e.includes('not on the start page')));
+  assert.deepEqual(validate(d, reqs, other, [origin], undefined, new Set([`T2 ${origin}/p`])), []);
 });

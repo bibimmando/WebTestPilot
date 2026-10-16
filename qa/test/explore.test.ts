@@ -6,7 +6,7 @@ import { chromium, type Browser } from 'playwright';
 import type Anthropic from '@anthropic-ai/sdk';
 import { explore } from '../src/explore.ts';
 import { Budget, type Send } from '../src/agent.ts';
-import type { Draft } from '../src/plan.ts';
+import { validate, type Draft } from '../src/plan.ts';
 
 let browser: Browser | undefined;
 let server: Server | undefined;
@@ -19,7 +19,7 @@ before(async () => {
     if (req.method !== 'GET') { posts.push(`${req.method} ${req.url}`); return res.end('ok'); }
     try {
       res.setHeader('content-type', 'text/html; charset=utf-8');
-      res.end(await readFile(new URL(`./fixtures${req.url}`, import.meta.url)));
+      res.end(await readFile(new URL(`./fixtures${new URL(req.url!, "http://x").pathname}`, import.meta.url)));
     } catch { res.statusCode = 404; res.end(); }
   });
   await new Promise<void>(r => server!.listen(0, '127.0.0.1', r));
@@ -242,4 +242,29 @@ test('요구사항 없이: 일반 규칙 목록을 받고, 기능(F#) 계획과 
   assert.deepEqual(r.plan!.features.map(f => f.id), ['F1']);
   assert.deepEqual(r.plan!.questions[0], { id: 'Q1', page: origin + '/list.html', question: '장바구니 수량에 상한이 있나요?', options: ['있다', '없다'], feature: 'F1' });
   assert.deepEqual(r.plan!.questions.map(q => q.overLimit ?? false), [false, false, false, false, false, true], '한도를 넘은 질문도 규칙 미확인으로 남긴다');
+});
+
+test('다른 쿼리에서 pin한 시작 대상은 시작 URL을 새로 열어 확인하고, 그 확인은 계획에 남아 실행 검증도 통과한다', async () => {
+  const r = await run('/list.html?sort=1', [], [
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [
+      { name: 'pin', input: { ref: ref(snap, 'button "담기"', 16), group: false } },
+      { name: 'pin', input: { ref: ref(snap, '- banner'), group: false, text: '장바구니 (0)' } },
+      { name: 'pin', input: { ref: ref(snap, '- listitem'), group: true } },
+    ],
+    () => [{ name: 'submit_plan', input: {
+      features: [{ id: 'F1', name: '담기', page: origin + '/list.html' }],
+      scenarios: [{ id: 'S1', title: '담기', covers: ['F1'], start: { url: origin + '/list.html' },
+        steps: [{ id: 'S1.A1', op: 'click', target: 'T1' }],
+        checks: [
+          { id: 'S1.C1', after: 'start', target: 'T2', read: 'text', op: 'equals', expected: '장바구니 (0)', source: { kind: 'observed' }, precondition: true },
+          { id: 'S1.C2', after: 'S1.A1', target: 'T2', read: 'text', op: 'equals', expected_from: 'S1.C1', offset: 1,
+            source: { kind: 'inferred', rule: 'step-by-one', quote: '담기를 한 번 누르면 개수가 하나 는다' } },
+        ] }],
+      unplanned: [],
+    } satisfies Draft }],
+  ]);
+  assert.equal(r.stop, 'done', JSON.stringify(r.messages.at(-1)).slice(0, 800));
+  assert.deepEqual(r.plan!.startVerified!.sort(), [`T1 ${origin}/list.html`, `T2 ${origin}/list.html`]);
+  assert.deepEqual(validate(r.plan!, r.plan!.requirements, new Map(Object.entries(r.plan!.targets)), [origin], undefined, new Set(r.plan!.startVerified)), []);
 });

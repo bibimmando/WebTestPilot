@@ -48,6 +48,8 @@ export type Plan = {
   unplanned: Draft['unplanned'];
   observations: Observation[];
   questions: Question[];
+  /** 탐색 때 시작 URL을 새로 열어 있음을 확인한 "대상ID 시작URL" 쌍. 실행 단계의 재검증도 같은 계약을 쓴다 */
+  startVerified?: string[];
   targets: Record<string, Pinned>;
 };
 
@@ -151,7 +153,10 @@ function shapeErrors(d: any): string[] {
  * Draft를 검사해 오류 목록을 돌려준다. 오류가 없으면 계획으로 고정할 수 있다.
  * seenText를 주면(탐색 중 본 snapshot 텍스트) constraint 인용이 실제로 화면에 있었는지 확인한다.
  */
-export function validate(draft: Draft, requirements: Requirement[], pinned: Map<string, Pinned>, origins: string[], seenText?: string): string[] {
+/**
+ * onStart: 다른 페이지에서 pin했지만 시작 URL을 새로 열어 그 대상이 있음을 확인한 "대상ID 시작URL" 쌍. 시작 페이지 pin 규칙을 대신한다.
+ */
+export function validate(draft: Draft, requirements: Requirement[], pinned: Map<string, Pinned>, origins: string[], seenText?: string, onStart?: Set<string>): string[] {
   const shape = shapeErrors(draft);
   if (shape.length) return shape;
   const errors: string[] = [];
@@ -231,7 +236,7 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
     const p = pinned.get(id);
     if (!p) return errors.push(`${owner}: target "${id}" was not pinned`);
     if (p.group !== group) errors.push(`${owner}: target "${id}" ${group ? 'must be pinned as a group for count/items' : 'is a group; pin a single element'}`);
-    if (startUrl && page(p.url) !== page(startUrl)) errors.push(`${owner}: target "${id}" was pinned on ${p.url}, not on the start page ${startUrl}`);
+    if (startUrl && page(p.url) !== page(startUrl) && !onStart?.has(`${id} ${startUrl}`)) errors.push(`${owner}: target "${id}" was pinned on ${p.url}, not on the start page ${startUrl}`);
   }
 
   function checkRead(c: Check, s: Scenario) {
@@ -294,15 +299,28 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
 }
 
 /** 검증된 Draft를 실행 가능한 Plan으로 고정한다. 대화 기록과 객체를 공유하지 않도록 복사하고, 쓰이지 않은 pin은 버린다. */
-export function freeze(draft: Draft, requirements: Requirement[], pinned: Map<string, Pinned>, questions: Question[] = []): Plan {
+export function freeze(draft: Draft, requirements: Requirement[], pinned: Map<string, Pinned>, questions: Question[] = [], startVerified: string[] = []): Plan {
   const used = new Set(draft.scenarios.flatMap(s => [...s.steps.map(st => st.target), ...s.checks.map(c => c.target)]));
   const targets = Object.fromEntries([...pinned].filter(([id]) => used.has(id)));
   return structuredClone({ version: 1 as const, requirements, features: draft.features ?? [], scenarios: draft.scenarios, unplanned: draft.unplanned,
-    observations: draft.observations ?? [], questions, targets });
+    observations: draft.observations ?? [], questions, ...(startVerified.length ? { startVerified } : {}), targets });
 }
 
 function sameOrigin(url: string, origins: string[]): boolean {
   try { return origins.includes(new URL(url).origin); } catch { return false; }
+}
+
+/** 시작 상태에서 쓰는 대상 중 시작 URL이 아닌 페이지에서 pin한 것: 시작 URL을 새로 열어 확인할 후보. */
+export function startTargetsElsewhere(draft: Draft, pinned: Map<string, Pinned>): { id: string; url: string }[] {
+  const out = new Map<string, { id: string; url: string }>();
+  for (const s of draft.scenarios ?? []) {
+    const ids = [s.steps?.[0]?.target, ...(s.checks ?? []).filter(c => c.after === 'start').map(c => c.target)];
+    for (const id of ids) {
+      const p = id ? pinned.get(id) : undefined;
+      if (id && p && page(p.url) !== page(s.start?.url ?? '')) out.set(`${id} ${s.start.url}`, { id, url: s.start.url });
+    }
+  }
+  return [...out.values()];
 }
 
 /** 같은 페이지인지 비교하기 위한 URL (hash 제외). */

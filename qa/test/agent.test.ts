@@ -61,3 +61,13 @@ test('예약은 남은 예산을 넘으면 거부하고, 모르는 모델은 정
   assert.throws(() => b.reserve({ ...req, max_tokens: 10_000 }), BudgetError);
   assert.throws(() => b.charge('claude-x', usage(1, 1)), BudgetError);
 });
+
+test('마지막 몇 턴에는 남은 턴 수를 알려 제출을 재촉한다', async () => {
+  const seen: string[] = [];
+  const click: Tool = { def: { name: 'click', input_schema: { type: 'object' } }, run: async () => ({ text: 'ok' }) };
+  const r = await runAgent({ send: async req => { seen.push(JSON.stringify(req.messages.at(-1))); return reply([use('click')]); },
+    model: 'claude-sonnet-5-5', system: 's', tools: [click], user: 'u', budget: new Budget(1), maxTurns: 8 });
+  assert.equal(r.stop, 'max_turns');
+  // 8턴이면 마지막 5턴부터 알린다: 3번째 응답 뒤(남은 5)부터
+  assert.deepEqual(seen.map(m => /남은 턴: (\d+)/.exec(m)?.[1] ?? '-'), ['-', '-', '-', '5', '4', '3', '2', '1']);
+});

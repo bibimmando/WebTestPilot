@@ -119,7 +119,11 @@ export async function runAgent(o: {
         return end('done', { result: outcome.done });
       }
     }
-    messages.push({ role: 'user', content: results });
+    // 남은 턴을 알려 준다. 모르면 마지막에야 제출해 거부된 계획을 고칠 턴이 남지 않는다(Maison 실측 2026-10-16).
+    const left = o.maxTurns - i - 1;
+    const notice: Anthropic.TextBlockParam[] = left <= Math.max(5, Math.floor(o.maxTurns * 0.2))
+      ? [{ type: 'text', text: `남은 턴: ${left}번. 제출이 거부되면 고칠 턴도 필요하니 지금 작업을 마무리해 제출하세요.` }] : [];
+    messages.push({ role: 'user', content: [...results, ...notice] });
   }
   return end('max_turns');
 }

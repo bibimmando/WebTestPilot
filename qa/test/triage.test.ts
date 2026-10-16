@@ -224,7 +224,8 @@ test('행동 기록: 입력 원문은 넘기지 않고, 그 항목 직전까지�
   const r = { id: 'S9', valid: true, invalid: [], start: 'ok' as const, precondition: 'none' as const, blocked: [], violations: [], checks: [],
     steps: steps.map(st => ({ id: st.id, status: 'ok' as const })) };
   const v = (id: string, kind: 'check' | 'act'): Verdict => ({ id, scenario: 'S9', kind, requirements: [], observed: 'mismatch', class: 'mismatch' });
-  const forCheck = actionsUpTo(s, v('S9.C1', 'check'), r);
+  const forCheck = actionsUpTo(s, v('S9.C1', 'check'), r, { T1: { target: { role: 'button', anchor: '^Quantity$', nth: 1, of: 2 }, group: false, url: 'http://x/' } });
+  assert.deepEqual((forCheck[1] as any).target, { role: 'button', anchor: '^Quantity$', nth: 1, of: 2 }, '계획된 대상 설명을 함께 준다');
   assert.deepEqual(forCheck.map(a => a.id), ['S9.A1', 'S9.A2', 'S9.A3'], '검사 뒤의 행동은 주지 않는다');
   assert.ok(!JSON.stringify(forCheck).includes('secret-password') && (forCheck[0] as any).valueLength === 15);
   const forLast = actionsUpTo(s, v('S9.A12', 'act'), r);

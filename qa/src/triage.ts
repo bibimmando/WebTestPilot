@@ -164,13 +164,15 @@ function evidenceFor(runDir: string, v: Verdict, r: ScenarioResult, plan: Plan):
  * 실패 항목까지의 행동 기록(최근 10개). 검사면 그 검사 직전 행동까지, 행동이면 그 행동까지.
  * fill의 입력 원문은 넘기지 않는다(비밀번호·토큰일 수 있다). 길이만 준다.
  */
-export function actionsUpTo(s: Plan['scenarios'][number], v: Verdict, r: ScenarioResult) {
+export function actionsUpTo(s: Plan['scenarios'][number], v: Verdict, r: ScenarioResult, targets: Plan['targets'] = {}) {
   const last = v.kind === 'act' ? v.id : v.kind === 'check' ? s.checks.find(c => c.id === v.id)?.after : 'start';
   const upTo = last === 'start' ? 0 : s.steps.findIndex(st => st.id === last) + 1;
   return s.steps.slice(0, upTo).slice(-10).map(st => {
     const res = r.steps.find(x => x.id === st.id);
     const value = st.value === undefined ? {} : st.op === 'fill' ? { valueLength: st.value.length } : { value: st.value };
-    return { id: st.id, op: st.op, ...value, status: res?.status ?? 'not_run',
+    // 계획된 대상 설명. 이름 없는 아이콘 버튼은 접근성 표현만으로 어느 버튼인지 모르므로, 라벨 영역·순서(anchor·nth·of)로 무엇을 눌렀는지 알린다.
+    const target = st.target ? targets[st.target]?.target : undefined;
+    return { id: st.id, op: st.op, ...value, ...(target ? { target } : {}), status: res?.status ?? 'not_run',
       pressed: res?.pressed ?? null, urlBefore: res?.urlBefore ?? null, urlAfter: res?.url ?? null };
   });
 }
@@ -213,7 +215,7 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
     `시작 화면: ${r.ready === false ? '기한 안에 멈추지 않음(로딩 중일 수 있음)' : '멈춘 뒤 기록'}, 선행조건 ${r.precondition}`,
     ...(comparison ? [`비교 기록: ${JSON.stringify(comparison)}`] : []),
     // 이 항목까지 실제로 한 행동: 누른 요소의 접근성 표현·화면 위치, 행동 전후 URL. 자동화가 다른 것을 눌렀는지 가르는 근거다.
-    `행동 기록: ${JSON.stringify(actionsUpTo(s, v, r))}`,
+    `행동 기록: ${JSON.stringify(actionsUpTo(s, v, r, plan.targets))}`,
     // 일반 규칙 근거면 규칙 본문·적용 조건·정상 예외를 함께 준다. 예외에 해당하면 결함이 아니다.
     ...(ruleOf(c?.source.rule) ? [`일반 규칙 ${c!.source.rule}: ${JSON.stringify(ruleOf(c!.source.rule))}`] : []),
     ...(v.error ? [`오류 원문: ${v.error}`] : []),
