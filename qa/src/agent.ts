@@ -3,7 +3,8 @@
 import type Anthropic from '@anthropic-ai/sdk';
 
 export type Send = (req: Anthropic.MessageCreateParamsNonStreaming) => Promise<Anthropic.Message>;
-export type ToolOutcome = { text: string; isError?: boolean; done?: unknown };
+/** stall: 탐색이 정체돼 대화를 끝낼 때 그 사유(완료가 아니라 미완료 사유로 남는다). */
+export type ToolOutcome = { text: string; isError?: boolean; done?: unknown; stall?: string };
 export type Tool = { def: Anthropic.Tool; run: (input: any) => Promise<ToolOutcome> };
 
 type Rate = { input: number; output: number; cacheRead?: number };
@@ -85,7 +86,7 @@ export class Budget {
 }
 
 export type AgentResult = {
-  stop: 'done' | 'no_submit' | 'max_turns' | 'budget' | 'refusal' | 'max_tokens' | 'error';
+  stop: 'done' | 'no_submit' | 'max_turns' | 'budget' | 'stalled' | 'refusal' | 'max_tokens' | 'error';
   result?: unknown;
   detail?: string;
   messages: Anthropic.MessageParam[];
@@ -144,6 +145,10 @@ export async function runAgent(o: {
       if (outcome.done !== undefined) {
         messages.push({ role: 'user', content: results });
         return end('done', { result: outcome.done });
+      }
+      if (outcome.stall) {
+        messages.push({ role: 'user', content: results });
+        return end('stalled', { detail: outcome.stall });
       }
     }
     // 남은 턴을 알려 준다. 모르면 마지막에야 제출해 거부된 계획을 고칠 턴이 남지 않는다(Maison 실측 2026-10-16).

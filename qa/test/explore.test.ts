@@ -389,3 +389,32 @@ test('C4 페이지 고르기: 경로만 다른 템플릿에서 방문한 페이�
   const two = { scenarios: [{ id: 'S1', start: { url: `${o}/p/a` } }, { id: 'S3', start: { url: `${o}/p/b` } }] } as any;
   assert.deepEqual(otherPages(two, map, 3), { S1: [`${o}/p/c`], S3: [`${o}/p/c`] });
 });
+
+test('정체 종료: 화면이 바뀌지 않는 행동이 이어지면 제출을 재촉하고, 더 이어지면 대화를 끝낸다', async () => {
+  const results: string[] = [];
+  const send: Send = async req => {
+    const last = req.messages.at(-1)!;
+    if (Array.isArray(last.content)) for (const b of last.content) if (b.type === 'tool_result') results.push(String(b.content));
+    // 처음엔 snapshot, 그다음부터는 아무 일도 일어나지 않는 제목을 계속 누른다.
+    const [name, input] = req.messages.length === 1 ? ['snapshot', {}] : ['click', { ref: ref(results[0], 'heading') }];
+    return { id: 'm', type: 'message', role: 'assistant', model: req.model, stop_reason: 'tool_use', stop_sequence: null,
+      content: [{ type: 'tool_use', id: `t${req.messages.length}`, name, input }],
+      usage: { input_tokens: 100, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } as unknown as Anthropic.Message;
+  };
+  const r = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/form.html',
+    requirements: [], send, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20 });
+  assert.deepEqual([r.stop, r.detail, r.conversations[0].stop, r.complete], ['stalled', '화면이 바뀌지 않는 행동 8번 연속', 'stalled', false]);
+  assert.match(results[1], /화면 변화 없음, 1번 연속/);
+  assert.ok(results[5].includes('계획을 제출하거나 다른 기능을 보세요') && !results[4].includes('계획을 제출하거나'), '5번째부터 제출을 재촉한다');
+  assert.equal(results.length, 8, '8번째 클릭에서 대화가 끝나 그 결과는 모델에 보내지 않는다(snapshot 1 + 클릭 7)');
+});
+
+test('기본 한도: 분류 몫을 남길 수 없거나 탐색 시간이 지나면 새 대화를 시작하지 않고 미완료로 남긴다', async () => {
+  const never: Send = async () => { throw new Error('호출하면 안 됨'); };
+  const base = { browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html', requirements: [], send: never, model: 'claude-opus-5-5', maxTurns: 20 };
+  const kept = await explore({ ...base, budget: new Budget(1), keepUsd: 1.5 });
+  assert.deepEqual([kept.stop, kept.detail, kept.plan, kept.complete], ['budget', '예산 한도(분류 몫 남김)', undefined, false]);
+  assert.ok(kept.conversations.every(c => c.stop === 'not_attempted' && c.detail === '예산 한도(분류 몫 남김)'), JSON.stringify(kept.conversations));
+  const late = await explore({ ...base, budget: new Budget(1), deadline: Date.now() - 1 });
+  assert.deepEqual([late.stop, late.detail], ['budget', '탐색 시간 한도']);
+});

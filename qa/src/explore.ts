@@ -6,7 +6,7 @@ import { openContext, snapshot, resolveRef, resolveGroup, resolveText, resolvePo
 import { validate, freeze, mergePlans, cloneScenarios, startTargetsElsewhere, READS, COMPARES, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
 import { rulesText } from './rules.ts';
 import { crawl, pathOf, type SiteMap, type Template } from './sitemap.ts';
-import { runAgent, type AgentResult, type Budget, type Send, type Tool } from './agent.ts';
+import { runAgent, type AgentResult, type Budget, type Send, type Tool, type ToolOutcome } from './agent.ts';
 
 export const SYSTEM = readFileSync(new URL('../prompts/explore.md', import.meta.url), 'utf8');
 const SNAPSHOT_CHARS = 24_000;
@@ -14,6 +14,10 @@ const ACTION_TIMEOUT = 5_000;
 const SETTLE_TIMEOUT = 3_000;
 const MAX_QUESTIONS = 5;
 const MAX_START_CHECKS = 20;
+// 정체 종료(설계 5장 2단계): 화면이 바뀌지 않는 행동이 이어지면 먼저 제출을 재촉하고, 더 이어지면 대화를 끝낸다.
+// 비활성 버튼·이미 선택된 탭처럼 변화 없는 행동도 정상 검사라 몇 번은 허용한다. shortcut: 값은 실측 전 임시값이다.
+const STALL_WARN = 5;
+const STALL_END = 8;
 
 /**
  * conversations: 발견한 모든 템플릿의 상태(계획함 · 계획 없이 끝남 · 시도 안 함과 사유). complete = 모든 템플릿을 계획함.
@@ -36,7 +40,11 @@ export type Scope = { map: SiteMap; template: Template; url: string; nextScenari
  * shortcut: 템플릿마다 대표 페이지 하나만 탐색한다(기준 실행). 같은 템플릿 다른 페이지 실행(C4)은 팀 확인 뒤.
  */
 export async function explore(o: Task & { browser: Browser; send: Send; model: string; budget: Budget; maxTurns: number;
-  maxPages?: number; maxTemplates?: number; turnsPerTemplate?: number; pagesPerTemplate?: number; concurrency?: number }): Promise<ExploreResult> {
+  maxPages?: number; maxTemplates?: number; turnsPerTemplate?: number; pagesPerTemplate?: number; concurrency?: number;
+  /** 이만큼은 분류·재현 몫으로 남기고, 남은 예산이 이보다 적으면 새 대화를 시작하지 않는다 */
+  keepUsd?: number;
+  /** 이 시각(epoch ms)이 지나면 새 대화를 시작하지 않는다. 진행 중인 대화는 끝까지 둔다 */
+  deadline?: number }): Promise<ExploreResult> {
   assertStartAllowed(o);
   // 사이트 지도는 쓰기 허용과 상관없이 읽기 전용으로 모은다. 페이지를 여는 것만으로 스크립트가 쓰기 요청을 보낼 수 있다.
   const reader = await openContext(o.browser, { ...o.policy, allowWrites: false });
@@ -92,6 +100,9 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
     const drain = async (queue: Job[]) => {
       const worker = async () => {
         for (let job = queue.shift(); job; job = queue.shift()) {
+          // 한도에 닿으면 새 대화를 시작하지 않고 남은 템플릿을 미완료로 남긴다(설계 5장 0단계).
+          stopped ??= o.deadline !== undefined && Date.now() > o.deadline ? '탐색 시간 한도'
+            : o.keepUsd !== undefined && o.budget.limitUsd - o.budget.spent - o.budget.held < o.keepUsd ? '예산 한도(분류 몫 남김)' : undefined;
           if (stopped) { done.push({ job, url: job.template.pages[0], result: undefined! }); continue; }
           done.push(await converse(job));
         }
@@ -119,7 +130,9 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
     const merged = plans.length ? (single ? plans[0] : { ...mergePlans(plans, o.requirements), questions }) : undefined;
     const tainted = !!merged && violations.length > 0;
     const plan = tainted ? undefined : merged && cloneScenarios(merged, otherPages(merged, map, o.pagesPerTemplate ?? 3));
-    return { ...last!, stop: plan ? 'done' : tainted ? 'error' : last!.stop, ...(tainted ? { detail: `정책 위반이 있어 계획을 버림: ${violations.join(', ')}` } : {}),
+    // 한도 때문에 대화를 하나도 시작하지 못했으면 한도 사유로 끝난다.
+    return { messages: [], ...last, stop: plan ? 'done' : tainted ? 'error' : last?.stop ?? 'budget',
+      ...(tainted ? { detail: `정책 위반이 있어 계획을 버림: ${violations.join(', ')}` } : last ? {} : { detail: stopped }),
       turns, plan, blocked, violations, sitemap: map, conversations,
       complete: (single ? [{ key: startKey ?? o.startUrl }] : ordered).every(t => conversations.some(c => c.template === t.key && c.planned)), exploredUrls: [...part.urls] };
   }
@@ -239,16 +252,23 @@ function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, v
   nextTarget: () => string, onUrl: (url: string) => void): Tool[] {
   // 마지막 이동 뒤 행동이 없으면 지금 화면은 URL만으로 다시 만들 수 있으므로, pin한 대상이 새로 열어도 있는지 확인한다.
   let acted = false;
-  const after = async (what: string) => {
+  // 화면 상태: URL과 ai 모드 접근성 트리. settle도 같은 모드로 찍으므로 모델이 받은 ref 표를 바꾸지 않는다.
+  const state = async () => `${page.url()}\n${await page.locator('body').ariaSnapshot({ mode: 'ai' }).catch(() => '')}`;
+  let still = 0;
+  const after = async (what: string, before: string): Promise<ToolOutcome> => {
     await settle(page, SETTLE_TIMEOUT);
     onUrl(page.url());
-    return `${what}. 현재 URL: ${page.url()}${violations.length ? `\n정책 위반: ${violations.join(', ')}` : ''}`;
+    still = (await state()) === before ? still + 1 : 0;
+    const text = `${what}${still ? ` (화면 변화 없음, ${still}번 연속)` : ''}. 현재 URL: ${page.url()}${violations.length ? `\n정책 위반: ${violations.join(', ')}` : ''}`;
+    if (still >= STALL_END) return { text, stall: `화면이 바뀌지 않는 행동 ${still}번 연속` };
+    if (still >= STALL_WARN) return { text: `${text}\n화면이 바뀌지 않는 행동이 이어집니다. 지금까지 찾은 기능으로 계획을 제출하거나 다른 기능을 보세요. ${STALL_END}번 연속이면 이 대화를 끝냅니다.` };
+    return { text };
   };
   const ref = { type: 'string', description: 'snapshot의 ref (예: e12)' } as const;
   const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[],
-    run: (input: any) => Promise<string>): Tool => ({
+    run: (input: any) => Promise<string | ToolOutcome>): Tool => ({
     def: { name, description, strict: true, input_schema: { type: 'object', properties, required, additionalProperties: false } },
-    run: async input => ({ text: await run(input) }),
+    run: async input => { const r = await run(input); return typeof r === 'string' ? { text: r } : r; },
   });
 
   return [
@@ -266,30 +286,35 @@ function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, v
       }),
     tool('navigate', '허용 origin 안의 URL로 이동한다.', { url: { type: 'string' } }, ['url'], async ({ url }) => {
       if (!policy.origins.includes(new URL(url, page.url()).origin)) throw new Error(`허용되지 않은 origin: ${url}`);
+      const before = await state();
       await page.goto(new URL(url, page.url()).href);
       acted = false;
-      return after('이동함');
+      return after('이동함', before);
     }),
     tool('click', '요소를 클릭한다.', { ref }, ['ref'], async ({ ref }) => {
       acted = true;
+      const before = await state();
       await page.getByRef(ref).click({ timeout: ACTION_TIMEOUT });
-      return after(`${ref} 클릭함`);
+      return after(`${ref} 클릭함`, before);
     }),
     tool('fill', '입력칸에 값을 채운다.', { ref, value: { type: 'string' } }, ['ref', 'value'], async ({ ref, value }) => {
       acted = true;
+      const before = await state();
       await page.getByRef(ref).fill(value, { timeout: ACTION_TIMEOUT });
-      return after(`${ref}에 입력함`);
+      return after(`${ref}에 입력함`, before);
     }),
     tool('select', '선택 상자에서 옵션을 고른다.', { ref, value: { type: 'string', description: '옵션 라벨' } }, ['ref', 'value'],
       async ({ ref, value }) => {
         acted = true;
+        const before = await state();
         await page.getByRef(ref).selectOption({ label: value }, { timeout: ACTION_TIMEOUT });
-        return after(`${ref}에서 선택함`);
+        return after(`${ref}에서 선택함`, before);
       }),
     tool('press', '키를 누른다 (예: Enter, Escape, Tab).', { key: { type: 'string' } }, ['key'], async ({ key }) => {
       acted = true;
+      const before = await state();
       await page.keyboard.press(key);
-      return after(`${key} 누름`);
+      return after(`${key} 누름`, before);
     }),
     tool('pin', '계획에 쓸 요소를 고정하고 대상 ID(T1 등)를 받는다. 개수를 세거나 항목들을 읽을 요소는 group=true. '
       + 'ref가 없는 텍스트(예: "- text: 합계 100원")는 그 줄을 담은 요소의 ref와 text로 고정한다. '

@@ -1,7 +1,7 @@
 // Claude API로 끝까지 실행: ① 탐색·계획(계획 모델) → ②③ spec 생성·실행·대조 → ④ 분류(분류 모델) → ⑤ 재현.
 // 모든 모델 호출이 하나의 비용 장부(--budget)를 공유하고, 한도를 넘을 호출은 보내지 않는다.
 //
-//   node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] --budget 10 [--name maison]
+//   node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] [--budget 10] [--name maison]
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +16,8 @@ import type { Requirement } from './plan.ts';
 
 const QA = fileURLToPath(new URL('..', import.meta.url));
 const { values: a } = parseArgs({ options: {
-  url: { type: 'string' }, requirements: { type: 'string' }, budget: { type: 'string' },
+  // 기본 한도(설계 5장 0단계): 예산 $10 중 30%는 분류·재현 몫으로 남기고, 탐색은 40분이 지나면 새 대화를 시작하지 않는다.
+  url: { type: 'string' }, requirements: { type: 'string' }, budget: { type: 'string', default: '10' }, 'explore-minutes': { type: 'string', default: '40' },
   name: { type: 'string', default: 'live' }, origins: { type: 'string' },
   'plan-model': { type: 'string', default: 'claude-opus-5-5' }, 'triage-model': { type: 'string', default: 'claude-sonnet-5-5' },
   'max-turns': { type: 'string', default: '40' }, 'allow-writes': { type: 'boolean', default: false },
@@ -27,8 +28,8 @@ const { values: a } = parseArgs({ options: {
   // 동시에 여는 탐색·분류 대화 수와 동시에 실행할 시나리오 수. 순차와 판정이 같은지 확인하기 전까지 기본 1
   concurrency: { type: 'string', default: '1' }, workers: { type: 'string', default: '1' },
 } });
-if (!a.url || !a.budget) {
-  console.error('사용법: node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] --budget <USD> [--name 이름]');
+if (!a.url || !(Number(a.budget) > 0)) {
+  console.error('사용법: node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] [--budget <USD, 기본 10>] [--name 이름]');
   process.exit(2);
 }
 
@@ -50,7 +51,7 @@ const send: Send = async req => {
 };
 
 // 숫자 옵션은 양의 정수여야 한다(NaN이면 한도가 작동하지 않는다).
-for (const k of ['max-turns', 'max-pages', 'max-templates', 'turns-per-template', 'pages-per-template', 'concurrency', 'workers'] as const) {
+for (const k of ['max-turns', 'max-pages', 'max-templates', 'turns-per-template', 'pages-per-template', 'concurrency', 'workers', 'explore-minutes'] as const) {
   if (!Number.isInteger(Number(a[k])) || Number(a[k]) < 1) { console.error(`--${k}는 1 이상의 정수여야 한다: ${a[k]}`); process.exit(2); }
 }
 const requirements: Requirement[] = a.requirements ? JSON.parse(readFileSync(a.requirements, 'utf8').replace(/^﻿/, '')) : [];  // 요구사항은 선택 입력(설계 3.3)
@@ -68,7 +69,8 @@ const browser = await chromium.launch();
 let summary: Record<string, unknown> = {};
 try {
   const e = await explore({ browser, policy, startUrl: a.url, requirements, send, model: a['plan-model']!, budget, maxTurns: Number(a['max-turns']),
-    maxPages: Number(a['max-pages']), maxTemplates: Number(a['max-templates']), turnsPerTemplate: Number(a['turns-per-template']), pagesPerTemplate: Number(a['pages-per-template']), concurrency: Number(a.concurrency) });
+    maxPages: Number(a['max-pages']), maxTemplates: Number(a['max-templates']), turnsPerTemplate: Number(a['turns-per-template']), pagesPerTemplate: Number(a['pages-per-template']), concurrency: Number(a.concurrency),
+    keepUsd: budget.limitUsd * 0.3, deadline: t0 + Number(a['explore-minutes']) * 60_000 });
   timing.explore = Date.now() - t0;
   save('explore.json', { stop: e.stop, detail: e.detail, blocked: e.blocked, violations: e.violations, sitemap: e.sitemap, conversations: e.conversations,
     complete: e.complete, exploredUrls: e.exploredUrls, turns: e.turns });
