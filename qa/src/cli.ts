@@ -11,6 +11,7 @@ import { chromium } from 'playwright';
 import { explore } from './explore.ts';
 import { runPlan } from './run.ts';
 import { judge } from './triage.ts';
+import { writeReport } from './report.ts';
 import { Budget, type Send } from './agent.ts';
 import type { Requirement } from './plan.ts';
 
@@ -88,10 +89,17 @@ try {
     verdicts: j.verdicts.map(v => ({ id: v.id, observed: v.observed, class: v.class, reproduction: v.reproduction, system: v.system })), requirements: j.requirements,
     system: j.system, features: j.features, questions: j.pendingQuestions, observations: e.plan.observations };
 } finally {
-  await browser.close();
   save('calls.json', calls);
-  save('summary.json', { ...summary, timingMs: { ...timing, total: Date.now() - t0 }, spentUsd: budget.spent, budgetUsd: budget.limitUsd,
+  save('summary.json', { startUrl: a.url, ...summary, timingMs: { ...timing, total: Date.now() - t0 }, spentUsd: budget.spent, budgetUsd: budget.limitUsd,
     models: { plan: a['plan-model'], triage: a['triage-model'] }, calls: calls.length });
+  // 판정까지 끝났으면 저장된 결과로 report.json·PDF를 만든다. 실패해도 실행 결과는 그대로 남고, node src/report.ts <폴더>로 다시 만들 수 있다.
+  if (existsSync(join(out, 'run', 'verdicts.json'))) {
+    try {
+      const r = await writeReport(out, browser);
+      console.log(`보고서: report.json · report.html${r.pdf ? ' · report.pdf' : ` (PDF 실패: ${r.pdfError})`}`);
+    } catch (e) { console.error(`보고서를 만들지 못함: ${(e as Error).message}`); }
+  }
+  await browser.close();
   console.log(`결과: ${out}`);
   console.log(`비용(토큰 기준 추정): $${budget.spent.toFixed(4)} / 한도 $${budget.limitUsd}  호출 ${calls.length}회  ${((Date.now() - t0) / 1000).toFixed(0)}초`);
 }
