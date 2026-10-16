@@ -133,6 +133,7 @@ GET /api/health
 |---|---|
 | `maison/README.md` | 구조 · 화면 17개 · API 23개 · 측정에 쓰이는 성질 |
 | `maison/docs/bugs.md` | 결함 추가 절차 · ID 규칙 · 증상 분류 |
+| `docs/bugs-injected.md` | 결함 17건의 재현 절차와 "규칙으로 잡히는가" 판정표 |
 | `maison/docs/bugs-ui.md` | UI 결함 5건의 전후 사진과 확인 절차 |
 | `maison/docs/ARCHITECTURE.md` | 구조 |
 | `maison/docs/BUG_INJECTION_GUIDE.md` | 주입 지침 |
