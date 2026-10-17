@@ -9,6 +9,21 @@ Claude Code와 Codex CLI가 작업을 넘길 때 최신 항목을 맨 위에 추
 - 미검증 / 주의:
 -->
 
+## 2026-10-17 (21) · Claude · Maison 예비 비교 (Claude API)
+
+- 사용자 결정: 세 도구에 같은 "서버 저장 제출 금지" 지시를 주고, 채점은 사람이 하며, API 경로로 도구마다 $10·40분.
+- 한 일:
+  - Claude Code CLI를 2.1.121에서 2.1.302로 올렸다(Opus 5.5 지원).
+  - 세 도구를 Opus 5.5로 Maison에 1회씩 돌렸다. 결과는 [PRELIM_COMPARISON_MAISON](reviews/PRELIM_COMPARISON_MAISON_2026-10-17.md).
+- 결과:
+  - 우리 시스템: 10분·$4.77, 결함 주장 8(확신 높음 1).
+  - dogfood: 9분·$1.80, 결함 주장 10.
+  - Playwright Planner: 두 번 모두 40분 상한에 걸려 계획 단계에 가지 못했다(2차 약 $2.5 이상).
+  - 장바구니·수량·위시리스트는 우리 시스템과 dogfood가 모두 찾았다. 관련 상품 링크와 필터 해제는 우리 시스템만 찾았다. 내용·화면·접근성 쪽은 dogfood만 찾았다.
+- 보고서 생성기: `not_equals` 검사의 기대를 "다음 값과 달라야 함"으로 표시한다. S402.C5가 "기대 true·실제 true"로 보여 판정 오류처럼 보였기 때문이다.
+- 결과물(로컬): `qa/runs/cmp-maison-*`, `output/compare-runs/`(dogfood 보고서·스크린샷, Playwright 진행 기록, 게시판 비교 dogfood 결과).
+- 남은 일: 대조표 채점(사람). Playwright는 시간 상한을 늘리거나 범위를 지정한 재비교를 검토한다(조건이 달라지므로 따로 기록).
+
 ## 2026-10-17 (20) · Claude · 기존 에이전트 예비 비교 (중간발표 전 6번)
 
 - 한 일:

@@ -195,7 +195,7 @@ export function renderHtml(rep: Report, dir: string): string {
       <dt>페이지</dt><dd>${esc(x.page)}</dd>
       <dt>판정 이유</dt><dd>${esc(x.reason)}</dd>
       ${x.check ? `<dt>검사</dt><dd>${esc(x.check.target ?? 'URL')}의 ${esc(x.check.read)}를 ${esc(x.check.op)}로 비교</dd>
-      <dt>기대</dt><dd>${esc(x.check.expected ?? '')}${x.check.expectedFrom ? ` (${esc(x.check.expectedFrom)}에서 읽은 값)` : ''}</dd>
+      <dt>기대</dt><dd>${x.check.op === 'not_equals' ? '다음 값과 달라야 함: ' : ''}${esc(x.check.expected ?? '')}${x.check.expectedFrom ? ` (${esc(x.check.expectedFrom)}에서 읽은 값)` : ''}</dd>
       <dt>실제</dt><dd>${esc(x.check.actual ?? '(읽지 못함)')}</dd>
       <dt>기대 근거</dt><dd>${esc(x.check.source.kind)}${x.check.source.id ? ` ${esc(x.check.source.id)}` : ''}${x.check.source.rule ? ` 규칙 ${esc(x.check.source.rule)}` : ''}${x.check.source.quote ? ` — “${esc(x.check.source.quote)}”` : ''}</dd>` : ''}
       <dt>원래 결과</dt><dd>${esc(x.observed)}</dd>
