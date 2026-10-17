@@ -29,6 +29,8 @@ export class BudgetError extends Error {}
 export class Budget {
   spent = 0;
   held = 0;
+  /** 이 금액은 예약에 쓰지 않는다(탐색 중 분류·재현 몫을 남길 때). */
+  floorUsd = 0;
   readonly limitUsd: number;
   /** 응답을 기다리는 호출 수와, 그 호출이 끝나기를 기다리는 예약 */
   private inflight = 0;
@@ -41,7 +43,7 @@ export class Budget {
     const inputTokens = Buffer.byteLength(JSON.stringify(req), 'utf8');
     const price = tier(PRICES[req.model], inputTokens);
     const worst = (inputTokens * 1.25 * price.input + req.max_tokens * price.output) / 1e6;
-    const left = this.limitUsd - this.spent - this.held;
+    const left = this.limitUsd - this.spent - this.held - this.floorUsd;
     if (worst > left) throw new BudgetError(`예약 $${worst.toFixed(4)}가 남은 예산 $${left.toFixed(4)}를 넘음`);
     this.held += worst;
     this.inflight++;

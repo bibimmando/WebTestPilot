@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
-import { openContext, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
+import { auditPage, MOBILE, openContext, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
 
 let browser: Browser | undefined;
 let server: Server | undefined;
@@ -289,4 +289,29 @@ test('ariaText: 이름 있는 요소에도 CSS 대소문자 변환·숨긴 텍�
   const read = async (id: string) => ariaText(await p.locator('#' + id).ariaSnapshotJSON({ mode: 'ai' }) as AriaNode[]);
   assert.equal(await read('l'), 'Shop 3');
   assert.equal(await read('s'), 'FAQ Shipping 25 dollars');
+});
+
+test('품질·사용성 점검: 이름 없는 조작 요소·가려진 버튼·가로 넘침을 찾고, 꾸민 체크박스와 클릭이 통과하는 장식은 빼며, 모달이 열려 있으면 가림을 보지 않는다', async () => {
+  const html = (await import('node:fs')).readFileSync(new URL('./fixtures/audit.html', import.meta.url), 'utf8');
+  const p = await page(html);
+  await p.setViewportSize({ width: 1280, height: 720 });
+  const desktop = await auditPage(p, 'desktop');
+  assert.deepEqual(desktop.map(f => [f.kind, f.level, f.detail]), [
+    ['unnamed-control', 'improvement', 'button'],
+    ['covered-control', 'ui_defect', 'button "구매하기" 를 div "" 가 가림'],
+  ], '장식 위 버튼(pointer-events:none)과 꾸민 체크박스(투명 input, 라벨 클릭)는 가림이 아니다. 데스크톱에서는 넘치지 않는다');
+  await p.setViewportSize(MOBILE);
+  // 데스크톱에서 이미 센 이름 없는 역할(button)은 모바일에서 다시 세지 않는다.
+  const mobile = await auditPage(p, 'mobile', new Set(['button']));
+  assert.deepEqual(mobile.map(f => f.kind), ['covered-control', 'horizontal-overflow'], '모바일에서는 넓은 요소가 넘친다(이름 없음은 데스크톱에서만 센다)');
+  assert.match(mobile[1].detail, /^페이지 폭 \d+px > 화면 390px, 가장 넓게 나간 요소 div/);
+  assert.ok(!(await auditPage(p, 'mobile', new Set(['button']))).some(f => f.detail.includes('슬라이드 2')), '잘려 숨은 캐러셀 슬라이드는 가림이 아니다');
+  // 열린 모달: 뒤의 가림은 정상이라 보지 않지만, 모달 안의 닫기 버튼이 가려진 것은 찾는다. 숨은 모달은 점검을 끄지 않는다.
+  await p.evaluate(() => document.body.insertAdjacentHTML('beforeend', '<div role="dialog" aria-modal="true" style="display:none"><button>숨은 모달</button></div>'));
+  assert.ok((await auditPage(p, 'mobile', new Set(['button']))).some(f => f.detail.startsWith('button "구매하기"')), '숨은 모달은 가림 점검을 끄지 않는다');
+  await p.evaluate(() => document.body.insertAdjacentHTML('beforeend',
+    '<div role="dialog" aria-modal="true" style="position:fixed;top:10px;left:10px;width:200px;height:60px;background:#fff"><button>닫기</button><div style="position:absolute;inset:0;background:rgba(0,0,0,.1)"></div></div>'));
+  const withModal = (await auditPage(p, 'mobile', new Set(['button']))).filter(f => f.kind === 'covered-control');
+  assert.deepEqual(withModal.map(f => f.target), ['button "닫기"'], '모달 안만 보고, 모달의 가려진 닫기 버튼은 찾는다');
+  await p.close();
 });

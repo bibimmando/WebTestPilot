@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>점검 fixture</title>
+<style>
+  .wrap { position: relative; width: 200px; height: 40px; }
+  .shade { position: absolute; inset: 0; background: rgba(255,255,255,.6); }
+  .deco { position: absolute; inset: 0; pointer-events: none; background: rgba(0,0,0,.1); }
+  .fake input { opacity: 0; position: absolute; } .fake span { display: inline-block; width: 18px; height: 18px; border: 1px solid #333; }
+  .wide { width: 600px; height: 10px; background: #ddd; }
+</style></head>
+<body><main><h1>점검 fixture</h1>
+<!-- 품질·사용성 점검 확인용 개발 fixture. 걸려야 하는 것과 걸리면 안 되는 것을 함께 둔다. -->
+<button id="icon"><svg width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6"/></svg></button>
+<div class="wrap"><button>구매하기</button><div class="shade"></div></div>
+<div class="wrap"><button>장식 위 버튼</button><div class="deco"></div></div>
+<label class="fake"><input type="checkbox"><span></span> 약관 동의</label>
+<a href="/board.html">게시판</a>
+<div style="overflow: hidden; width: 120px"><div style="display: flex; width: 400px"><button style="width: 120px">슬라이드 1</button><button style="width: 120px">슬라이드 2</button></div></div>
+<div class="wide"></div>
+</main></body></html>

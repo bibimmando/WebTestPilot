@@ -6,7 +6,7 @@ import { sequence } from './generate.ts';
 import type { Signal } from './browser.ts';
 
 export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; scenario?: string; id?: string; status?: string;
-  actual?: string; expected?: string; count?: number; reason?: string; error?: string; blocked?: string[]; violations?: string[]; signals?: Signal[];
+  actual?: string; expected?: string; count?: number; reason?: string; error?: string; blocked?: string[]; violations?: string[]; signals?: Signal[]; signalsDropped?: number;
   ready?: boolean; evidence?: string[];
   /** act: 행동 직전에 관측한 대상의 접근성 표현·화면 위치(또는 누른 키), 행동 직전 URL, 실패한 행동의 직전 증거, 직후 증거를 찍는 데 걸린 시간 */
   pressed?: { aria?: string; box?: { x: number; y: number; width: number; height: number } | null; key?: string };
@@ -29,6 +29,8 @@ export type ScenarioResult = {
   blocked: string[]; violations: string[];
   /** 기대값 없이 잡힌 콘솔·요청 오류. 판정이 아니라 검토 대상이다 */
   signals?: Signal[];
+  /** 단계별 상한을 넘어 버린 신호 수 */
+  signalsDropped?: number;
 };
 /** checks의 invalid는 무효 시나리오에 속해 결과를 믿을 수 없는 검사 수다. */
 export type RequirementResult = { id: string; plan: 'planned' | 'unplanned' | 'missing'; checks: Record<CheckStatus | 'invalid', number> };
@@ -107,7 +109,7 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
 
     return { id: s.id, valid: invalid.length === 0, invalid, start, precondition, ...(startEntry?.ready !== undefined ? { ready: startEntry.ready } : {}),
       ...(startEntry?.evidence ? { startEvidence: startEntry.evidence } : {}), steps, checks, blocked: policy.flatMap(e => e.blocked ?? []), violations,
-      signals: policy.flatMap(e => e.signals ?? []) };
+      signals: policy.flatMap(e => e.signals ?? []), ...(policy.some(e => e.signalsDropped) ? { signalsDropped: policy.reduce((n, e) => n + (e.signalsDropped ?? 0), 0) } : {}) };
   });
 
   const known = new Set(plan.scenarios.flatMap(s => [s.id, ...s.steps.map(x => x.id), ...s.checks.map(x => x.id)]));

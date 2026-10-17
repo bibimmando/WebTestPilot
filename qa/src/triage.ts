@@ -268,7 +268,7 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
     ...(ruleOf(c?.source.rule) ? [`일반 규칙 ${c!.source.rule}: ${JSON.stringify(ruleOf(c!.source.rule))}`] : []),
     ...(v.error ? [`오류 원문: ${v.error}`] : []),
     // 기대값 없이 잡힌 신호. 행동 직후의 스크립트 예외·서버 오류는 "앱이 반응하지 않았다"를 뒷받침할 수 있다.
-    ...(r.signals?.length ? [`이 시나리오의 콘솔·요청 오류 (after = 그 신호가 난 단계, 최대 20개): ${JSON.stringify(r.signals.slice(0, 20))}`] : []),
+    ...(r.signals?.length ? [`이 시나리오의 콘솔·요청 오류 (after = 그 신호가 난 단계${r.signals.length > 20 || r.signalsDropped ? `, 일부만 보임: 전체 ${r.signals.length + (r.signalsDropped ?? 0)}개 중 앞 20개` : ''}): ${JSON.stringify(r.signals.slice(0, 20))}`] : []),
     '증거 파일 (*.start는 시작 직후, *.before·*.after는 그 행동의 직전·직후, 나머지는 실패 시점):',
     ...[...files].map(([name, text]) => `--- ${name}\n${text.length > EVIDENCE_CHARS ? `${text.slice(0, EVIDENCE_CHARS)}\n(이후 생략: 생략된 부분 없이 판단할 수 없으면 uncertain)` : text}`),
   ].join('\n');

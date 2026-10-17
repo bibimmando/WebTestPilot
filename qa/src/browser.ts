@@ -300,6 +300,80 @@ function tree(page: Page): Promise<AriaNode[]> {
   return page.locator('body').ariaSnapshotJSON({ mode: 'ai' }) as Promise<AriaNode[]>;
 }
 
+/**
+ * 품질·사용성 점검(일반 규칙 ③, 설계 5장 6단계). 기대값 없이 브라우저가 계산한 사실로만 찾는다(AI 없음).
+ * - unnamed-control: 접근 가능한 이름이 없는 조작 요소(개선 제안)
+ * - covered-control: 화면 안 조작 요소의 가운데를 누르면 다른 요소가 눌림(조작을 막으므로 UI 결함)
+ * - horizontal-overflow: 페이지가 화면 폭보다 넓어 가로로 넘침(개선 제안)
+ */
+export type AuditFinding = { kind: 'unnamed-control' | 'covered-control' | 'horizontal-overflow'; viewport: 'desktop' | 'mobile';
+  level: 'ui_defect' | 'improvement';
+  /** 재점검 때 같은 문제인지 가르는 대상 식별(역할·요소). 개수·폭 같은 측정값은 넣지 않는다 */
+  target: string;
+  detail: string };
+export const MOBILE = { width: 390, height: 844 };
+const NAMED_ROLES = new Set(['link', 'button', 'textbox', 'searchbox', 'checkbox', 'radio', 'combobox', 'switch', 'slider', 'spinbutton', 'tab', 'menuitem']);
+
+/**
+ * 지금 화면(현재 크기)을 점검한다. skipUnnamed: 이미 다른 화면 크기에서 센 이름 없는 요소의 역할(같은 대상을 두 번 세지 않는다).
+ * shortcut: 최상위 문서의 일반 DOM만 본다. iframe·shadow DOM 안은 점검하지 않는다(설계 문서에 범위 한계로 적음). 필요해지면 프레임·열린 shadow root를 순회한다.
+ */
+export async function auditPage(page: Page, viewport: AuditFinding['viewport'], skipUnnamed = new Set<string>()): Promise<AuditFinding[]> {
+  const out: AuditFinding[] = [];
+  // 역할별로 묶는다. 목록 카드마다 같은 아이콘 버튼이 있으면 한 줄로 세고 첫 위치만 예로 든다.
+  const unnamed = new Map<string, { count: number; first: string }>();
+  const where = (n: Node) => { for (let p = n.parent; p; p = p.parent) if (p.name) return `"${p.name.slice(0, 40)}" 안`; return ''; };
+  for (const n of parseSnapshot(await tree(page).catch(() => [])).values()) {
+    if (!NAMED_ROLES.has(n.role) || n.name?.trim() || skipUnnamed.has(n.role)) continue;
+    const u = unnamed.get(n.role) ?? { count: 0, first: where(n) };
+    u.count++;
+    unnamed.set(n.role, u);
+  }
+  for (const [role, u] of unnamed)
+    out.push({ kind: 'unnamed-control', viewport, level: 'improvement', target: role,
+      detail: `${role}${u.count > 1 ? ` ${u.count}개` : ''}${u.first ? ` (${u.count > 1 ? '예: ' : ''}${u.first})` : ''}` });
+  const measured = await page.evaluate(() => {
+    const label = (e: Element) => `${e.tagName.toLowerCase()}${e.getAttribute('role') ? `[role=${e.getAttribute('role')}]` : ''} "${(e.getAttribute('aria-label') ?? e.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40)}"`;
+    const shown = (e: Element) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
+    // 실제로 열린 모달이 있으면 그 뒤는 가려지는 것이 정상이라 모달 안만 본다(모달의 닫기·확인 버튼이 가려진 것은 찾는다).
+    const modal = [...document.querySelectorAll('[aria-modal="true"], dialog[open]')].find(shown);
+    const covered: { target: string; detail: string }[] = [];
+    for (const e of (modal ?? document).querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea, [role=button], [role=link], [role=tab], [role=checkbox]')) {
+      const r = e.getBoundingClientRect();
+      const s = getComputedStyle(e);
+      // 투명한 요소(꾸민 체크박스 뒤의 실제 input 등)는 사람이 누르는 대상이 아니라 뺀다.
+      if (r.width < 4 || r.height < 4 || s.visibility === 'hidden' || s.display === 'none' || s.pointerEvents === 'none' || s.opacity === '0' || (e as HTMLInputElement).disabled) continue;
+      if (r.top < 0 || r.left < 0 || r.bottom > innerHeight || r.right > innerWidth) continue;
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      // 조상이 잘라 내 보이지 않는 요소(캐러셀의 넘어간 슬라이드 등)는 가려진 것이 아니라 숨긴 것이다.
+      let clipped = false;
+      for (let a = e.parentElement; a && !clipped; a = a.parentElement) {
+        const st = getComputedStyle(a);
+        if (st.overflowX === 'visible' && st.overflowY === 'visible') continue;
+        const ar = a.getBoundingClientRect();
+        clipped = x < ar.left || x > ar.right || y < ar.top || y > ar.bottom;
+      }
+      if (clipped) continue;
+      // elementFromPoint는 pointer-events:none인 요소를 건너뛴다. 그래서 나온 요소가 실제로 클릭을 받는 요소다.
+      const hit = document.elementFromPoint(x, y);
+      if (!hit || e.contains(hit) || hit.contains(e)) continue;
+      // 자기 라벨이 눌리면 같은 조작이다(라벨 클릭은 그 입력을 조작한다).
+      if ([...((e as HTMLInputElement).labels ?? [])].some(l => l.contains(hit))) continue;
+      covered.push({ target: label(e), detail: `${label(e)} 를 ${label(hit)} 가 가림` });
+    }
+    const sw = document.documentElement.scrollWidth;
+    let widest = '';
+    if (sw > innerWidth + 1) {
+      let max = innerWidth;
+      for (const e of document.body.querySelectorAll('*')) { const r = e.getBoundingClientRect(); if (r.right > max + 1 && r.width > 0) { max = r.right; widest = label(e); } }
+    }
+    return { covered, overflow: sw > innerWidth + 1 ? `페이지 폭 ${sw}px > 화면 ${innerWidth}px${widest ? `, 가장 넓게 나간 요소 ${widest}` : ''}` : '' };
+  }).catch(() => ({ covered: [] as { target: string; detail: string }[], overflow: '' }));
+  for (const c of measured.covered) out.push({ kind: 'covered-control', viewport, level: 'ui_defect', ...c });
+  if (measured.overflow) out.push({ kind: 'horizontal-overflow', viewport, level: 'improvement', target: 'page', detail: measured.overflow });
+  return out;
+}
+
 /** 구조화 snapshot을 ref → Node 맵으로 읽는다. 텍스트 조각은 부모의 ownText가 된다. */
 export function parseSnapshot(nodes: AriaNode[]): Map<string, Node> {
   const byRef = new Map<string, Node>();

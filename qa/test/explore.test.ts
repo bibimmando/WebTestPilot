@@ -7,6 +7,8 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { explore, otherPages } from '../src/explore.ts';
 import { Budget, type Send } from '../src/agent.ts';
 import { validate, type Draft } from '../src/plan.ts';
+import { crawl } from '../src/sitemap.ts';
+import { openContext } from '../src/browser.ts';
 
 let browser: Browser | undefined;
 let server: Server | undefined;
@@ -412,9 +414,36 @@ test('정체 종료: 화면이 바뀌지 않는 행동이 이어지면 제출을
 test('기본 한도: 분류 몫을 남길 수 없거나 탐색 시간이 지나면 새 대화를 시작하지 않고 미완료로 남긴다', async () => {
   const never: Send = async () => { throw new Error('호출하면 안 됨'); };
   const base = { browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html', requirements: [], send: never, model: 'claude-opus-5-5', maxTurns: 20 };
-  const kept = await explore({ ...base, budget: new Budget(1), keepUsd: 1.5 });
+  const keptBudget = new Budget(1);
+  const kept = await explore({ ...base, budget: keptBudget, keepUsd: 1.5 });
+  assert.equal(keptBudget.floorUsd, 0, '탐색이 끝나면 분류 몫 하한을 되돌린다');
   assert.deepEqual([kept.stop, kept.detail, kept.plan, kept.complete], ['budget', '예산 한도(분류 몫 남김)', undefined, false]);
   assert.ok(kept.conversations.every(c => c.stop === 'not_attempted' && c.detail === '예산 한도(분류 몫 남김)'), JSON.stringify(kept.conversations));
   const late = await explore({ ...base, budget: new Budget(1), deadline: Date.now() - 1 });
   assert.deepEqual([late.stop, late.detail], ['budget', '탐색 시간 한도']);
+});
+
+test('사이트 지도 점검: 방문한 페이지를 데스크톱·모바일로 점검하고, 새로 열어 다시 나온 발견만 확인됨으로 둔다. 정상 게시판에서는 발견이 없다', async () => {
+  const g = await openContext(browser!, { origins: [origin] });
+  try {
+    const map = await crawl(await g.context.newPage(), origin + '/audit.html', { origins: [origin] }, { maxPages: 10, perTemplate: 2, timeoutMs: 2000, audit: true });
+    assert.ok(map.visited.some(u => u.endsWith('/board.html')) && map.visited.some(u => u.endsWith('/members.html')), JSON.stringify(map.visited));
+    assert.deepEqual(map.audit!.map(a => a.url.replace(origin, '')), ['/audit.html'], '정상 게시판 페이지에서는 발견이 없다');
+    assert.deepEqual(map.audit![0].findings.map(f => [f.kind, f.viewport, f.confirmed]), [
+      ['unnamed-control', 'desktop', true], ['covered-control', 'desktop', true], ['covered-control', 'mobile', true], ['horizontal-overflow', 'mobile', true]]);
+  } finally { await g.context.close(); }
+});
+
+test('정체 판정: Tab으로 포커스만 옮기는 행동은 화면 변화로 센다', async () => {
+  const results: string[] = [];
+  const send: Send = async req => {
+    const last = req.messages.at(-1)!;
+    if (Array.isArray(last.content)) for (const b of last.content) if (b.type === 'tool_result') results.push(String(b.content));
+    return { id: 'm', type: 'message', role: 'assistant', model: req.model, stop_reason: 'tool_use', stop_sequence: null,
+      content: [{ type: 'tool_use', id: `t${req.messages.length}`, name: 'press', input: { key: 'Tab' } }],
+      usage: { input_tokens: 100, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } as unknown as Anthropic.Message;
+  };
+  const r = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/form.html', requirements: [], send, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 6 });
+  assert.equal(r.stop, 'max_turns');
+  assert.ok(results.length >= 4 && !results.some(t => t.includes('화면 변화 없음')), results.join(' | '));
 });

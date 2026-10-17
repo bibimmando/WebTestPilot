@@ -8,11 +8,12 @@
   // 오류 신호 수집 확인용 개발 fixture. 시작 때 콘솔 오류, 불러오기에서 404·403(정상 거절)·잡히지 않은 예외, 외부 호출은 정책 차단.
   console.error('초기화 경고');
   document.getElementById('load').onclick = async () => {
+    fetch('/api/slow');  // 늦게 돌아오는 요청: 다음 단계 도중에 응답한다
     await fetch('/api/missing');
     await fetch('/api/denied');
     document.getElementById('state').textContent = '불러옴';
     setTimeout(() => { throw new Error('불러오기 처리 실패'); });
   };
-  document.getElementById('ext').onclick = () => { fetch('http://localhost:9/ping').catch(() => {}); document.getElementById('state').textContent = '외부 호출함'; };
+  document.getElementById('ext').onclick = () => { fetch('http://localhost:9/ping').catch(() => {}); setTimeout(() => { document.getElementById('state').textContent = '외부 호출함'; }, 1200); };
 </script>
 </body></html>

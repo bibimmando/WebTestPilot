@@ -3,14 +3,14 @@
 // 설계: docs/design/V2_ARCHITECTURE.md 5장 8·9단계. 바꿀 때는 version을 올리고 PDF·웹 화면 담당과 맞춘다.
 //   node src/report.ts <실행 결과 폴더>
 // shortcut: 보고서 AI(요약 문장)는 없다. 모든 문장은 JSON 값을 그대로 옮긴 틀이다. 요약이 필요해지면 JSON 값을 바꾸지 않는 조건으로 붙인다.
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { Browser } from 'playwright';
 import type { Plan, Check } from './plan.ts';
 import type { Judgment, Verdict, SystemLevel } from './triage.ts';
 import type { RunResult } from './run.ts';
 import type { SiteMap } from './sitemap.ts';
-import type { Target } from './browser.ts';
+import type { AuditFinding, Target } from './browser.ts';
 import { pathOf } from './sitemap.ts';
 
 export type ReportItem = {
@@ -30,18 +30,23 @@ export type ReportItem = {
   observed: string;
   classification: { class: string; reason?: string; error?: string };
   /** 재현 두 축: 결과와 사유(판단 불가일 때). M5에서 초기화 불가·시작 상태 다름 같은 사유가 늘어난다 */
-  reproduction?: { result: 'reproduced' | 'not_reproduced' | 'inconclusive'; reason?: string };
-  /** 보고서 폴더 기준 증거 경로 */
+  reproduction?: { result: 'reproduced' | 'not_reproduced' | 'inconclusive'; reason?: string; evidence?: string[] };
+  /** 보고서 폴더 기준 증거 경로(최초 실행). 재실행 증거는 reproduction.evidence */
   evidence: string[];
 };
 
+/** 사이트 지도에서 페이지마다 계산한 품질·사용성 점검(AI 없음). confirmed = 새로 열어 다시 점검해도 같음 */
+export type AuditItem = AuditFinding & { page: string; confirmed: boolean };
+
 export type Report = {
-  version: 'report/1';
+  version: 'report/2';
   run: {
     name: string; startUrl: string; origins: string[];
     /** 완료 = 발견한 모든 페이지 종류를 계획함. 아니면 미완료 사유를 함께 남긴다 */
     endReason: 'completed' | 'incomplete';
     incompleteReasons: string[];
+    /** 보고서에 쓴 판정 파일과 그 단계(done이 아니면 임시 결과), 그보다 뒤의 끝나지 않았거나 읽을 수 없는 재판정 */
+    verdicts: { file: string; stage: string; later: { file: string; stage: string }[] };
     /** 이번 실행이 다루지 않는 범위(M5 전까지 로그인·초기화 없음). 결과를 "사이트 전체 정상"으로 읽지 않게 한다 */
     scope: { writes: string; login: string; reset: string };
     models?: { plan?: string; triage?: string };
@@ -61,23 +66,40 @@ export type Report = {
   questions: Judgment['pendingQuestions'];
   /** 탐색 중 관찰했지만 검사로 만들지 못한 의심 사항 */
   observations: Plan['observations'];
-  /** 기대값 없이 잡힌 오류 신호(정상 거절 제외). 판정이 아니라 검토 대상 */
+  /** 기대값 없이 잡힌 오류 신호. 판정이 아니라 검토 대상. normal은 정상 거절(401·403·422)일 수 있는 것 */
   errorSignals: NonNullable<Judgment['errorSignals']>;
   normalRejections: number;
-  /** 자동화 실패·미완료: 사유별 개수와 항목 */
+  /** 시나리오별 상한을 넘어 버린 신호 수 */
+  signalsDropped: number;
+  /** 품질·사용성 점검(일반 규칙 ③). 조작을 막으면 UI 결함, 아니면 개선 제안. 버그 집계와 따로 센다 */
+  uiDefects: AuditItem[];
+  improvements: AuditItem[];
+  /** 다시 나오지 않았거나 화면이 안정되지 않아 확인하지 못한 점검 발견(관찰). 결함 건수에 넣지 않는다 */
+  auditUnconfirmed: AuditItem[];
+  /** 점검하지 못한 페이지와 사유 */
+  auditErrors: string[];
+  /** 자동화 실패(분류 결과, 원래 불일치 보존)·미완료: 사유별 개수와 항목 */
   incomplete: { total: number; byReason: Record<string, number>; items: ReportItem[] };
-  /** 실제로 완료한 검사 범위. 사이트 정상 보장이 아니다 */
+  /** 실제로 통과한 검사 범위. 사이트 정상 보장이 아니다 */
   passed: { checks: number; byClass: Record<string, number> };
 };
 
+const AUDIT_TEXT: Record<AuditFinding['kind'], string> = { 'unnamed-control': '이름 없는 조작 요소', 'covered-control': '가려진 조작 요소', 'horizontal-overflow': '가로 넘침' };
 const LEVEL_TEXT: Record<SystemLevel, string> = { bug_high: '버그 — 확신 높음', bug_medium: '버그 — 확신 중간', hold: '판단 보류', incomplete: '미완료', not_bug: '버그 아님' };
 
-/** 판정 파일은 다시 판정할 때마다 verdicts-2.json …으로 늘어난다. 가장 최근 것을 쓴다. */
-function latestVerdicts(runDir: string): string {
-  const n = readdirSync(runDir).map(f => f.match(/^verdicts(?:-(\d+))?\.json$/)).filter(m => m).map(m => Number(m![1] ?? 1));
-  if (!n.length) throw new Error(`판정 파일이 없음: ${runDir}`);
-  const max = Math.max(...n);
-  return join(runDir, max === 1 ? 'verdicts.json' : `verdicts-${max}.json`);
+/**
+ * 판정 파일은 다시 판정할 때마다 verdicts-2.json …으로 늘어난다. 판정이 끝난(stage done) 것 중 가장 최근 것을 쓰고,
+ * 끝난 것이 없으면 가장 최근 것을 쓰되 보고서에 그 단계를 남긴다(중간에 멈춘 재판정이 끝난 판정을 가리지 않게).
+ */
+function latestVerdicts(runDir: string): { path: string; later: { file: string; stage: string }[] } {
+  const files = readdirSync(runDir).map(f => f.match(/^verdicts(?:-(\d+))?\.json$/)).filter(m => m)
+    .map(m => ({ n: Number(m![1] ?? 1), file: m![0] })).sort((a, b) => b.n - a.n)
+    // 기록 중에 멈춰 읽을 수 없는 파일은 고르지 않고 "읽을 수 없음"으로 남긴다.
+    .map(f => { try { return { ...f, stage: read<{ stage?: string }>(join(runDir, f.file)).stage ?? 'unknown' }; } catch { return { ...f, stage: 'unreadable' }; } });
+  const usable = files.filter(f => f.stage !== 'unreadable');
+  if (!usable.length) throw new Error(`읽을 수 있는 판정 파일이 없음: ${runDir}`);
+  const pick = usable.find(f => f.stage === 'done') ?? usable[0];
+  return { path: join(runDir, pick.file), later: files.filter(f => f.n > pick.n).map(f => ({ file: f.file, stage: f.stage })) };
 }
 
 const read = <T>(path: string): T => JSON.parse(readFileSync(path, 'utf8'));
@@ -86,7 +108,8 @@ const read = <T>(path: string): T => JSON.parse(readFileSync(path, 'utf8'));
 export function buildReport(dir: string): Report {
   const plan = read<Plan>(join(dir, 'plan.json'));
   const results = read<RunResult>(join(dir, 'run', 'results.json'));
-  const judgment = read<Judgment>(latestVerdicts(join(dir, 'run')));
+  const { path: verdictsFile, later: laterVerdicts } = latestVerdicts(join(dir, 'run'));
+  const judgment = read<Judgment & { stage?: string }>(verdictsFile);
   const policy = read<{ origins: string[]; allowWrites?: boolean }>(join(dir, 'run', 'policy.json'));
   const explore = existsSync(join(dir, 'explore.json'))
     ? read<{ sitemap?: SiteMap; conversations?: { template: string; stop: string; planned: boolean; turns: number; detail?: string }[]; complete?: boolean }>(join(dir, 'explore.json')) : {};
@@ -116,7 +139,7 @@ export function buildReport(dir: string): Report {
     const rep = v.reproduction;
     return {
       id: v.id, scenario: v.scenario, ...(s.variantOf ? { variantOf: s.variantOf } : {}), page: s.start.url, title: s.title,
-      basis: c?.source.kind === 'requirement' || s.covers.some(x => x.startsWith('R')) ? 'requirement' : 'autonomous',
+      basis: (c ? c.source.kind === 'requirement' : s.covers.some(x => x.startsWith('R'))) ? 'requirement' : 'autonomous',
       level: v.system?.level ?? 'incomplete', reason: v.system?.reason ?? '판정 없음',
       ...(c ? { check: { read: c.read, op: c.op, target: describe(c.target), ...(res?.expected !== undefined ? { expected: res.expected } : c.expected !== undefined ? { expected: c.expected } : {}),
         ...(c.expected_from ? { expectedFrom: c.expected_from } : {}), ...(res?.actual !== undefined ? { actual: res.actual } : {}),
@@ -124,7 +147,9 @@ export function buildReport(dir: string): Report {
       steps, preconditions: s.checks.filter(x => x.precondition).map(describeCheck), observed: v.observed,
       classification: { class: v.class, ...(v.triage && 'reason' in v.triage ? { reason: v.triage.reason } : {}), ...(v.triage && 'error' in v.triage ? { error: v.triage.error } : {}) },
       ...(rep ? { reproduction: { result: rep === 'reproduced' ? 'reproduced' as const : rep === 'flaky' ? 'not_reproduced' as const : 'inconclusive' as const,
-        ...(v.reproductionDetail ? { reason: v.reproductionDetail } : {}) } } : {}),
+        ...(v.reproductionDetail ? { reason: v.reproductionDetail } : {}),
+        // 재실행 폴더(repro/)에 같은 항목의 증거가 있으면 연결한다. 재현 판정을 따라가 확인할 수 있게 한다.
+        ...(() => { const e = ['png', 'aria.txt'].map(x => `repro/evidence/${v.id}.${x}`).filter(p => existsSync(join(dir, p))); return e.length ? { evidence: e } : {}; })() } } : {}),
       evidence: [...(res?.evidence ?? []), ...(stepEvidence ?? [])].map(e => `run/${e}`),
     };
   };
@@ -132,33 +157,39 @@ export function buildReport(dir: string): Report {
   const items = judgment.verdicts.map(item);
   const of = (...levels: SystemLevel[]) => items.filter(x => levels.includes(x.level));
   const bugs = of('bug_high', 'bug_medium').sort((a, b) => Number(b.level === 'bug_high') - Number(a.level === 'bug_high'));
-  const incomplete = of('incomplete');
+  // 자동화 실패로 분류된 항목은 판정상 "버그 아님"이지만 검사를 끝낸 것이 아니므로 미완료 구역에 원래 결과와 함께 보인다.
+  const incomplete = items.filter(x => x.level === 'incomplete' || x.classification.class === 'automation_failure');
   const byReason: Record<string, number> = {};
   // 사유는 종류별로 센다. 원인 항목 ID·세부 값은 각 항목에 남아 있다.
   for (const x of incomplete) {
-    const kind = x.reason.replace(/\(원인 [^)]*\)/, '(앞 항목에서 멈춤)').replace(/\(unresolved[^)]*\)/, '');
+    const kind = x.classification.class === 'automation_failure' ? '자동화 실패로 분류(원래 결과 보존)'
+      : x.reason.replace(/\(원인 [^)]*\)/, '(앞 항목에서 멈춤)').replace(/\(unresolved[^)]*\)/, '');
     byReason[kind] = (byReason[kind] ?? 0) + 1;
   }
   const passedClasses: Record<string, number> = {};
-  for (const v of judgment.verdicts) if (v.kind === 'check' && v.system?.level === 'not_bug') passedClasses[v.class] = (passedClasses[v.class] ?? 0) + 1;
+  for (const v of judgment.verdicts) if (v.kind === 'check' && v.class.startsWith('passed')) passedClasses[v.class] = (passedClasses[v.class] ?? 0) + 1;
 
   const conversations = explore.conversations ?? [];
   const templates = (explore.sitemap?.templates ?? []).map(t => ({
     template: t.key,
     conversations: conversations.filter(c => c.template === t.key).map(c => ({ stop: c.stop, planned: c.planned, turns: c.turns, ...(c.detail ? { detail: c.detail } : {}) })),
-    executedPages: [...new Set(plan.scenarios.map(s => s.start.url).filter(u => t.pages.some(p => pathOf(p) === pathOf(u))))],
+    // 계획만 있고 시작하지 못한 시나리오의 페이지는 넣지 않는다.
+    executedPages: [...new Set(plan.scenarios.filter(s => resultOf.get(s.id)?.start === 'ok').map(s => s.start.url).filter(u => t.pages.some(p => pathOf(p) === pathOf(u))))],
   }));
-  const incompleteReasons = [...new Set(templates.filter(t => !t.conversations.some(c => c.planned))
+  const incompleteReasons: string[] = [...new Set(templates.filter(t => !t.conversations.some(c => c.planned))
     .map(t => `${t.template}: ${t.conversations.map(c => `${c.stop}${c.detail ? ` (${c.detail})` : ''}`).join(', ') || '대화 없음'}`))];
   const signals = judgment.errorSignals ?? [];
+  const audit: AuditItem[] = (explore.sitemap?.audit ?? []).flatMap(a => a.findings.map(f => ({ ...f, page: a.url })));
+  if (!explore.sitemap) incompleteReasons.push('탐색 기록(explore.json의 사이트 지도) 없음: 탐색 범위를 알 수 없다');
 
   return {
-    version: 'report/1',
+    version: 'report/2',
     run: {
       name: basename(dir), startUrl: summary.startUrl ?? explore.sitemap?.visited[0] ?? plan.scenarios[0]?.start.url ?? '', origins: policy.origins,
       // complete가 없는 예전 결과는 대화 기록으로 판단한다.
       endReason: (explore.complete ?? templates.every(t => t.conversations.some(c => c.planned))) && !incompleteReasons.length ? 'completed' : 'incomplete',
       incompleteReasons,
+      verdicts: { file: basename(verdictsFile), stage: judgment.stage ?? 'unknown', later: laterVerdicts },
       scope: {
         writes: policy.allowWrites ? '허용' : '차단 — 서버에 저장되는 흐름(등록·주문 등)은 검사하지 않았다',
         login: '지원 안 함 — 로그인 이후 기능은 이번 범위 밖',
@@ -173,7 +204,10 @@ export function buildReport(dir: string): Report {
       requirements: judgment.requirements, features: judgment.features ?? [] },
     system: judgment.system,
     bugs, hold: of('hold'), questions: judgment.pendingQuestions ?? [], observations: plan.observations,
-    errorSignals: signals.filter(g => !g.normal), normalRejections: signals.filter(g => g.normal).length,
+    errorSignals: signals, normalRejections: signals.filter(g => g.normal).length,
+    signalsDropped: results.scenarios.reduce((n, s) => n + (s.signalsDropped ?? 0), 0),
+    uiDefects: audit.filter(a => a.confirmed && a.level === 'ui_defect'), improvements: audit.filter(a => a.confirmed && a.level === 'improvement'),
+    auditUnconfirmed: audit.filter(a => !a.confirmed), auditErrors: explore.sitemap?.auditErrors ?? [],
     incomplete: { total: incomplete.length, byReason, items: incomplete },
     passed: { checks: Object.values(passedClasses).reduce((a, b) => a + b, 0), byClass: passedClasses },
   };
@@ -200,11 +234,12 @@ export function renderHtml(rep: Report, dir: string): string {
       <dt>기대 근거</dt><dd>${esc(x.check.source.kind)}${x.check.source.id ? ` ${esc(x.check.source.id)}` : ''}${x.check.source.rule ? ` 규칙 ${esc(x.check.source.rule)}` : ''}${x.check.source.quote ? ` — “${esc(x.check.source.quote)}”` : ''}</dd>` : ''}
       <dt>원래 결과</dt><dd>${esc(x.observed)}</dd>
       <dt>분류</dt><dd>${esc(x.classification.class)}${x.classification.reason ? ` — ${esc(x.classification.reason)}` : ''}${x.classification.error ? ` — ${esc(x.classification.error)}` : ''}</dd>
-      ${x.reproduction ? `<dt>재현</dt><dd>${esc(x.reproduction.result)}${x.reproduction.reason ? ` — ${esc(x.reproduction.reason)}` : ''}</dd>` : ''}
+      ${x.reproduction ? `<dt>재현</dt><dd>${esc(x.reproduction.result)}${x.reproduction.reason ? ` — ${esc(x.reproduction.reason)}` : ''}${x.reproduction.evidence ? `<br>재실행 증거: ${x.reproduction.evidence.map(esc).join(', ')}` : ''}</dd>` : ''}
       ${x.preconditions.length ? `<dt>시작 조건</dt><dd><ul>${x.preconditions.map(p => `<li>${esc(p)}</li>`).join('')}</ul></dd>` : ''}
       <dt>재현 절차</dt><dd><ol>${x.steps.map(st => `<li>${esc(st)}</li>`).join('')}</ol></dd>
       <dt>증거</dt><dd>${x.evidence.map(esc).join('<br>') || '없음'}</dd>
     </dl>${withShot ? shot(x) : ''}</section>`;
+  const auditTable = (list: AuditItem[]) => list.length ? `<table><tr><th>구분</th><th>종류</th><th>화면</th><th>페이지</th><th>내용</th></tr>${list.map(a => `<tr><td>${a.level === 'ui_defect' ? 'UI 결함' : '개선 제안'}</td><td>${esc(AUDIT_TEXT[a.kind])}</td><td>${a.viewport === 'mobile' ? '모바일' : '데스크톱'}</td><td>${esc(a.page)}</td><td>${esc(a.detail)}</td></tr>`).join('')}</table>` : '<p>없음</p>';
   const r = rep.run;
   const count = (o: Record<string, number | undefined>) => Object.entries(o).filter(([, n]) => n).map(([k, n]) => `${esc(LEVEL_TEXT[k as SystemLevel] ?? k)} ${n}`).join(', ') || '없음';
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>QA 보고서 ${esc(r.name)}</title><style>
@@ -221,6 +256,7 @@ export function renderHtml(rep: Report, dir: string): string {
   <h2>실행 범위</h2><table>
     <tr><th>실행</th><td>${esc(r.name)}</td></tr>
     <tr><th>허용 origin</th><td>${r.origins.map(esc).join(', ')}</td></tr>
+    <tr><th>판정 파일</th><td>${esc(r.verdicts.file)} (${r.verdicts.stage === 'done' ? '판정 완료' : `판정 미완료: ${esc(r.verdicts.stage)} 단계 — 임시 결과`})${r.verdicts.later.length ? `. 이후 재판정: ${r.verdicts.later.map(l => `${esc(l.file)} ${esc(l.stage)}`).join(', ')}` : ''}</td></tr>
     <tr><th>종료</th><td>${r.endReason === 'completed' ? '발견한 모든 페이지 종류를 계획함' : `미완료 — ${r.incompleteReasons.map(esc).join('; ') || '사유 없음'}`}</td></tr>
     <tr><th>쓰기 요청</th><td>${esc(r.scope.writes)}</td></tr><tr><th>로그인</th><td>${esc(r.scope.login)}</td></tr><tr><th>초기화</th><td>${esc(r.scope.reset)}</td></tr>
     ${r.spentUsd !== undefined ? `<tr><th>비용(추정)</th><td>$${r.spentUsd.toFixed(2)}${r.budgetUsd ? ` / 한도 $${r.budgetUsd}` : ''}</td></tr>` : ''}
@@ -230,17 +266,25 @@ export function renderHtml(rep: Report, dir: string): string {
   <h2>요약</h2><table>
     <tr><th>요구사항 검사</th><td>${count(rep.system.requirement)}</td></tr><tr><th>자율 검사</th><td>${count(rep.system.autonomous)}</td></tr>
     <tr><th>다른 페이지 실행(복제)</th><td>${count(rep.system.variant)}</td></tr><tr><th>준비 확인(선행조건)</th><td>${count(rep.system.preparation)}</td></tr>
-    <tr><th>오류 신호</th><td>${rep.errorSignals.length}건 (정상 거절 ${rep.normalRejections}건 제외)</td></tr>
+    <tr><th>오류 신호</th><td>${rep.errorSignals.length - rep.normalRejections}건 (정상 거절일 수 있는 것 ${rep.normalRejections}건 별도${rep.signalsDropped ? `, 상한을 넘어 버린 신호 ${rep.signalsDropped}건` : ''})</td></tr>
+    <tr><th>UI 결함 · 개선 제안</th><td>${rep.uiDefects.length}건 · ${rep.improvements.length}건 (버그와 따로 셈, 확인하지 못한 발견 ${rep.auditUnconfirmed.length}건 별도)</td></tr>
     <tr><th>답을 기다리는 질문</th><td>${rep.questions.length}개</td></tr>
   </table>
   <h2>버그 (${rep.bugs.length})</h2>${rep.bugs.map(x => card(x, true)).join('') || '<p>없음</p>'}
   <h2>판단 보류 (${rep.hold.length})</h2>${rep.hold.map(x => card(x, false)).join('') || '<p>없음</p>'}
   ${rep.questions.length ? `<h3>업무 규칙 질문</h3><ul>${rep.questions.map(q => `<li>${esc(q.id)} ${esc(q.question)} — 선택지: ${q.options.map(esc).join(' / ')}${q.feature ? ` (기능 ${esc(q.feature)})` : ''}${q.overLimit ? ' (질문 한도 초과: 규칙 미확인)' : ''}</li>`).join('')}</ul>` : ''}
   <h2>탐색 중 관찰한 이상 (${rep.observations.length})</h2>${rep.observations.length ? `<ul>${rep.observations.map(o => `<li>${esc(o.page)} — ${esc(o.note)}</li>`).join('')}</ul>` : '<p>없음</p>'}
-  <h2>오류 신호 (${rep.errorSignals.length})</h2><p class="note">기대값 없이 잡힌 콘솔·요청 오류다. 판정이 아니라 검토 대상이다.</p>
-  ${rep.errorSignals.length ? `<table><tr><th>종류</th><th>내용</th><th>경로</th><th>난 곳</th></tr>${rep.errorSignals.map(g => `<tr><td>${esc(g.kind)}${g.status ? ` ${g.status}` : ''}</td><td>${esc(g.text)}</td><td>${esc(g.path)}</td><td>${g.at.slice(0, 5).map(a => `${esc(a.scenario)} ${esc(a.after)}`).join(', ')}${g.at.length > 5 ? ` 외 ${g.at.length - 5}곳` : ''}</td></tr>`).join('')}</table>` : '<p>없음</p>'}
+  <h2>UI 결함 (${rep.uiDefects.length}) · 개선 제안 (${rep.improvements.length})</h2>
+  <p class="note">페이지마다 브라우저가 계산한 품질·사용성 점검이다(AI 없음). 조작을 막으면 UI 결함, 아니면 개선 제안이며 버그와 따로 센다. "확인됨"은 페이지를 새로 열어 다시 점검해도 같았다는 뜻이다.</p>
+  ${auditTable([...rep.uiDefects, ...rep.improvements])}
+  ${rep.auditUnconfirmed.length ? `<h3>확인하지 못한 점검 발견 (${rep.auditUnconfirmed.length})</h3><p class="note">다시 열어 점검했을 때 나오지 않았거나 화면이 안정되지 않았다. 결함 건수에 넣지 않는다.</p>${auditTable(rep.auditUnconfirmed)}` : ''}
+  ${rep.auditErrors.length ? `<p>점검하지 못한 페이지: ${rep.auditErrors.map(esc).join('; ')}</p>` : ''}
+  <p class="note">점검 범위: 페이지를 맨 위에서 연 상태, 최상위 문서(iframe·shadow DOM 안은 보지 않음).</p>
+  <h2>오류 신호 (${rep.errorSignals.length})</h2><p class="note">기대값 없이 잡힌 콘솔·요청 오류다. 판정이 아니라 검토 대상이다. 401·403·422는 검사 의도대로의 거절일 수 있어 따로 표시한다.</p>
+  ${rep.errorSignals.length ? `<table><tr><th>종류</th><th>내용</th><th>경로</th><th>난 곳</th></tr>${rep.errorSignals.map(g => `<tr><td>${esc(g.kind)}${g.status ? ` ${g.status}` : ''}${g.normal ? ' (정상 거절일 수 있음)' : ''}</td><td>${esc(g.text)}</td><td>${esc(g.path)}</td><td>${g.at.slice(0, 5).map(a => `${esc(a.scenario)} ${esc(a.after)}`).join(', ')}${g.at.length > 5 ? ` 외 ${g.at.length - 5}곳` : ''}</td></tr>`).join('')}</table>` : '<p>없음</p>'}
   <h2>자동화 실패·미완료 (${rep.incomplete.total})</h2>
   <table><tr><th>사유</th><th>개수</th></tr>${Object.entries(rep.incomplete.byReason).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<tr><td>${esc(k)}</td><td>${n}</td></tr>`).join('')}</table>
+  ${rep.incomplete.items.length ? `<h3>항목</h3><table><tr><th>항목</th><th>페이지</th><th>원래 결과</th><th>사유·분류</th><th>증거</th></tr>${rep.incomplete.items.map(x => `<tr><td>${esc(x.id)}</td><td>${esc(x.page)}</td><td>${esc(x.observed)}</td><td>${esc(x.reason)}${x.classification.reason ? ` — ${esc(x.classification.reason)}` : ''}</td><td>${x.evidence.map(esc).join('<br>')}</td></tr>`).join('')}</table>` : ''}
   <h2>통과한 검사 범위</h2><p>${rep.passed.checks}개 (${Object.entries(rep.passed.byClass).map(([k, n]) => `${esc(k)} ${n}`).join(', ')}). 실제로 완료한 검사만 센다.</p>
   <h2>페이지 종류</h2><table><tr><th>페이지 종류</th><th>탐색 대화</th><th>계획 실행 페이지</th></tr>
   ${rep.coverage.templates.map(t => `<tr><td>${esc(t.template)}</td><td>${t.conversations.map(c => `${esc(c.stop)}${c.planned ? ' (계획함)' : ''}, 턴 ${c.turns}${c.detail ? ` — ${esc(c.detail)}` : ''}`).join('<br>') || '대화 없음'}</td><td>${t.executedPages.map(esc).join('<br>') || '없음'}</td></tr>`).join('')}</table>
@@ -265,6 +309,8 @@ export async function writeReport(dir: string, browser: Browser): Promise<{ repo
     await page.pdf({ path: join(dir, 'report.pdf'), format: 'A4', printBackground: true, margin: { top: '14mm', bottom: '14mm', left: '12mm', right: '12mm' } });
     return { report, pdf: join(dir, 'report.pdf') };
   } catch (e) {
+    // 새 JSON·HTML과 예전 PDF가 같은 결과처럼 보이지 않게 예전 PDF를 지운다.
+    rmSync(join(dir, 'report.pdf'), { force: true });
     return { report, pdfError: (e as Error).message.split('\n')[0] };
   } finally {
     await page.close();

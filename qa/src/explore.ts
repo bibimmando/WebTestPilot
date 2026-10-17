@@ -46,11 +46,19 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
   /** 이 시각(epoch ms)이 지나면 새 대화를 시작하지 않는다. 진행 중인 대화는 끝까지 둔다 */
   deadline?: number }): Promise<ExploreResult> {
   assertStartAllowed(o);
+  // 탐색하는 동안에는 분류·재현 몫을 예약 하한으로 걸어, 진행 중인 대화도 그 몫을 쓰지 못하게 한다.
+  const floor = o.budget.floorUsd;
+  // 이미 걸린 하한보다 낮게 덮지 않는다(같은 장부를 쓰는 다른 단계의 하한을 지킨다).
+  o.budget.floorUsd = Math.max(floor, o.keepUsd ?? 0);
+  try { return await exploreSite(o); } finally { o.budget.floorUsd = floor; }
+}
+
+async function exploreSite(o: Parameters<typeof explore>[0]): Promise<ExploreResult> {
   // 사이트 지도는 쓰기 허용과 상관없이 읽기 전용으로 모은다. 페이지를 여는 것만으로 스크립트가 쓰기 요청을 보낼 수 있다.
   const reader = await openContext(o.browser, { ...o.policy, allowWrites: false });
   let map: SiteMap;
   try {
-    map = await crawl(await reader.context.newPage(), o.startUrl, o.policy, { maxPages: o.maxPages ?? 30, perTemplate: 2, timeoutMs: SETTLE_TIMEOUT });
+    map = await crawl(await reader.context.newPage(), o.startUrl, o.policy, { maxPages: o.maxPages ?? 30, perTemplate: 2, timeoutMs: SETTLE_TIMEOUT, audit: true });
   } finally {
     await reader.context.close();
   }
@@ -252,8 +260,8 @@ function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, v
   nextTarget: () => string, onUrl: (url: string) => void): Tool[] {
   // 마지막 이동 뒤 행동이 없으면 지금 화면은 URL만으로 다시 만들 수 있으므로, pin한 대상이 새로 열어도 있는지 확인한다.
   let acted = false;
-  // 화면 상태: URL과 ai 모드 접근성 트리. settle도 같은 모드로 찍으므로 모델이 받은 ref 표를 바꾸지 않는다.
-  const state = async () => `${page.url()}\n${await page.locator('body').ariaSnapshot({ mode: 'ai' }).catch(() => '')}`;
+  // 화면 상태: URL, 포커스된 요소, ai 모드 접근성 트리. settle도 같은 모드로 찍으므로 모델이 받은 ref 표를 바꾸지 않는다.
+  const state = async () => `${page.url()}\n${await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 200) ?? '').catch(() => '')}\n${await page.locator('body').ariaSnapshot({ mode: 'ai' }).catch(() => '')}`;
   let still = 0;
   const after = async (what: string, before: string): Promise<ToolOutcome> => {
     await settle(page, SETTLE_TIMEOUT);

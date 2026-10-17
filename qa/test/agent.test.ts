@@ -89,3 +89,12 @@ test('동시 호출: 다른 호출의 예약 때문에 모자라면 그 호출�
   await assert.rejects(late, BudgetError);
   await assert.rejects(b.reserveWhenFree(req), BudgetError, '기다릴 호출이 없으면 바로 거부');
 });
+
+test('분류 몫 하한: 하한으로 건 금액은 예약에 쓰지 않는다', () => {
+  const b = new Budget(0.05);
+  const req = { model: 'claude-sonnet-5-5', max_tokens: 2000, messages: [] } as Anthropic.MessageCreateParamsNonStreaming;
+  b.floorUsd = 0.03;
+  assert.throws(() => b.reserve(req), BudgetError, '남은 $0.05 중 $0.03은 쓸 수 없다');
+  b.floorUsd = 0;
+  assert.ok(b.reserve(req) > 0);
+});

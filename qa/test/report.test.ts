@@ -8,6 +8,7 @@ import { buildReport, renderHtml, writeReport } from '../src/report.ts';
 import type { Plan } from '../src/plan.ts';
 
 const browser = await chromium.launch();
+const url = 'http://app.test/list';
 after(() => browser.close());
 
 /** 저장된 실행 결과 폴더(cli가 쓰는 모양)를 만든다. 페이지 문구에 HTML이 섞여 있다. */
@@ -42,9 +43,18 @@ function savedRun(): string {
       { id: 'S1.C1', scenario: 'S1', kind: 'check', requirements: [], observed: 'mismatch', class: 'app_defect_candidate', triage: { reason: '목록이 늘지 않음', quotes: [] },
         reproduction: 'reproduced', system: { level: 'bug_medium', reason: '일반 규칙 위반, 재현됨' } },
       { id: 'S2.C1', scenario: 'S2', kind: 'check', requirements: [], observed: 'not_run', class: 'not_run', cause: 'S2.A1', system: { level: 'incomplete', reason: '실행 안 됨(원인 S2.A1)' } },
+      { id: 'S2.A1', scenario: 'S2', kind: 'act', requirements: [], observed: 'not_executed:target_changed:0', class: 'automation_failure', triage: { reason: '대상을 잘못 찾음', quotes: [] },
+        system: { level: 'not_bug', reason: '자동화 실패로 분류(원래 결과는 보존)' } },
     ] }));
+  // 중간에 멈춘 재판정 파일. 끝난 판정(verdicts.json)을 가리면 안 된다.
+  writeFileSync(join(dir, 'run', 'verdicts-2.json'), JSON.stringify({ stage: 'preclassified', verdicts: [], system: {}, requirements: [] }));
+  // 기록 중에 멈춰 깨진 재판정 파일. 보고서 생성을 막지 않는다.
+  writeFileSync(join(dir, 'run', 'verdicts-3.json'), '{"stage": "tri');
   writeFileSync(join(dir, 'explore.json'), JSON.stringify({ complete: false, sitemap: { templates: [{ key: url, pages: [url] }, { key: 'http://app.test/cart', pages: ['http://app.test/cart'] }],
-    visited: [url], failed: [], unvisited: ['http://app.test/help'] },
+    visited: [url], failed: [], unvisited: ['http://app.test/help'],
+    audit: [{ url, findings: [{ kind: 'covered-control', viewport: 'mobile', level: 'ui_defect', target: 'button "담기"', detail: 'button "담기" 를 div "" 가 가림', confirmed: true },
+      { kind: 'unnamed-control', viewport: 'desktop', level: 'improvement', target: 'button', detail: 'button ("Orb Lamp" 안)', confirmed: false }] }],
+    auditErrors: ['http://app.test/cart: 화면 크기를 바꾸지 못함'] },
     conversations: [{ template: url, stop: 'done', planned: true, turns: 9 }, { template: 'http://app.test/cart', stop: 'stalled', planned: false, turns: 12, detail: '화면이 바뀌지 않는 행동 8번 연속' }] }));
   writeFileSync(join(dir, 'summary.json'), JSON.stringify({ startUrl: url, spentUsd: 1.23456, budgetUsd: 10, timingMs: { total: 125_000 } }));
   // 실패 시점 스크린샷(1x1 PNG)
@@ -55,18 +65,27 @@ function savedRun(): string {
 test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·근거·증거를 남기며, 미완료와 범위 밖을 숨기지 않는다', async () => {
   const dir = savedRun();
   const r = buildReport(dir);
-  assert.deepEqual([r.version, r.run.startUrl, r.run.endReason, r.run.spentUsd], ['report/1', 'http://app.test/list', 'incomplete', 1.2346]);
+  assert.deepEqual([r.version, r.run.startUrl, r.run.endReason, r.run.spentUsd], ['report/2', 'http://app.test/list', 'incomplete', 1.2346]);
+  assert.deepEqual(r.run.verdicts, { file: 'verdicts.json', stage: 'done', later: [{ file: 'verdicts-3.json', stage: 'unreadable' }, { file: 'verdicts-2.json', stage: 'preclassified' }] },
+    '끝난 판정을 쓰고, 그 뒤의 끝나지 않았거나 읽을 수 없는 재판정을 함께 남긴다');
   assert.deepEqual(r.run.incompleteReasons, ['http://app.test/cart: stalled (화면이 바뀌지 않는 행동 8번 연속)'], '계획 못 한 페이지 종류와 사유');
   assert.match(r.run.scope.writes, /차단/);
   assert.deepEqual(r.bugs.map(b => [b.id, b.level, b.basis]), [['S1.C1', 'bug_medium', 'autonomous']]);
   assert.deepEqual(r.bugs[0].steps, ['http://app.test/list 열기', 'click "Orb Lamp" 영역의 button'], '이름 없는 버튼도 라벨 영역으로 적는다');
   assert.deepEqual([r.bugs[0].check!.target, r.bugs[0].check!.expected, r.bugs[0].check!.actual, r.bugs[0].reproduction], ['listitem (list "담은 상품" 안)', '1', '0', { result: 'reproduced' }]);
   assert.deepEqual(r.bugs[0].evidence, ['run/evidence/S1.C1.png']);
-  assert.deepEqual(r.incomplete.byReason, { '실행 안 됨(앞 항목에서 멈춤)': 1 }, '사유는 항목 ID 없이 종류로 센다');
-  assert.deepEqual([r.errorSignals.map(g => g.status), r.normalRejections], [[500], 1], '정상 거절은 신호에서 빼고 개수만 남긴다');
+  assert.deepEqual(r.incomplete.byReason, { '실행 안 됨(앞 항목에서 멈춤)': 1, '자동화 실패로 분류(원래 결과 보존)': 1 }, '사유는 항목 ID 없이 종류로 세고, 자동화 실패도 미완료 구역에 보인다');
+  assert.deepEqual(r.passed, { checks: 0, byClass: {} }, '통과는 실제 통과한 검사만 센다(자동화 실패는 통과가 아니다)');
+  assert.deepEqual([r.errorSignals.map(g => g.status), r.normalRejections], [[500, 403], 1], '정상 거절일 수 있는 신호도 지우지 않고 표시만 한다');
+  assert.deepEqual([r.uiDefects.map(a => [a.kind, a.viewport]), r.improvements, r.auditUnconfirmed.map(a => a.kind), r.auditErrors],
+    [[['covered-control', 'mobile']], [], ['unnamed-control'], ['http://app.test/cart: 화면 크기를 바꾸지 못함']],
+    '확인된 점검 발견만 UI 결함·개선 제안으로 세고, 확인하지 못한 것과 점검 실패는 따로 남긴다');
+  assert.deepEqual(r.coverage.templates.find(t => t.template === url)!.executedPages, [url]);
   assert.deepEqual([r.questions.map(q => q.id), r.observations.length, r.coverage.unvisitedLinks], [['Q1'], 1, ['http://app.test/help']]);
 
   const html = renderHtml(r, dir);
+  assert.ok(html.includes('UI 결함 (1) · 개선 제안 (0)') && html.includes('확인하지 못한 점검 발견 (1)') && html.includes('정상 거절일 수 있음'));
+  assert.ok(html.includes('<td>S2.A1</td>') && html.includes('대상을 잘못 찾음'), '미완료 구역에 항목·원래 결과·분류 근거를 보인다');
   assert.ok(!html.includes('<script>alert(1)</script>') && html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), '페이지에서 온 글자는 HTML로 해석하지 않는다');
   assert.ok(!html.includes('<b>배지</b>'));
   assert.ok(html.includes('data:image/png;base64,'), '버그 항목에는 실패 시점 화면을 넣는다');

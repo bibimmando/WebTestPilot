@@ -16,7 +16,7 @@ const steps = new Map(plan.scenarios.flatMap(s => s.steps.map(st => [st.id, st] 
 const checks = new Map(plan.scenarios.flatMap(s => s.checks.map(c => [c.id, c] as const)));
 /** 지금 실행 중인 단계. 오류 신호를 이 단계에 붙인다. 워커 하나는 시나리오를 하나씩 차례로 돌린다. */
 let phase = 'start';
-const MAX_SIGNALS = 50;
+const SIGNALS_PER_STEP = 10;
 const NORMAL_REJECTIONS = new Set([401, 403, 422]);
 /** 이 실행에서 검사가 읽은 실제 값. 관측 참조(expected_from)가 앞선 검사의 값을 기대값으로 쓴다. */
 const actuals = new Map<string, string>();
@@ -45,7 +45,14 @@ export const test = base.extend<{ guard: void }>({
     // 오류 신호: 콘솔 오류, 잡히지 않은 스크립트 예외, 400 이상 응답, 실패한 요청.
     // 정책 차단(우리가 막은 요청)·이동으로 취소된 요청·브라우저가 스스로 여는 /favicon.ico는 앱의 신호가 아니라 뺀다.
     const signals: Signal[] = [];
-    const add = (s: Omit<Signal, 'after'>) => { if (signals.length < MAX_SIGNALS) signals.push({ ...s, after: phase, text: s.text.slice(0, 300) }); };
+    let signalsDropped = 0;
+    const add = (s: Omit<Signal, 'after'>, after = phase) => {
+      if (signals.filter(x => x.after === after).length >= SIGNALS_PER_STEP) { signalsDropped++; return; }
+      signals.push({ ...s, after, text: s.text.slice(0, 300) });
+    };
+    // 응답·실패는 늦게 도착해도 요청을 보낸 단계에 붙인다. 콘솔·스크립트 예외는 보낸 쪽을 알 수 없어 난 시점의 단계에 붙인다.
+    const sentIn = new WeakMap<object, string>();
+    context.on('request', r => sentIn.set(r, phase));
     const favicon = (url: string) => new URL(url).pathname === '/favicon.ico';
     context.on('console', m => {
       // "Failed to load resource"는 브라우저가 실패한 요청을 다시 알리는 문구라 요청 신호와 겹친다.
@@ -54,15 +61,15 @@ export const test = base.extend<{ guard: void }>({
     context.on('weberror', e => add({ kind: 'pageerror', url: e.page()?.url() ?? '', text: String(e.error()?.message ?? e.error()) }));
     context.on('response', r => {
       if (r.status() < 400 || favicon(r.url())) return;
-      add({ kind: 'http', url: r.url(), status: r.status(), text: `${r.request().method()} ${r.status()}`, ...(NORMAL_REJECTIONS.has(r.status()) ? { normal: true as const } : {}) });
+      add({ kind: 'http', url: r.url(), status: r.status(), text: `${r.request().method()} ${r.status()}`, ...(NORMAL_REJECTIONS.has(r.status()) ? { normal: true as const } : {}) }, sentIn.get(r.request()));
     });
     context.on('requestfailed', r => {
       const why = r.failure()?.errorText ?? '';
       if (/ERR_BLOCKED_BY_CLIENT|ERR_ABORTED/.test(why) || favicon(r.url())) return;
-      add({ kind: 'requestfailed', url: r.url(), text: `${r.method()} ${why}` });
+      add({ kind: 'requestfailed', url: r.url(), text: `${r.method()} ${why}` }, sentIn.get(r));
     });
     await use();
-    log({ kind: 'policy', scenario: info.title.split(' ')[0], blocked: g.blocked, violations: g.violations, signals });
+    log({ kind: 'policy', scenario: info.title.split(' ')[0], blocked: g.blocked, violations: g.violations, signals, ...(signalsDropped ? { signalsDropped } : {}) });
   }, { auto: true }],
 });
 

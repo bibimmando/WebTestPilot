@@ -17,6 +17,7 @@ before(async () => {
   server = createServer(async (req, res) => {
     if (req.method !== 'GET') { writes.push(`${req.method} ${req.url}`); return res.end('ok'); }
     if (req.url === '/api/denied') { res.statusCode = 403; return res.end(); }
+    if (req.url === '/api/slow') { setTimeout(() => { res.statusCode = 500; res.end(); }, 600); return; }
     try {
       res.setHeader('content-type', 'text/html; charset=utf-8');
       res.end(await readFile(new URL(`./fixtures${new URL(req.url!, 'http://x').pathname}`, import.meta.url)));
@@ -363,10 +364,11 @@ test('오류 신호: 콘솔 오류·스크립트 예외·400 이상 응답을 �
     ['console', 'start', '초기화 경고', null, false],
     ['http', 'S1.A1', 'GET 403', 403, true],
     ['http', 'S1.A1', 'GET 404', 404, false],
+    ['http', 'S1.A1', 'GET 500', 500, false],
     ['pageerror', 'S1.A1', '불러오기 처리 실패', null, false],
-  ], '정책 차단(외부 호출)과 /favicon.ico는 신호가 아니다');
+  ], '정책 차단(외부 호출)과 /favicon.ico는 신호가 아니다. A1에서 보낸 느린 요청의 500은 A2 도중에 와도 A1에 붙는다');
   assert.ok(r.scenarios[0].blocked.some(b => b.includes('localhost:9/ping')), '외부 호출은 정책 차단으로 따로 남는다');
   const grouped = groupSignals(r.scenarios);
   assert.deepEqual(grouped.find(g => g.status === 404)!.at, [{ scenario: 'S1', after: 'S1.A1' }, { scenario: 'S2', after: 'S2.A1' }], '같은 신호는 한 항목으로 묶고 난 곳을 모은다');
-  assert.equal(grouped.length, 4);
+  assert.equal(grouped.length, 5);
 });
