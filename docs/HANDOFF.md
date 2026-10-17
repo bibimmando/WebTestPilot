@@ -9,6 +9,24 @@ Claude Code와 Codex CLI가 작업을 넘길 때 최신 항목을 맨 위에 추
 - 미검증 / 주의:
 -->
 
+## 2026-10-17 (20) · Claude · 기존 에이전트 예비 비교 (중간발표 전 6번)
+
+- 한 일:
+  - 비교 계획([PRELIM_COMPARISON_PLAN](reviews/PRELIM_COMPARISON_PLAN_2026-10-17.md))을 세우고, 사용자 결정(로컬 설치·게시판 fixture만·단계적 실행·dogfood만 출력 폴더 쓰기 허용)대로 실행했다.
+  - agent-browser 0.39.1을 `.tools/agent-browser`(커밋 안 함)에 설치했다. 시스템 Chrome 실행 파일을 쓴다.
+  - 세 도구를 같은 Codex CLI로 게시판 정상·bug-3·bug-4에 1회씩 돌렸다. 결과는 [PRELIM_COMPARISON](reviews/PRELIM_COMPARISON_2026-10-17.md).
+- 결과 요약:
+  - 심어 둔 결함 5개는 세 도구 모두 5/5로 찾았다. 이 fixture는 도구를 가르기에 너무 쉽다.
+  - 정답 밖 주장(정상 버전): 우리 0건(같은 점을 관찰 6건·질문 2건으로 남김), Playwright 0건, dogfood 6건(사람 판정 필요).
+  - 시간·토큰은 우리 시스템이 가장 많다(정상 17분·21만 토큰, Playwright 10분·7만, dogfood 13분·16만).
+- 미검증 / 주의:
+  - 개발 사례라 일반화 근거가 아니다. 우리 시스템은 Codex 경로로만 비교했다(Claude API·병렬 탐색 경로는 아님).
+  - 비교 드라이버(`compare.mts`·Q47 드라이버)는 scratchpad에 있다. 실행 폴더도 로컬이다.
+  - 주의할 점:
+    - `agent-browser open`의 출력을 파이프로 넘기면 백그라운드 브라우저가 파이프를 붙잡아 명령이 끝나지 않는다.
+    - Codex `exec`에서는 프로젝트 에이전트의 MCP 서버가 붙지 않아, Playwright MCP 서버를 본 세션에 따로 붙여야 한다.
+  - Codex 사용량 한도로 멈춘 실행은 `-r2`로 다시 돌렸다.
+
 ## 2026-10-17 (19) · Claude · report.json·PDF (중간발표 전 5번)
 
 - 한 일:
