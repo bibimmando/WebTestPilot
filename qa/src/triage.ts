@@ -1,7 +1,7 @@
 // ④ 실패 분류와 ⑤ 후보 재실행. 먼저 실행 기록만으로 분류하고, 애매한 항목만 AI가 증거를 인용해 분류한다.
 // 분류는 판정이 아니라 후보 상태다. 결함 후보는 최초 실행에 고정된 입력으로 한 번 재실행해 재현 여부를 별도로 남긴다.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { Policy, Signal } from './browser.ts';
 import type { Plan } from './plan.ts';
 import { ruleOf } from './rules.ts';
@@ -11,6 +11,7 @@ import type { ScenarioResult } from './reconcile.ts';
 import { runAgent, type Budget, type Send, type Tool } from './agent.ts';
 import { judgeVisual, replayVisual, type VisualRecord } from './visual.ts';
 import type { StorageState } from './login.ts';
+import type { ResetResult } from './reset.ts';
 
 const SYSTEM = readFileSync(new URL('../prompts/triage.md', import.meta.url), 'utf8');
 const EVIDENCE_CHARS = 30_000;
@@ -45,11 +46,19 @@ export type Verdict = {
   /** 시각 검사의 조건·촬영·모델 응답·코드 판정·재현 비교 */
   visual?: VisualRecord;
   reproduction?: 'reproduced' | 'flaky' | 'reproduction_inconclusive';
+  /** 재현 두 축의 사유(판단 불가일 때). 설명 문장은 reproductionDetail */
+  reproductionReason?: ReproReason;
   reproductionDetail?: string;
   /** 단계별 결과 위에 붙이는 시스템 판정 (설계 3.3, 5장 6단계) */
   system?: { level: SystemLevel; reason: string };
 };
 /** ui_defect·improvement: 시각 검사(일반 규칙 ③ 등) 위반. 조작을 막으면 UI 결함, 아니면 개선 제안. 버그와 따로 센다 */
+/** 재현 판단 불가 사유(설계 6·7단계 "재현 두 축", Q10·Q28) */
+export type ReproReason = 'reset_unavailable' | 'reset_failed' | 'start_differs' | 'execution_incomplete' | 'result_differs' | 'code_changed' | 'login_differs' | 'view_differs' | 'unclear';
+export const REPRO_REASON_TEXT: Record<ReproReason, string> = {
+  reset_unavailable: '초기화 불가', reset_failed: '초기화 실패', start_differs: '시작 상태 다름', execution_incomplete: '실행 미완료',
+  result_differs: '재실행 결과가 최초와 다름', code_changed: '실행 코드 다름', login_differs: '로그인 조건 다름', view_differs: '화면 크기·스크롤 다름', unclear: '재현 결과 판단 불가',
+};
 export type SystemLevel = 'bug_high' | 'bug_medium' | 'not_bug' | 'hold' | 'incomplete' | 'ui_defect' | 'improvement';
 
 /** 실행 기록만으로 하는 1차 분류. 실패 위치만으로 원인을 정하지 않고, 원인을 모르는 실패는 needs_triage로 둔다. */
@@ -314,25 +323,43 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
  * 화면 전체 지문은 쓰지 않는다: 목록 순서·추천처럼 매번 바뀌는 영역 때문에 같은 시작 상태도 다르게 보인다.
  * 선행조건이 없는 시나리오는 시작 URL만 같다는 뜻이므로 결과에 그렇게 적는다.
  */
-export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir: string; timeoutMs?: number; storageState?: StorageState; hideEnv?: string[] }): Promise<RunResult | undefined> {
+export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir: string; timeoutMs?: number; storageState?: StorageState; hideEnv?: string[];
+  /** 등록된 초기화(reset.ts). 쓰기 허용 실행에서만 재실행 전에 호출하고 확인한다 */
+  reset?: () => Promise<ResetResult>;
+  /** 최초 실행 전 초기화 결과. 실패했으면 최초 시작 상태를 모르므로 재현을 판단하지 않는다 */
+  startReset?: ResetResult }): Promise<RunResult | undefined> {
   // 원래 불일치는 AI 분류 결과와 상관없이 재현한다. 자동화 문제로 분류돼도 재현 여부는 별도 정보다.
   const candidates = o.verdicts.filter(isCandidate);
   if (!candidates.length) return undefined;
   const plan: Plan = JSON.parse(readFileSync(join(o.run.runDir, 'plan.json'), 'utf8'));
   const policy: Policy = JSON.parse(readFileSync(join(o.run.runDir, 'policy.json'), 'utf8'));
   const firstManifest = JSON.parse(readFileSync(join(o.run.runDir, 'manifest.json'), 'utf8'));
+  const allInconclusive = (reason: ReproReason, detail: string) => { for (const v of candidates) { v.reproduction = 'reproduction_inconclusive'; v.reproductionReason = reason; v.reproductionDetail = detail; } };
+  // 쓰기를 허용한 실행은 앞 시나리오가 서버 상태를 바꿨을 수 있다. 등록된 초기화 없이 다시 돌리면 같은 시작이라고 할 수 없다.
+  // 쓰기를 막은 실행은 우리가 서버 상태를 바꾸지 않으므로 초기화 없이 같은 시작 URL에서 재실행한다.
+  if (policy.allowWrites && !o.reset) { allInconclusive('reset_unavailable', '쓰기 허용 실행인데 등록된 초기화가 없음'); return undefined; }
+  if (policy.allowWrites && o.startReset && !o.startReset.ok) { allInconclusive('reset_failed', `실행 전 초기화 실패(최초 시작 상태 미확인): ${o.startReset.reason}`); return undefined; }
+  // 같은 폴더로 다시 판정하면 재실행이 거부된다. 초기화를 부르기 전에 확인해 상태만 바꾸고 끝나는 일을 막는다.
+  if (existsSync(o.runDir)) throw new Error(`재현 폴더가 이미 있음: ${o.runDir}`);
+  // 쓰기를 막은 실행은 서버 상태를 바꾸지 않으므로 등록된 초기화도 부르지 않는다(초기화 자체가 쓰기다).
+  let state = o.storageState;
+  if (policy.allowWrites && o.reset) {
+    const r = await o.reset();
+    if (!r.ok) { allInconclusive('reset_failed', r.reason); return undefined; }
+    state = r.storageState ?? state;
+  }
   const again = await runPlan({ plan, policy, runDir: o.runDir, timeoutMs: o.timeoutMs ?? firstManifest.timeoutMs,
-    only: [...new Set(candidates.map(v => v.scenario))], workers: firstManifest.workers, storageState: o.storageState, hideEnv: o.hideEnv });
+    only: [...new Set(candidates.map(v => v.scenario))], workers: firstManifest.workers, storageState: state, hideEnv: o.hideEnv });
   const secondManifest = JSON.parse(readFileSync(join(o.runDir, 'manifest.json'), 'utf8'));
   const changed = Object.keys(firstManifest.files).filter(k => k.startsWith('src/') && firstManifest.files[k] !== secondManifest.files[k]);
   for (const v of candidates) {
     const first = o.run.scenarios.find(x => x.id === v.scenario)!;
     const second = again.scenarios.find(x => x.id === v.scenario)!;
-    const inconclusive = (detail: string) => { v.reproduction = 'reproduction_inconclusive'; v.reproductionDetail = detail; };
-    if (changed.length) { inconclusive(`실행 코드가 최초와 다름: ${changed.join(', ')}`); continue; }
-    if (!!firstManifest.loggedIn !== !!secondManifest.loggedIn) { inconclusive(`로그인 상태가 최초와 다름(최초 ${firstManifest.loggedIn ? '로그인' : '로그인 안 함'}, 재실행 ${secondManifest.loggedIn ? '로그인' : '로그인 안 함'})`); continue; }
-    if (!second.valid) { inconclusive(`재실행 무효: ${second.invalid.join('; ')}`); continue; }
-    if (second.precondition === 'failed') { inconclusive('재실행에서 선행조건(시작 조건)이 통과하지 못함'); continue; }
+    const inconclusive = (reason: ReproReason, detail: string) => { v.reproduction = 'reproduction_inconclusive'; v.reproductionReason = reason; v.reproductionDetail = detail; };
+    if (changed.length) { inconclusive('code_changed', `실행 코드가 최초와 다름: ${changed.join(', ')}`); continue; }
+    if (!!firstManifest.loggedIn !== !!secondManifest.loggedIn) { inconclusive('login_differs', `로그인 상태가 최초와 다름(최초 ${firstManifest.loggedIn ? '로그인' : '로그인 안 함'}, 재실행 ${secondManifest.loggedIn ? '로그인' : '로그인 안 함'})`); continue; }
+    if (!second.valid) { inconclusive('execution_incomplete', `재실행 무효: ${second.invalid.join('; ')}`); continue; }
+    if (second.precondition === 'failed') { inconclusive('start_differs', '재실행에서 선행조건(시작 조건)이 통과하지 못함'); continue; }
     // 시각 검사는 촬영 상태만 같으므로 서명으로 비교하지 않는다. 같은 위반이 다시 보이는지는 replayVisual이 이미지로 판단한다.
     if (v.visual) continue;
     const relative = plan.scenarios.flatMap(s => s.checks).find(c => c.id === v.id)?.expected_from !== undefined;
@@ -345,7 +372,9 @@ export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir
         relative && c2 ? `관측 참조 재실행: 기대 ${JSON.stringify(c2.expected ?? null)}, 실제 ${JSON.stringify(c2.actual ?? null)}` : ''].filter(Boolean).join('; ') || undefined;
     }
     else if (after === 'passed' || after === 'ok') { v.reproduction = 'flaky'; v.reproductionDetail = `재실행 결과: ${after}`; }
-    else inconclusive(`재실행 결과가 다름: ${after}`);
+    // 값을 제대로 읽었는데 다른 불일치면 결과가 달라진 것이고, 읽지 못했으면 실행·읽기가 끝나지 않은 것이다.
+    else if (v.kind === 'check' && second.checks.find(x => x.id === v.id)?.status === 'mismatch') inconclusive('result_differs', `재실행 결과가 최초와 다름: ${after}`);
+    else inconclusive('execution_incomplete', `재실행에서 값을 읽지 못하거나 실행이 끝나지 않음: ${after}`);
   }
   return again;
 }
@@ -424,6 +453,8 @@ export type Judgment = { file: string; verdicts: Verdict[]; requirements: { id: 
   features: { id: string; plan: 'planned' | 'unplanned' | 'missing'; system: Partial<Record<SystemLevel, number>>; questions: string[] }[];
   /** 답을 받지 못한 업무 규칙 질문. 관련 기능은 판단 보류 */
   pendingQuestions: Plan['questions'];
+  /** 이 판정의 재현 실행 폴더 이름(결과 폴더 기준). 다시 판정하면 repro-2 … */
+  reproduceDir?: string;
   /** 기대값 없이 잡힌 오류 신호를 종류·내용·경로로 묶은 검토 대상(판정 아님). normal은 정상 거절(401·403·422) */
   errorSignals: { kind: Signal['kind']; text: string; path: string; status?: number; normal?: true; at: { scenario: string; after: string }[] }[];
 };
@@ -433,10 +464,12 @@ export type Judgment = { file: string; verdicts: Verdict[]; requirements: { id: 
  * 요구사항 분모는 대조 결과를 그대로 쓴다.
  */
 export async function judge(o: { plan: Plan; run: RunResult; send: Send; model: string; budget: Budget;
-  reproduceDir: string; timeoutMs?: number; maxTriageItems?: number; concurrency?: number; storageState?: StorageState; hideEnv?: string[] }): Promise<Judgment> {
+  reproduceDir: string; timeoutMs?: number; maxTriageItems?: number; concurrency?: number; storageState?: StorageState; hideEnv?: string[]; reset?: () => Promise<ResetResult>; startReset?: ResetResult }): Promise<Judgment> {
   let n = 1;
   while (existsSync(join(o.run.runDir, n === 1 ? 'verdicts.json' : `verdicts-${n}.json`))) n++;
   const file = join(o.run.runDir, n === 1 ? 'verdicts.json' : `verdicts-${n}.json`);
+  // 판정 회차마다 재현 폴더를 따로 둔다. 보고서는 그 판정이 쓴 재현 폴더의 증거만 연결한다.
+  const reproduceDir = n === 1 ? o.reproduceDir : `${o.reproduceDir}-${n}`;
   const verdicts = preclassify(o.plan, o.run);
   const checks = new Map(o.plan.scenarios.flatMap(s => s.checks.map(c => [c.id, c] as const)));
   const reqIds = new Set(o.plan.requirements.map(r => r.id));
@@ -459,7 +492,7 @@ export async function judge(o: { plan: Plan; run: RunResult; send: Send; model: 
       system: count(verdicts.filter(v => scenarios.has(v.scenario) && groupOf(v) !== 'preparation')),
       questions: (o.plan.questions ?? []).filter(q => q.feature === f.id).map(q => q.id) };
   }),
-  pendingQuestions: o.plan.questions ?? [], errorSignals: groupSignals(o.run.scenarios) });
+  pendingQuestions: o.plan.questions ?? [], errorSignals: groupSignals(o.run.scenarios), reproduceDir: basename(reproduceDir) });
   const save = (stage: string) => writeFileSync(file, JSON.stringify(judgment(stage), null, 2));
   save('preclassified');
   await triage({ plan: o.plan, run: o.run, verdicts, send: o.send, model: o.model, budget: o.budget, maxItems: o.maxTriageItems,
@@ -468,11 +501,12 @@ export async function judge(o: { plan: Plan; run: RunResult; send: Send; model: 
     logDir: n === 1 ? 'triage' : `triage-${n}`, concurrency: o.concurrency, onUpdate: () => save('triage') });
   save('triaged');
   try {
-    const again = await reproduce({ run: o.run, verdicts, runDir: o.reproduceDir, timeoutMs: o.timeoutMs, storageState: o.storageState, hideEnv: o.hideEnv });
+    const again = await reproduce({ run: o.run, verdicts, runDir: reproduceDir, timeoutMs: o.timeoutMs, storageState: o.storageState, hideEnv: o.hideEnv, reset: o.reset, startReset: o.startReset });
     await replayVisual({ plan: o.plan, first: o.run, again, verdicts, send: o.send, model: o.model, budget: o.budget, logDir: n === 1 ? 'triage' : `triage-${n}` });
   } catch (e) {
     for (const v of verdicts) if (isCandidate(v) && !v.reproduction) {
       v.reproduction = 'reproduction_inconclusive';
+      v.reproductionReason = 'execution_incomplete';
       v.reproductionDetail = `재실행 실패: ${(e as Error).message.split('\n')[0]}`;
     }
   }

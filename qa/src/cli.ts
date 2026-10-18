@@ -13,6 +13,7 @@ import { runPlan } from './run.ts';
 import { judge } from './triage.ts';
 import { writeReport } from './report.ts';
 import { login, readAppConfig, type StorageState } from './login.ts';
+import { resetApp, type ResetResult } from './reset.ts';
 import { Budget, type Send } from './agent.ts';
 import type { Requirement } from './plan.ts';
 
@@ -77,6 +78,19 @@ let storageState: StorageState | undefined;
 // 계정 비밀값 환경 변수는 실행 프로세스에 넘기지 않는다.
 const hideEnv = app.login ? [app.login.env.username, app.login.env.password] : [];
 let loginStatus: { status: 'none' | 'ok' | 'failed'; reason?: string } = { status: 'none' };
+// 등록된 초기화: 쓰기 허용 실행에서만 실행 전에 한 번, 재현 전에 한 번. 결과는 보고서 범위에 남긴다.
+// 초기화가 서버 세션을 지울 수 있어, 로그인하는 앱이면 초기화 뒤 다시 로그인한 상태로 실행·재현한다.
+const resetLog: { at: 'run' | 'repro'; ok: boolean; reason?: string }[] = [];
+const reset = app.reset && policy.allowWrites ? async (): Promise<ResetResult> => {
+  let r: ResetResult = await resetApp(policy, app.reset!, storageState);
+  if (r.ok && app.login) {
+    const again = await login(browser, policy, app.login);
+    r = again.ok ? { ok: true, storageState: again.state } : { ok: false, reason: `초기화 뒤 다시 로그인 실패: ${again.reason}` };
+    if (again.ok) storageState = again.state;
+  }
+  resetLog.push({ at: resetLog.length ? 'repro' : 'run', ok: r.ok, ...(r.ok ? {} : { reason: r.reason }) });
+  return r;
+} : undefined;
 if (app.login) {
   const r = await login(browser, policy, app.login);
   if (r.ok) { storageState = r.state; loginStatus = { status: 'ok' }; } else loginStatus = { status: 'failed', reason: r.reason };
@@ -94,9 +108,12 @@ try {
   if (!e.plan) throw new Error(`계획 없음: ${e.stop} ${e.detail ?? ''}`);
   save('plan.json', e.plan);
 
+  // 실행 전 초기화가 실패하면 시작 상태를 모른다. 실행은 하되 보고서 범위에 남기고, 재현은 판단하지 않는다(reset_failed).
+  const startReset = reset ? await reset() : undefined;
+  if (startReset) console.log(`초기화: ${startReset.ok ? '확인됨' : `실패 — ${startReset.reason}`}`);
   const run = await runPlan({ plan: e.plan, policy, runDir: join(out, 'run'), workers: Number(a.workers), storageState, hideEnv });
   timing.run = Date.now() - t0 - timing.explore;
-  const j = await judge({ plan: e.plan, run, send, model: a['triage-model']!, budget, reproduceDir: join(out, 'repro'), concurrency: Number(a.concurrency), storageState, hideEnv });
+  const j = await judge({ plan: e.plan, run, send, model: a['triage-model']!, budget, reproduceDir: join(out, 'repro'), concurrency: Number(a.concurrency), storageState, hideEnv, reset, startReset });
   timing.judge = Date.now() - t0 - timing.explore - timing.run;
   summary = { ...summary, run: { exitCode: run.exitCode, problems: run.problems,
     scenarios: run.scenarios.map(s => ({ id: s.id, valid: s.valid, start: s.start, ready: s.ready, precondition: s.precondition, steps: s.steps.map(x => x.status), checks: s.checks.map(c => c.status) })) },
@@ -104,7 +121,7 @@ try {
     system: j.system, features: j.features, questions: j.pendingQuestions, observations: e.plan.observations };
 } finally {
   save('calls.json', calls);
-  save('summary.json', { startUrl: a.url, login: loginStatus, ...summary, timingMs: { ...timing, total: Date.now() - t0 }, spentUsd: budget.spent, budgetUsd: budget.limitUsd,
+  save('summary.json', { startUrl: a.url, login: loginStatus, reset: { registered: !!app.reset, used: !!reset, calls: resetLog }, ...summary, timingMs: { ...timing, total: Date.now() - t0 }, spentUsd: budget.spent, budgetUsd: budget.limitUsd,
     models: { plan: a['plan-model'], triage: a['triage-model'] }, calls: calls.length });
   // 판정까지 끝났으면 저장된 결과로 report.json·PDF를 만든다. 실패해도 실행 결과는 그대로 남고, node src/report.ts <폴더>로 다시 만들 수 있다.
   if (existsSync(join(out, 'run', 'verdicts.json'))) {

@@ -4,12 +4,15 @@
 import { readFileSync } from 'node:fs';
 import type { Browser, BrowserContext } from 'playwright';
 import { settle, toLocator, type Policy, type Target } from './browser.ts';
+import { checkResetSpec, type ResetSpec } from './reset.ts';
 
 /** 앱 설정 파일(--app). 이 앱에서만 필요한 준비 정보를 둔다. 공통 엔진에는 앱별 분기를 넣지 않는다. */
 export type AppConfig = {
   login?: LoginSpec;
   /** 요청하지 않을 주소(부분 문자열). 로그아웃처럼 서버 세션을 끊어 뒤 검사 전체를 로그인 없는 상태로 만드는 주소 */
   deny?: string[];
+  /** 등록된 초기화: 실행 전·재현 전에 프로그램이 호출하고 확인한다 */
+  reset?: ResetSpec;
 };
 export type LoginSpec = {
   /** 로그인 화면 주소(허용 origin 안) */
@@ -29,6 +32,7 @@ export function readAppConfig(path: string): AppConfig {
   // Windows PowerShell 5.1의 utf8 저장은 BOM을 붙이므로 제거한다.
   const c = JSON.parse(readFileSync(path, 'utf8').replace(/^﻿/, '')) as AppConfig & { login?: Record<string, unknown> };
   if (c.deny !== undefined && !(Array.isArray(c.deny) && c.deny.every(d => typeof d === 'string' && d.trim()))) throw new Error('앱 설정: deny는 비어 있지 않은 문자열 목록이어야 함');
+  if (c.reset !== undefined) { const err = checkResetSpec(c.reset); if (err) throw new Error(err); }
   const l = c.login;
   if (l) {
     if ('password' in l && typeof l.password === 'string') throw new Error('앱 설정: 비밀번호 값을 파일에 쓰지 말고 env.password에 환경 변수 이름을 적으세요');

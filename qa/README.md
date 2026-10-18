@@ -91,7 +91,11 @@ node src/cli.ts --url http://localhost:8080/ --requirements req.json --name shop
     "success": { "text": "로그아웃", "urlIncludes": "/account" },
     "env": { "username": "QA_USER", "password": "QA_PASS" }
   },
-  "deny": ["/logout"]
+  "deny": ["/logout"],
+  "reset": {
+    "request": { "method": "POST", "url": "http://localhost:8080/test/reset" },
+    "verify": { "url": "http://localhost:8080/api/cart", "text": "\"items\":[]" }
+  }
 }
 ```
 
@@ -100,6 +104,7 @@ node src/cli.ts --url http://localhost:8080/ --requirements req.json --name shop
 - 비밀번호 칸은 증거 스크린샷에서 가린다. 로그인 상태(세션 쿠키)는 실행 폴더에 저장하지 않고, 로그인 실행에서는 Playwright trace·자동 스크린샷을 끈다(가리지 않은 DOM·요청 기록이 남기 때문). 계정 비밀값 환경 변수는 실행 프로세스에 넘기지 않는다.
 - 로그인에 실패하면 멈추지 않고 로그인 없이 검사하며, 보고서에 "로그인 이후 기능 미검사"와 사유를 남긴다.
 - 구독 CLI(MCP)로 돌릴 때도 `src/mcp.ts`에 같은 `--app`을 준다.
+- `reset`은 등록된 초기화다. 프로그램이 실행 전과 재현 전에 한 번씩 보내고, `verify`로 초기 상태인지 확인한다(로그인했으면 그 쿠키로). AI는 부르지 않는다. 쓰기 허용 실행에 `reset`이 없으면 재현은 "판단 불가(초기화 불가)"다. 쓰기를 막은 실행은 초기화 없이 재현한다.
 
 ## 결과 보기
 

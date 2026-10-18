@@ -9,7 +9,7 @@ import { ruleOf } from './rules.ts';
 import type { RunResult } from './run.ts';
 import type { VisualShot } from './reconcile.ts';
 import { runAgent, type Budget, type Send, type Tool } from './agent.ts';
-import type { Verdict } from './triage.ts';
+import type { ReproReason, Verdict } from './triage.ts';
 
 const SYSTEM = readFileSync(new URL('../prompts/visual.md', import.meta.url), 'utf8');
 const MIN_EVIDENCE = 6;
@@ -58,12 +58,12 @@ const REPLAY: Anthropic.Tool = { name: 'replay_assessment', strict: true, descri
       evidence: { type: 'string' } } } } } } };
 
 /** 위반 조건마다의 재현 답 → 재현 결과. 모든 조건이 다시 보여야 재현됨, 모두 사라져야 재현 안 됨, 섞이거나 판단 불가면 판단 불가. */
-export function replayResult(r: Replay): { reproduction: NonNullable<Verdict['reproduction']>; detail: string } {
+export function replayResult(r: Replay): { reproduction: NonNullable<Verdict['reproduction']>; detail: string; reason?: ReproReason } {
   const by = (s: Same) => r.criteria.filter(c => c.same === s).map(c => c.n);
   const text = r.criteria.map(c => `조건 ${c.n} ${c.same}: ${c.evidence}`).join('; ');
   if (by('yes').length === r.criteria.length) return { reproduction: 'reproduced', detail: `같은 위반이 다시 보임 — ${text}` };
   if (by('no').length === r.criteria.length) return { reproduction: 'flaky', detail: `재현 화면에서는 위반이 없음 — ${text}` };
-  return { reproduction: 'reproduction_inconclusive', detail: `위반 조건마다 재현 결과가 다르거나 판단 불가 — ${text}` };
+  return { reproduction: 'reproduction_inconclusive', reason: 'unclear', detail: `위반 조건마다 재현 결과가 다르거나 판단 불가 — ${text}` };
 }
 
 const image = (path: string): Anthropic.ImageBlockParam =>
@@ -136,14 +136,14 @@ export async function judgeVisual(o: { plan: Plan; run: RunResult; verdicts: Ver
 export async function replayVisual(o: { plan: Plan; first: RunResult; again: RunResult | undefined; verdicts: Verdict[]; send: Send; model: string; budget: Budget; logDir: string }): Promise<void> {
   for (const v of o.verdicts) {
     if (!v.visual?.assessment || v.class !== 'app_defect_candidate' || v.reproduction) continue;
-    const inconclusive = (detail: string) => { v.reproduction = 'reproduction_inconclusive'; v.reproductionDetail = detail; };
+    const inconclusive = (detail: string, reason: ReproReason = 'execution_incomplete') => { v.reproduction = 'reproduction_inconclusive'; v.reproductionReason = reason; v.reproductionDetail = detail; };
     const second = o.again?.scenarios.find(x => x.id === v.scenario)?.checks.find(x => x.id === v.id);
     if (!o.again || !second) { inconclusive('재실행 결과 없음'); continue; }
     if (second.status !== 'visual_pending' || !second.visual || !existsSync(join(o.again.runDir, second.visual.image))) { inconclusive(`재실행에서 촬영하지 못함(${second.status})`); continue; }
     const first = v.visual.shot;
     v.visual.replay = { shot: second.visual };
     if (JSON.stringify(first.viewport) !== JSON.stringify(second.visual.viewport) || JSON.stringify(first.scroll) !== JSON.stringify(second.visual.scroll)) {
-      inconclusive(`화면 크기·스크롤 위치가 최초와 다름(최초 ${JSON.stringify([first.viewport, first.scroll])}, 재실행 ${JSON.stringify([second.visual.viewport, second.visual.scroll])})`);
+      inconclusive(`화면 크기·스크롤 위치가 최초와 다름(최초 ${JSON.stringify([first.viewport, first.scroll])}, 재실행 ${JSON.stringify([second.visual.viewport, second.visual.scroll])})`, 'view_differs');
       continue;
     }
     if (second.visual.ready === false) { inconclusive('재실행에서 화면이 멈추기 전에 촬영함'); continue; }
@@ -169,6 +169,7 @@ export async function replayVisual(o: { plan: Plan; first: RunResult; again: Run
     const res = replayResult(answer);
     v.reproduction = res.reproduction;
     v.reproductionDetail = res.detail;
+    if (res.reason) v.reproductionReason = res.reason;
   }
 }
 

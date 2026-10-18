@@ -7,7 +7,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'no
 import { basename, join } from 'node:path';
 import type { Browser } from 'playwright';
 import type { Plan, Check } from './plan.ts';
-import type { Judgment, Verdict, SystemLevel } from './triage.ts';
+import { REPRO_REASON_TEXT, type Judgment, type Verdict, type SystemLevel } from './triage.ts';
 import type { RunResult } from './run.ts';
 import type { SiteMap } from './sitemap.ts';
 import { MOBILE, type AuditFinding, type Target } from './browser.ts';
@@ -30,7 +30,8 @@ export type ReportItem = {
   observed: string;
   classification: { class: string; reason?: string; error?: string };
   /** 재현 두 축: 결과와 사유(판단 불가일 때). M5에서 초기화 불가·시작 상태 다름 같은 사유가 늘어난다 */
-  reproduction?: { result: 'reproduced' | 'not_reproduced' | 'inconclusive'; reason?: string; evidence?: string[] };
+  /** 재현 두 축: 결과, 판단 불가 사유(reasonCode·이름), 설명 */
+  reproduction?: { result: 'reproduced' | 'not_reproduced' | 'inconclusive'; reasonCode?: string; reasonName?: string; reason?: string; evidence?: string[] };
   /** 보고서 폴더 기준 증거 경로(최초 실행). 재실행 증거는 reproduction.evidence */
   evidence: string[];
   /** 이 항목의 실패 시점 증거 수집 실패. 촬영 실패는 사이트 결함이 아니다 */
@@ -128,7 +129,7 @@ export function buildReport(dir: string): Report {
   const explore = existsSync(join(dir, 'explore.json'))
     ? read<{ sitemap?: SiteMap; conversations?: { template: string; stop: string; planned: boolean; turns: number; detail?: string }[]; complete?: boolean }>(join(dir, 'explore.json')) : {};
   const summary = existsSync(join(dir, 'summary.json'))
-    ? read<{ startUrl?: string; login?: { status: 'none' | 'ok' | 'failed'; reason?: string }; spentUsd?: number; budgetUsd?: number; models?: { plan?: string; triage?: string }; timingMs?: { total?: number } }>(join(dir, 'summary.json')) : {};
+    ? read<{ startUrl?: string; reset?: { registered: boolean; used?: boolean; calls: { at: 'run' | 'repro'; ok: boolean; reason?: string }[] }; login?: { status: 'none' | 'ok' | 'failed'; reason?: string }; spentUsd?: number; budgetUsd?: number; models?: { plan?: string; triage?: string }; timingMs?: { total?: number } }>(join(dir, 'summary.json')) : {};
 
   const scenarioOf = new Map(plan.scenarios.map(s => [s.id, s]));
   const resultOf = new Map(results.scenarios.map(s => [s.id, s]));
@@ -161,9 +162,10 @@ export function buildReport(dir: string): Report {
       steps, preconditions: s.checks.filter(x => x.precondition).map(describeCheck), observed: v.observed,
       classification: { class: v.class, ...(v.triage && 'reason' in v.triage ? { reason: v.triage.reason } : {}), ...(v.triage && 'error' in v.triage ? { error: v.triage.error } : {}) },
       ...(rep ? { reproduction: { result: rep === 'reproduced' ? 'reproduced' as const : rep === 'flaky' ? 'not_reproduced' as const : 'inconclusive' as const,
+        ...(v.reproductionReason ? { reasonCode: v.reproductionReason, reasonName: REPRO_REASON_TEXT[v.reproductionReason] } : {}),
         ...(v.reproductionDetail ? { reason: v.reproductionDetail } : {}),
         // 재실행 폴더(repro/)에 같은 항목의 증거가 있으면 연결한다. 재현 판정을 따라가 확인할 수 있게 한다.
-        ...(() => { const e = ['png', 'aria.txt', 'visual.png'].map(x => `repro/evidence/${v.id}.${x}`).filter(p => existsSync(join(dir, p))); return e.length ? { evidence: e } : {}; })() } } : {}),
+        ...(() => { const e = ['png', 'aria.txt', 'visual.png'].map(x => `${judgment.reproduceDir ?? 'repro'}/evidence/${v.id}.${x}`).filter(p => existsSync(join(dir, p))); return e.length ? { evidence: e } : {}; })() } } : {}),
       evidence: [...(res?.evidence ?? []), ...(stepEvidence ?? [])].map(e => `run/${e}`),
       ...(v.captureErrors ? { captureErrors: v.captureErrors } : {}),
       ...(v.visual ? { visual: { criteria: v.visual.criteria.map((text, i) => {
@@ -219,7 +221,11 @@ export function buildReport(dir: string): Report {
         login: summary.login?.status === 'ok' ? '앱 설정의 테스트 계정으로 로그인한 상태에서 검사(로그아웃 등 앱 설정의 금지 주소는 요청하지 않음)'
           : summary.login?.status === 'failed' ? `로그인 실패 — 로그인하지 않은 상태로 탐색·실행했다. 로그인 이후 기능은 미검사(${summary.login.reason ?? '사유 없음'})`
           : '로그인 안 함 — 로그인 이후 기능은 이번 범위 밖',
-        reset: '지원 안 함 — 재현은 초기화 없이 같은 시작 URL에서 한 번 더 실행',
+        reset: summary.reset?.registered && !policy.allowWrites ? '등록된 초기화가 있지만 부르지 않음 — 쓰기를 막아 서버 상태를 바꾸지 않으므로 초기화 없이 같은 시작 URL에서 재현'
+          : !summary.reset?.registered
+          ? (policy.allowWrites ? '등록된 초기화 없음 — 쓰기 허용 실행이라 재현은 판단 불가(초기화 불가)' : '등록된 초기화 없음 — 쓰기를 막아 서버 상태를 바꾸지 않으므로 초기화 없이 같은 시작 URL에서 재현')
+          : summary.reset.calls.every(c => c.ok) ? `등록된 초기화를 호출하고 확인함(${summary.reset.calls.map(c => c.at === 'run' ? '실행 전' : '재현 전').join('·') || '호출 없음'})`
+          : `초기화 실패 — ${summary.reset.calls.filter(c => !c.ok).map(c => `${c.at === 'run' ? '실행 전' : '재현 전'}: ${c.reason}`).join('; ')}`,
       },
       ...(summary.models ? { models: summary.models } : {}),
       ...(summary.spentUsd !== undefined ? { spentUsd: Number(summary.spentUsd.toFixed(4)) } : {}),
@@ -306,7 +312,7 @@ export function renderHtml(rep: Report, dir: string): string {
       ${x.captureErrors ? `<dt>증거 수집 실패</dt><dd>${x.captureErrors.map(esc).join('<br>')}</dd>` : ''}
       <dt>원래 결과</dt><dd>${esc(x.observed)}</dd>
       <dt>분류</dt><dd>${esc(x.classification.class)}${x.classification.reason ? ` — ${esc(x.classification.reason)}` : ''}${x.classification.error ? ` — ${esc(x.classification.error)}` : ''}</dd>
-      ${x.reproduction ? `<dt>재현</dt><dd>${esc(x.reproduction.result)}${x.reproduction.reason ? ` — ${esc(x.reproduction.reason)}` : ''}${x.reproduction.evidence ? `<br>재실행 증거: ${x.reproduction.evidence.map(esc).join(', ')}` : ''}</dd>` : ''}
+      ${x.reproduction ? `<dt>재현</dt><dd>${esc(x.reproduction.result)}${x.reproduction.reasonName ? ` (${esc(x.reproduction.reasonName)})` : ''}${x.reproduction.reason ? ` — ${esc(x.reproduction.reason)}` : ''}${x.reproduction.evidence ? `<br>재실행 증거: ${x.reproduction.evidence.map(esc).join(', ')}` : ''}</dd>` : ''}
       ${x.preconditions.length ? `<dt>시작 조건</dt><dd><ul>${x.preconditions.map(p => `<li>${esc(p)}</li>`).join('')}</ul></dd>` : ''}
       <dt>재현 절차</dt><dd><ol>${x.steps.map(st => `<li>${esc(st)}</li>`).join('')}</ol></dd>
       <dt>증거</dt><dd>${x.evidence.map(esc).join('<br>') || '없음'}</dd>
