@@ -75,7 +75,7 @@ export async function crawl(page: Page, startUrl: string, policy: Policy, o: { m
     for (const l of links) {
       let u: string;
       try { u = clean(l); } catch { continue; }
-      if (!policy.origins.includes(new URL(u).origin) || known.has(u) || known.size >= maxKnown) continue;
+      if (!policy.origins.includes(new URL(u).origin) || policy.deny?.some(d => u.includes(d)) || known.has(u) || known.size >= maxKnown) continue;
       known.add(u);
       queue.push(u);
     }

@@ -3,7 +3,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test as base, expect, type ElementHandle, type Page, type Locator } from '@playwright/test';
-import { areaOf, ariaText, ariaTextV1, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, type AriaNode, type Policy, type Signal } from './browser.ts';
+import { areaOf, ariaText, ariaTextV1, deniedLink, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, type AriaNode, type Policy, type Signal } from './browser.ts';
 import { compareValues, expectedFrom, sortKeys, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
@@ -37,7 +37,7 @@ async function capture(page: Page, id: string): Promise<{ evidence: string[]; ca
   try { mkdirSync(join(dir!, 'evidence'), { recursive: true }); } catch (e) { return { evidence, captureErrors: [`aria: 증거 폴더 ${brief(e)}`, `screenshot: 증거 폴더 ${brief(e)}`] }; }
   try { writeFileSync(join(dir!, 'evidence', `${id}.aria.txt`), await page.locator('body').ariaSnapshot()); evidence.push(`evidence/${id}.aria.txt`); }
   catch (e) { captureErrors.push(`aria: ${brief(e)}`); }
-  try { await page.screenshot({ path: join(dir!, 'evidence', `${id}.png`) }); evidence.push(`evidence/${id}.png`); }
+  try { await page.screenshot({ path: join(dir!, 'evidence', `${id}.png`), mask: [page.locator('input[type=password]')] }); evidence.push(`evidence/${id}.png`); }
   catch (e) { captureErrors.push(`screenshot: ${brief(e)}`); }
   return { evidence, ...(captureErrors.length ? { captureErrors } : {}) };
 }
@@ -50,7 +50,9 @@ function log(entry: Record<string, unknown>, page?: Page): void {
 export const test = base.extend<{ guard: void }>({
   // 러너의 컨텍스트에 탐색 때와 같은 정책을 건다. 막은 요청과 위반은 시나리오 끝에 ledger에 남긴다.
   guard: [async ({ context }, use, info) => {
-    const g = await guardContext(context, policy);
+    // 금지 주소 요청(Enter·스크립트 이동·리다이렉트)이 막히면 그 단계를 남긴다. 그 뒤 화면은 오류 페이지일 수 있다.
+    const denied: { after: string; url: string }[] = [];
+    const g = await guardContext(context, policy, [], url => denied.push({ after: phase, url }));
     // 오류 신호: 콘솔 오류, 잡히지 않은 스크립트 예외, 400 이상 응답, 실패한 요청.
     // 정책 차단(우리가 막은 요청)·이동으로 취소된 요청·브라우저가 스스로 여는 /favicon.ico는 앱의 신호가 아니라 뺀다.
     const signals: Signal[] = [];
@@ -86,7 +88,7 @@ export const test = base.extend<{ guard: void }>({
     // shortcut: 300ms 안에 열리지 않은 탭은 놓친다. 실측에서 보이면 행동마다 popup 이벤트를 기다린다.
     if (phase !== 'start') await context.waitForEvent('page', { timeout: 300 }).catch(() => {});
     log({ kind: 'policy', scenario: info.title.split(' ')[0], blocked: g.blocked, violations: g.violations, signals, ...(signalsDropped ? { signalsDropped } : {}),
-      ...(newTabs.length ? { newTabs: newTabs.map(t => ({ after: t.after, url: (!t.page.isClosed() && t.page.url()) || t.url })) } : {}) });
+      ...(denied.length ? { denied } : {}), ...(newTabs.length ? { newTabs: newTabs.map(t => ({ after: t.after, url: (!t.page.isClosed() && t.page.url()) || t.url })) } : {}) });
   }, { auto: true }],
 });
 
@@ -143,6 +145,8 @@ export async function act(page: Page, stepId: string): Promise<void> {
       const count = await loc.count();
       if (count !== 1 || await shapeChanged(page, plan.targets[st.target!].target)) throw await stop('not_executed', { reason: 'target_changed', count });
       await remember(page, st.target!);
+      // 앱 설정이 금지한 주소(로그아웃 등)로 가는 링크는 누르지 않는다. 로그인 상태를 끊어 뒤 검사 전체를 바꾸기 때문이다.
+      if (st.op === 'click' && await deniedLink(loc, policy)) throw await stop('not_executed', { reason: 'denied_by_app_config' });
       // 효과 없이 행동 가능 여부만 확인한다.
       if (st.op === 'click') await loc.click({ trial: true, timeout: TIMEOUT });
       else if (st.op === 'fill' && !(await loc.isEditable())) throw new Error('not editable');
@@ -247,7 +251,7 @@ async function visual(page: Page, c: Check): Promise<void> {
       }
       const image = `evidence/${c.id}.visual.png`;
       mkdirSync(join(dir!, 'evidence'), { recursive: true });
-      await page.screenshot({ path: join(dir!, image) });
+      await page.screenshot({ path: join(dir!, image), mask: [page.locator('input[type=password]')] });
       const scroll = await page.evaluate(() => ({ x: Math.round(scrollX), y: Math.round(scrollY) }));
       const box = loc ? await loc.boundingBox() : null;
       // ready=false: 기한 안에 화면이 멈추지 않았다(로딩·전환 중일 수 있음). 판정은 이 촬영으로 결함을 만들지 않는다.

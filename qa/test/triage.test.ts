@@ -218,7 +218,7 @@ test('시스템 판정: 끝난 항목은 반드시 판정하고, 끝나지 않�
   assert.match(systemVerdict(p, v({ ...triaged, captureErrors: ['aria: 페이지 닫힘'] })).reason, /증거 부족/);
   assert.equal(level({ ...triaged, captureErrors: ['screenshot: 시간 초과'] }), 'bug_high');
   // 기술적 미완료는 억지로 판정하지 않는다.
-  for (const c of ['mismatch', 'uncertain', 'uncertain_execution', 'precondition_failed', 'not_run', 'invalid'] as const) assert.equal(level({ class: c }), 'incomplete', c);
+  for (const c of ['mismatch', 'uncertain', 'uncertain_execution', 'precondition_failed', 'not_run', 'invalid', 'policy_blocked'] as const) assert.equal(level({ class: c }), 'incomplete', c);
 });
 
 test('행동 기록: 입력 원문은 넘기지 않고, 그 항목 직전까지의 행동만 최근 10개로 준다', () => {

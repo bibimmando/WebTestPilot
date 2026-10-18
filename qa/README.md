@@ -68,6 +68,7 @@ node src/cli.ts --url http://localhost:8080/ --requirements req.json --name shop
 | `--name` | live | 결과 폴더 이름 앞부분 |
 | `--origins` | 시작 URL의 origin | 허용 origin(쉼표로 여러 개) |
 | `--allow-writes` | 끔 | 쓰기 요청 허용. 켜면 실행 워커는 1로 고정 |
+| `--app` | 없음 | 앱 설정 JSON: 로그인 절차와 요청하지 않을 주소(아래) |
 | `--max-pages` | 30 | 사이트 지도에서 방문할 페이지 수 |
 | `--max-templates` | 8 | 탐색할 페이지 종류 수 |
 | `--turns-per-template` | 25 | 페이지 종류마다 대화 턴 수 |
@@ -75,6 +76,30 @@ node src/cli.ts --url http://localhost:8080/ --requirements req.json --name shop
 | `--concurrency` | 1 | 동시에 여는 탐색·분류 대화 수 |
 | `--workers` | 1 | 동시에 실행할 시나리오 수 |
 | `--plan-model` / `--triage-model` | Opus 5.5 / Sonnet 5.5 | 계획·분류 모델 |
+
+### 로그인이 필요한 앱 (`--app`)
+
+로그인 절차는 엔진 코드가 아니라 앱 설정 파일에 적는다. 비밀값은 파일에 쓰지 않고 환경 변수 이름만 적는다.
+
+```json
+{
+  "login": {
+    "url": "http://localhost:8080/login",
+    "username": { "role": "textbox", "name": "^아이디$" },
+    "password": { "role": "textbox", "name": "^비밀번호$" },
+    "submit": { "role": "button", "name": "^로그인$" },
+    "success": { "text": "로그아웃", "urlIncludes": "/account" },
+    "env": { "username": "QA_USER", "password": "QA_PASS" }
+  },
+  "deny": ["/logout"]
+}
+```
+
+- 프로그램이 로그인해 브라우저 상태를 만들고, 사이트 지도·탐색·실행·재현이 그 상태로 시작한다. 모델은 로그인 비밀값(아이디·비밀번호)을 보지 않는다. 단 로그인 뒤 화면에 보이는 내용(계정 정보·토큰 등)은 탐색 모델과 탐색 기록에 그대로 간다. 실제 사용자 계정이 아니라 테스트 계정을 쓴다.
+- `deny`의 주소는 요청하지 않는다. 로그아웃처럼 서버 세션을 끊는 주소를 적는다(누르려 하면 "앱 설정이 금지한 행동"으로 남는다).
+- 비밀번호 칸은 증거 스크린샷에서 가린다. 로그인 상태(세션 쿠키)는 실행 폴더에 저장하지 않고, 로그인 실행에서는 Playwright trace·자동 스크린샷을 끈다(가리지 않은 DOM·요청 기록이 남기 때문). 계정 비밀값 환경 변수는 실행 프로세스에 넘기지 않는다.
+- 로그인에 실패하면 멈추지 않고 로그인 없이 검사하며, 보고서에 "로그인 이후 기능 미검사"와 사유를 남긴다.
+- 구독 CLI(MCP)로 돌릴 때도 `src/mcp.ts`에 같은 `--app`을 준다.
 
 ## 결과 보기
 
@@ -138,12 +163,11 @@ $prompt | codex exec -s read-only --skip-git-repo-check `
 
 다음은 결과에 "범위 밖"으로 표시된다.
 
-- 로그인 이후 기능
-- 서버에 저장되는 흐름(쓰기 차단)
+- 앱 설정 없는 로그인(외부 인증·2단계 인증·캡차 포함)
+- 서버에 저장되는 흐름(쓰기 차단이 기본, 등록된 초기화 없음)
 - 초기화 뒤 재현
-- 모바일 화면
-- 시각 판정(겹침·넘침)
-- 품질·사용성 규칙
+- 터치 전용 동작(화면 크기만 바꾼다)
+- iframe·shadow DOM 안
 - 보고서 요약 문장(AI)
 - 웹 화면
 

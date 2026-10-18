@@ -86,7 +86,7 @@ export type Report = {
   incomplete: { total: number; byReason: Record<string, number>; items: ReportItem[] };
   /** 계획된 행동의 실행 결과. failureRate = (미실행 + 실행 여부 불명확) / 시도. 시도하지 못한 행동은 notRun에 원인별로 */
   actions: { planned: number; attempted: number; completed: number; notExecuted: Record<string, number>; uncertain: number;
-    notRun: Record<string, number>; invalid: number; failureRate: number | null; repeated: { target: string; failures: number; steps: string[] }[] };
+    notRun: Record<string, number>; invalid: number; policyBlocked: number; failureRate: number | null; repeated: { target: string; failures: number; steps: string[] }[] };
   /** 증거 수집 실패: 실패한 기록 수와 위치(항목 ID: 사유). 행동 전후·시작·실패 시점 모두 센다 */
   evidenceGaps: { total: number; items: string[] };
   /** 행동이 새 탭·창을 연 시나리오(검사는 원래 탭을 읽었다) */
@@ -128,7 +128,7 @@ export function buildReport(dir: string): Report {
   const explore = existsSync(join(dir, 'explore.json'))
     ? read<{ sitemap?: SiteMap; conversations?: { template: string; stop: string; planned: boolean; turns: number; detail?: string }[]; complete?: boolean }>(join(dir, 'explore.json')) : {};
   const summary = existsSync(join(dir, 'summary.json'))
-    ? read<{ startUrl?: string; spentUsd?: number; budgetUsd?: number; models?: { plan?: string; triage?: string }; timingMs?: { total?: number } }>(join(dir, 'summary.json')) : {};
+    ? read<{ startUrl?: string; login?: { status: 'none' | 'ok' | 'failed'; reason?: string }; spentUsd?: number; budgetUsd?: number; models?: { plan?: string; triage?: string }; timingMs?: { total?: number } }>(join(dir, 'summary.json')) : {};
 
   const scenarioOf = new Map(plan.scenarios.map(s => [s.id, s]));
   const resultOf = new Map(results.scenarios.map(s => [s.id, s]));
@@ -216,7 +216,9 @@ export function buildReport(dir: string): Report {
       verdicts: { file: basename(verdictsFile), stage: judgment.stage ?? 'unknown', later: laterVerdicts },
       scope: {
         writes: policy.allowWrites ? '허용' : '차단 — 서버에 저장되는 흐름(등록·주문 등)은 검사하지 않았다',
-        login: '지원 안 함 — 로그인 이후 기능은 이번 범위 밖',
+        login: summary.login?.status === 'ok' ? '앱 설정의 테스트 계정으로 로그인한 상태에서 검사(로그아웃 등 앱 설정의 금지 주소는 요청하지 않음)'
+          : summary.login?.status === 'failed' ? `로그인 실패 — 로그인하지 않은 상태로 탐색·실행했다. 로그인 이후 기능은 미검사(${summary.login.reason ?? '사유 없음'})`
+          : '로그인 안 함 — 로그인 이후 기능은 이번 범위 밖',
         reset: '지원 안 함 — 재현은 초기화 없이 같은 시작 URL에서 한 번 더 실행',
       },
       ...(summary.models ? { models: summary.models } : {}),
@@ -246,7 +248,7 @@ export function buildReport(dir: string): Report {
  * 같은 대상에서 두 번 이상 실패한 행동은 평균에 묻히지 않게 따로 보인다(복제 페이지·여러 시나리오의 같은 대상).
  */
 export function actionSummary(plan: Plan, resultOf: Map<string, RunResult['scenarios'][number]>): Report['actions'] {
-  const a: Report['actions'] = { planned: 0, attempted: 0, completed: 0, notExecuted: {}, uncertain: 0, notRun: {}, invalid: 0, failureRate: null, repeated: [] };
+  const a: Report['actions'] = { planned: 0, attempted: 0, completed: 0, notExecuted: {}, uncertain: 0, notRun: {}, invalid: 0, policyBlocked: 0, failureRate: null, repeated: [] };
   const add = (m: Record<string, number>, k: string) => { m[k] = (m[k] ?? 0) + 1; };
   const failed = new Map<string, { id: string; steps: string[] }>();
   for (const s of plan.scenarios) {
@@ -260,6 +262,7 @@ export function actionSummary(plan: Plan, resultOf: Map<string, RunResult['scena
     for (const st of s.steps) {
       const x = r?.steps.find(y => y.id === st.id);
       if (!x || x.status === 'not_run') { add(a.notRun, cause.startsWith('앞 행동') ? '앞 행동에서 멈춤' : cause); continue; }
+      if (x.status === 'not_executed' && x.reason === 'denied_by_app_config') { a.policyBlocked++; continue; }
       a.attempted++;
       if (x.status === 'ok') { a.completed++; continue; }
       if (x.status === 'uncertain_execution') a.uncertain++;
@@ -277,7 +280,7 @@ const actionText = (a: Report['actions']) => {
   const list = (m: Record<string, number>) => Object.entries(m).map(([k, n]) => `${esc(k)} ${n}`).join(', ');
   return `계획 ${a.planned} · 시도 ${a.attempted} · 완료 ${a.completed} · 미실행 ${Object.values(a.notExecuted).reduce((x, y) => x + y, 0)}${Object.keys(a.notExecuted).length ? ` (${list(a.notExecuted)})` : ''}`
     + ` · 실행 여부 불명확 ${a.uncertain} · 실행 실패율 ${a.failureRate === null ? '—' : `${(a.failureRate * 100).toFixed(1)}%`}`
-    + `${Object.keys(a.notRun).length ? `. 시도하지 못한 행동: ${list(a.notRun)}` : ''}${a.invalid ? `. 무효 시나리오의 행동 ${a.invalid}개는 세지 않음` : ''}`;
+    + `${Object.keys(a.notRun).length ? `. 시도하지 못한 행동: ${list(a.notRun)}` : ''}${a.invalid ? `. 무효 시나리오의 행동 ${a.invalid}개는 세지 않음` : ''}${a.policyBlocked ? `. 앱 설정이 금지해 누르지 않은 행동 ${a.policyBlocked}개(시도에 넣지 않음)` : ''}`;
 };
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!));

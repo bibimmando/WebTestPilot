@@ -1,7 +1,7 @@
 // Claude API로 끝까지 실행: ① 탐색·계획(계획 모델) → ②③ spec 생성·실행·대조 → ④ 분류(분류 모델) → ⑤ 재현.
 // 모든 모델 호출이 하나의 비용 장부(--budget)를 공유하고, 한도를 넘을 호출은 보내지 않는다.
 //
-//   node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] [--budget 10] [--name maison]
+//   node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] [--app <앱 설정.json>] [--budget 10] [--name maison]
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,7 @@ import { explore } from './explore.ts';
 import { runPlan } from './run.ts';
 import { judge } from './triage.ts';
 import { writeReport } from './report.ts';
+import { login, readAppConfig, type StorageState } from './login.ts';
 import { Budget, type Send } from './agent.ts';
 import type { Requirement } from './plan.ts';
 
@@ -20,6 +21,8 @@ const { values: a } = parseArgs({ options: {
   // 기본 한도(설계 5장 0단계): 예산 $10 중 30%는 분류·재현 몫으로 남기고, 탐색은 40분이 지나면 새 대화를 시작하지 않는다.
   url: { type: 'string' }, requirements: { type: 'string' }, budget: { type: 'string', default: '10' }, 'explore-minutes': { type: 'string', default: '40' },
   name: { type: 'string', default: 'live' }, origins: { type: 'string' },
+  // 앱 설정: 로그인 절차(비밀값은 환경 변수 이름만)와 요청하지 않을 주소
+  app: { type: 'string' },
   'plan-model': { type: 'string', default: 'claude-opus-5-5' }, 'triage-model': { type: 'string', default: 'claude-sonnet-5-5' },
   'max-turns': { type: 'string', default: '40' }, 'allow-writes': { type: 'boolean', default: false },
   // 여러 페이지 종류가 있는 사이트: 사이트 지도 방문 한도, 탐색할 페이지 종류 수, 종류마다 대화 턴 수
@@ -56,7 +59,8 @@ for (const k of ['max-turns', 'max-pages', 'max-templates', 'turns-per-template'
   if (!Number.isInteger(Number(a[k])) || Number(a[k]) < 1) { console.error(`--${k}는 1 이상의 정수여야 한다: ${a[k]}`); process.exit(2); }
 }
 const requirements: Requirement[] = a.requirements ? JSON.parse(readFileSync(a.requirements, 'utf8').replace(/^﻿/, '')) : [];  // 요구사항은 선택 입력(설계 3.3)
-const policy = { origins: a.origins ? a.origins.split(',') : [new URL(a.url).origin], allowWrites: a['allow-writes'] };
+const app = a.app ? readAppConfig(a.app) : {};
+const policy = { origins: a.origins ? a.origins.split(',') : [new URL(a.url).origin], allowWrites: a['allow-writes'], ...(app.deny ? { deny: app.deny } : {}) };
 const budget = new Budget(Number(a.budget));
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const out = join(QA, 'runs', `${a.name}-${stamp}`);
@@ -68,10 +72,20 @@ const timing: Record<string, number> = {};
 
 const browser = await chromium.launch();
 let summary: Record<string, unknown> = {};
+// 로그인: 실패해도 멈추지 않고 로그인 없이 검사하며, 보고서에 "로그인 이후 기능 미검사"로 남긴다. 사유에 비밀값은 없다.
+let storageState: StorageState | undefined;
+// 계정 비밀값 환경 변수는 실행 프로세스에 넘기지 않는다.
+const hideEnv = app.login ? [app.login.env.username, app.login.env.password] : [];
+let loginStatus: { status: 'none' | 'ok' | 'failed'; reason?: string } = { status: 'none' };
+if (app.login) {
+  const r = await login(browser, policy, app.login);
+  if (r.ok) { storageState = r.state; loginStatus = { status: 'ok' }; } else loginStatus = { status: 'failed', reason: r.reason };
+  console.log(`로그인: ${r.ok ? '성공' : `실패 — ${r.reason}`}`);
+}
 try {
   const e = await explore({ browser, policy, startUrl: a.url, requirements, send, model: a['plan-model']!, budget, maxTurns: Number(a['max-turns']),
     maxPages: Number(a['max-pages']), maxTemplates: Number(a['max-templates']), turnsPerTemplate: Number(a['turns-per-template']), pagesPerTemplate: Number(a['pages-per-template']), concurrency: Number(a.concurrency),
-    keepUsd: budget.limitUsd * 0.3, deadline: t0 + Number(a['explore-minutes']) * 60_000 });
+    keepUsd: budget.limitUsd * 0.3, deadline: t0 + Number(a['explore-minutes']) * 60_000, storageState });
   timing.explore = Date.now() - t0;
   save('explore.json', { stop: e.stop, detail: e.detail, blocked: e.blocked, violations: e.violations, sitemap: e.sitemap, conversations: e.conversations,
     complete: e.complete, exploredUrls: e.exploredUrls, turns: e.turns });
@@ -80,9 +94,9 @@ try {
   if (!e.plan) throw new Error(`계획 없음: ${e.stop} ${e.detail ?? ''}`);
   save('plan.json', e.plan);
 
-  const run = await runPlan({ plan: e.plan, policy, runDir: join(out, 'run'), workers: Number(a.workers) });
+  const run = await runPlan({ plan: e.plan, policy, runDir: join(out, 'run'), workers: Number(a.workers), storageState, hideEnv });
   timing.run = Date.now() - t0 - timing.explore;
-  const j = await judge({ plan: e.plan, run, send, model: a['triage-model']!, budget, reproduceDir: join(out, 'repro'), concurrency: Number(a.concurrency) });
+  const j = await judge({ plan: e.plan, run, send, model: a['triage-model']!, budget, reproduceDir: join(out, 'repro'), concurrency: Number(a.concurrency), storageState, hideEnv });
   timing.judge = Date.now() - t0 - timing.explore - timing.run;
   summary = { ...summary, run: { exitCode: run.exitCode, problems: run.problems,
     scenarios: run.scenarios.map(s => ({ id: s.id, valid: s.valid, start: s.start, ready: s.ready, precondition: s.precondition, steps: s.steps.map(x => x.status), checks: s.checks.map(c => c.status) })) },
@@ -90,7 +104,7 @@ try {
     system: j.system, features: j.features, questions: j.pendingQuestions, observations: e.plan.observations };
 } finally {
   save('calls.json', calls);
-  save('summary.json', { startUrl: a.url, ...summary, timingMs: { ...timing, total: Date.now() - t0 }, spentUsd: budget.spent, budgetUsd: budget.limitUsd,
+  save('summary.json', { startUrl: a.url, login: loginStatus, ...summary, timingMs: { ...timing, total: Date.now() - t0 }, spentUsd: budget.spent, budgetUsd: budget.limitUsd,
     models: { plan: a['plan-model'], triage: a['triage-model'] }, calls: calls.length });
   // 판정까지 끝났으면 저장된 결과로 report.json·PDF를 만든다. 실패해도 실행 결과는 그대로 남고, node src/report.ts <폴더>로 다시 만들 수 있다.
   if (existsSync(join(out, 'run', 'verdicts.json'))) {

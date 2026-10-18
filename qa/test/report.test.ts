@@ -122,5 +122,5 @@ test('행동 실행 집계: 시도 기준 실패율, 시도하지 못한 행동�
     res('S5', [{ id: 'S5.A1', status: 'ok' }], { valid: false }),
   ]));
   assert.deepEqual(a, { planned: 6, attempted: 3, completed: 1, notExecuted: { target_changed: 1 }, uncertain: 1,
-    notRun: { '앞 행동에서 멈춤': 1, '시작 실패': 1 }, invalid: 1, failureRate: 0.667, repeated: [{ target: 'T1', failures: 2, steps: ['S1.A1', 'S2.A1'] }] });
+    notRun: { '앞 행동에서 멈춤': 1, '시작 실패': 1 }, invalid: 1, policyBlocked: 0, failureRate: 0.667, repeated: [{ target: 'T1', failures: 2, steps: ['S1.A1', 'S2.A1'] }] });
 });

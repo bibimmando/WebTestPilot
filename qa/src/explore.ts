@@ -2,7 +2,8 @@
 import { readFileSync } from 'node:fs';
 import type { Browser, Page } from 'playwright';
 import type Anthropic from '@anthropic-ai/sdk';
-import { openContext, snapshot, resolveRef, resolveGroup, resolveText, resolvePosition, settle, stableOnReload, DESKTOP, MOBILE, VIEWPORTS, type Policy, type Viewport } from './browser.ts';
+import type { StorageState } from './login.ts';
+import { deniedLink, openContext, snapshot, resolveRef, resolveGroup, resolveText, resolvePosition, settle, stableOnReload, DESKTOP, MOBILE, VIEWPORTS, type Policy, type Viewport } from './browser.ts';
 import { validate, freeze, mergePlans, cloneScenarios, startTargetsElsewhere, READS, COMPARES, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
 import { rulesText } from './rules.ts';
 import { crawl, pathOf, type SiteMap, type Template } from './sitemap.ts';
@@ -44,7 +45,9 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
   /** 이만큼은 분류·재현 몫으로 남기고, 남은 예산이 이보다 적으면 새 대화를 시작하지 않는다 */
   keepUsd?: number;
   /** 이 시각(epoch ms)이 지나면 새 대화를 시작하지 않는다. 진행 중인 대화는 끝까지 둔다 */
-  deadline?: number }): Promise<ExploreResult> {
+  deadline?: number;
+  /** 로그인 상태(login.ts). 사이트 지도와 모든 탐색 대화가 이 상태로 시작한다 */
+  storageState?: StorageState }): Promise<ExploreResult> {
   assertStartAllowed(o);
   // 탐색하는 동안에는 분류·재현 몫을 예약 하한으로 걸어, 진행 중인 대화도 그 몫을 쓰지 못하게 한다.
   const floor = o.budget.floorUsd;
@@ -55,7 +58,7 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
 
 async function exploreSite(o: Parameters<typeof explore>[0]): Promise<ExploreResult> {
   // 사이트 지도는 쓰기 허용과 상관없이 읽기 전용으로 모은다. 페이지를 여는 것만으로 스크립트가 쓰기 요청을 보낼 수 있다.
-  const reader = await openContext(o.browser, { ...o.policy, allowWrites: false });
+  const reader = await openContext(o.browser, { ...o.policy, allowWrites: false }, undefined, o.storageState);
   let map: SiteMap;
   try {
     map = await crawl(await reader.context.newPage(), o.startUrl, o.policy, { maxPages: o.maxPages ?? 30, perTemplate: 2, timeoutMs: SETTLE_TIMEOUT, audit: true });
@@ -84,7 +87,7 @@ async function exploreSite(o: Parameters<typeof explore>[0]): Promise<ExploreRes
       // 대화마다 새 브라우저 상태(쿠키·저장소 없음)로 시작한다. 실행도 시나리오마다 빈 상태에서 시작하므로,
       // 앞 대화에서 담은 장바구니·위시리스트를 보고 계획하면 실행에서 시작 조건이 맞지 않는다(Maison 실측 2026-10-16).
       // 정책 위반 목록은 모든 대화가 함께 쓴다. 사이트 지도 수집과 지금까지(동시에 도는 대화 포함)의 위반이 계획 제출을 막는다.
-      const guarded = await openContext(o.browser, o.policy, violations);
+      const guarded = await openContext(o.browser, o.policy, violations, o.storageState);
       try {
         const page = await guarded.context.newPage();
         await page.goto(url).catch(() => {});
@@ -295,12 +298,15 @@ function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, v
       }),
     tool('navigate', '허용 origin 안의 URL로 이동한다.', { url: { type: 'string' } }, ['url'], async ({ url }) => {
       if (!policy.origins.includes(new URL(url, page.url()).origin)) throw new Error(`허용되지 않은 origin: ${url}`);
+      if (policy.deny?.some(d => new URL(url, page.url()).href.includes(d))) throw new Error(`앱 설정에서 금지한 주소라 열지 않음(로그인 상태를 끊는 주소): ${url}`);
       const before = await state();
       await page.goto(new URL(url, page.url()).href);
       acted = false;
       return after('이동함', before);
     }),
     tool('click', '요소를 클릭한다.', { ref }, ['ref'], async ({ ref }) => {
+      const denied = await deniedLink(page.getByRef(ref), policy);
+      if (denied) throw new Error(`앱 설정에서 금지한 주소라 누르지 않음(로그인 상태를 끊는 주소): ${denied}. 이 행동은 계획에도 넣지 마세요`);
       acted = true;
       const before = await state();
       await page.getByRef(ref).click({ timeout: ACTION_TIMEOUT });
@@ -327,7 +333,7 @@ function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, v
     }),
     // 접근성 트리로는 겹침·잘림이 보이지 않는다. 시각 검사(read visual)를 계획할 근거를 보려고 지금 보이는 영역만 찍는다.
     tool('screenshot', '지금 보이는 화면을 이미지로 본다. 겹침·잘림처럼 접근성 트리로 알 수 없는 화면 상태를 확인할 때만 쓴다(이미지는 비용이 크다).', {}, [],
-      async () => ({ text: `현재 URL: ${page.url()}, 화면 크기 ${JSON.stringify(page.viewportSize())}`, image: (await page.screenshot()).toString('base64') })),
+      async () => ({ text: `현재 URL: ${page.url()}, 화면 크기 ${JSON.stringify(page.viewportSize())}`, image: (await page.screenshot({ mask: [page.locator('input[type=password]')] })).toString('base64') })),
     tool('viewport', `화면 크기를 바꾼다. desktop ${DESKTOP.width}×${DESKTOP.height}, mobile ${MOBILE.width}×${MOBILE.height}. 모바일 전용 검사(접힌 메뉴·모달·버튼 접근)를 볼 때 쓴다.`,
       { size: { enum: ['desktop', 'mobile'] } }, ['size'], async ({ size }: { size: Viewport }) => {
         const before = await state();

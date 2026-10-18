@@ -1,11 +1,12 @@
 // 탐색 에이전트의 브라우저 도구. 페이지는 Playwright 접근성 snapshot(ref 포함)으로 보여주고,
 // 모델이 고른 ref는 값·순서에 의존하지 않는 구조화된 대상 설명(Target)으로 바꿔야만 계획에 쓸 수 있다.
-import type { Browser, BrowserContext, ElementHandle, Page, Locator } from 'playwright';
+import type { Browser, BrowserContext, BrowserContextOptions, ElementHandle, Page, Locator } from 'playwright';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const LOCAL_SCHEMES = new Set(['data:', 'about:', 'blob:']);
 
-export type Policy = { origins: string[]; allowWrites?: boolean };
+/** deny: 요청하지 않을 주소(부분 문자열). 로그아웃처럼 로그인 상태를 끊는 주소를 앱 설정에서 받는다 */
+export type Policy = { origins: string[]; allowWrites?: boolean; deny?: string[] };
 export type Guarded = { context: BrowserContext; blocked: string[]; violations: string[] };
 
 /**
@@ -18,21 +19,44 @@ export type Guarded = { context: BrowserContext; blocked: string[]; violations: 
  */
 export type Signal = { kind: 'console' | 'pageerror' | 'http' | 'requestfailed'; after: string; url: string; text: string; status?: number; normal?: true };
 
-export async function openContext(browser: Browser, policy: Policy, violations?: string[]): Promise<Guarded> {
-  const context = await browser.newContext({ serviceWorkers: 'block' });
+/** storageState: 로그인으로 만든 브라우저 상태(login.ts). 주면 그 상태로 시작한다 */
+export async function openContext(browser: Browser, policy: Policy, violations?: string[], storageState?: BrowserContextOptions['storageState']): Promise<Guarded> {
+  const context = await browser.newContext({ serviceWorkers: 'block', ...(storageState ? { storageState } : {}) });
   return { context, ...(await guardContext(context, policy, violations)) };
 }
 
+/** 누르려는 요소(또는 그것을 담은 링크)의 주소가 앱 설정의 금지 주소면 그 주소. 누르기 전에 거절하는 데 쓴다. */
+export async function deniedLink(loc: Locator, policy: Policy): Promise<string | undefined> {
+  if (!policy.deny?.length) return undefined;
+  const href = await loc.evaluate(e => (e.closest('a[href]') as HTMLAnchorElement | null)?.href ?? null).catch(() => null);
+  return href && policy.deny.some(d => href.includes(d)) ? href : undefined;
+}
+
 /** 이미 만든 컨텍스트에 정책을 건다. Playwright 테스트 러너의 컨텍스트(trace 기록 포함)에도 쓴다. 서비스 워커 차단은 컨텍스트 생성 옵션이다. */
-export async function guardContext(context: BrowserContext, policy: Policy, violations: string[] = []): Promise<Omit<Guarded, 'context'>> {
+export async function guardContext(context: BrowserContext, policy: Policy, violations: string[] = [], onDeny?: (url: string) => void): Promise<Omit<Guarded, 'context'>> {
   const blocked: string[] = [];
   const allowed = (url: string) => {
     const u = new URL(url);
     return LOCAL_SCHEMES.has(u.protocol) || policy.origins.includes(u.origin);
   };
-  await context.route('**/*', route => {
+  const isDenied = (url: string) => !!policy.deny?.some(d => url.includes(d));
+  await context.route('**/*', async route => {
     const req = route.request();
-    if (allowed(req.url()) && (policy.allowWrites || SAFE_METHODS.has(req.method()))) return route.continue();
+    const denied = isDenied(req.url());
+    // 금지 주소는 안전장치로 막는다(서버 세션을 지킨다). 링크 클릭은 그 전에 행동 단계가 거절한다(deniedLink): 이동을 막으면 오류 페이지가 남는다.
+    const permitted = !denied && allowed(req.url()) && (policy.allowWrites || SAFE_METHODS.has(req.method()));
+    // 라우트는 리다이렉트의 다음 요청을 보지 못한다. 금지 주소가 있으면 페이지 이동은 리다이렉트를 따라가지 않고 받아 와서
+    // 목적지가 금지 주소·허용 밖이면 막는다(허용된 /go가 /logout으로 보내 세션을 끊는 경우).
+    if (permitted && policy.deny?.length && req.isNavigationRequest()) {
+      const res = await route.fetch({ maxRedirects: 0 }).catch(() => undefined);
+      if (!res) return route.abort('failed');
+      const loc = res.headers()['location'];
+      const next = loc ? new URL(loc, req.url()).href : undefined;
+      if (next && (isDenied(next) || !allowed(next))) { blocked.push(`DENY redirect ${req.url()} -> ${next}`); onDeny?.(next); return route.abort('blockedbyclient'); }
+      return route.fulfill({ response: res });
+    }
+    if (permitted) return route.continue();
+    if (denied) { blocked.push(`DENY ${req.method()} ${req.url()}`); onDeny?.(req.url()); return route.abort('blockedbyclient'); }
     blocked.push(`${req.method()} ${req.url()}`);
     return route.abort('blockedbyclient');
   });

@@ -9,12 +9,13 @@ import { CallToolRequestSchema, ListToolsRequestSchema, ListPromptsRequestSchema
 import { openContext } from './browser.ts';
 import { assertStartAllowed, exploreTools, SYSTEM, taskMessage, type Part, type Scope } from './explore.ts';
 import type { Requirement } from './plan.ts';
+import { login, readAppConfig } from './login.ts';
 
 const { values: a } = parseArgs({ options: {
   url: { type: 'string' }, origins: { type: 'string' }, requirements: { type: 'string' },
   out: { type: 'string', default: 'plan.json' }, 'allow-writes': { type: 'boolean', default: false },
   headed: { type: 'boolean', default: false }, 'print-prompt': { type: 'boolean', default: false },
-  scope: { type: 'string' },
+  scope: { type: 'string' }, app: { type: 'string' },
 } });
 if (!a.url) {
   console.error('사용법: node src/mcp.ts --url <시작 URL> [--requirements <요구사항.json>] [--origins a,b] [--out plan.json] [--allow-writes] [--headed] [--print-prompt]');
@@ -23,7 +24,8 @@ if (!a.url) {
 const startUrl = a.url;
 // Windows PowerShell 5.1의 utf8 저장은 BOM을 붙이므로 제거한다.
 const requirements: Requirement[] = a.requirements ? JSON.parse(readFileSync(a.requirements, 'utf8').replace(/^﻿/, '')) : [];  // 요구사항은 선택 입력(설계 3.3)
-const policy = { origins: a.origins ? a.origins.split(',') : [new URL(startUrl).origin], allowWrites: a['allow-writes'] };
+const app = a.app ? readAppConfig(a.app) : {};
+const policy = { origins: a.origins ? a.origins.split(',') : [new URL(startUrl).origin], allowWrites: a['allow-writes'], ...(app.deny ? { deny: app.deny } : {}) };
 const task = { policy, startUrl, requirements };
 // 템플릿별 대화 하나(개발용): 확인 스크립트가 사이트 지도·이번 템플릿·이어 쓸 번호를 파일로 준다.
 const scope = a.scope ? JSON.parse(readFileSync(a.scope, 'utf8')) as Scope & { taken: string[]; nextT: number; nextQ: number } : undefined;
@@ -35,7 +37,10 @@ if (a['print-prompt']) {
 }
 
 const browser = await chromium.launch({ headless: !a.headed });
-const { context, blocked, violations } = await openContext(browser, policy);
+// 로그인 실패는 stderr에만 알린다(모델 입력에 비밀값·사유를 넣지 않는다). 로그인 없이 계속한다.
+const signedIn = app.login ? await login(browser, policy, app.login) : undefined;
+if (signedIn && !signedIn.ok) console.error(`로그인 실패: ${signedIn.reason}`);
+const { context, blocked, violations } = await openContext(browser, policy, undefined, signedIn?.ok ? signedIn.state : undefined);
 const page = await context.newPage();
 await page.goto(startUrl);
 const tools = new Map(exploreTools(page, task, violations, part).map(t => [t.def.name, t]));

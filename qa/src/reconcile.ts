@@ -10,6 +10,8 @@ export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; sc
   ready?: boolean; evidence?: string[];
   /** 기록을 남긴 탭(페이지) 식별자, 증거 수집 실패, 시나리오 중에 새로 열린 탭(policy) */
   tab?: string; captureErrors?: string[]; newTabs?: { after: string; url: string }[];
+  /** policy: 앱 설정의 금지 주소로 가려다 막힌 단계와 주소 */
+  denied?: { after: string; url: string }[];
   /** act: 행동 직전에 관측한 대상의 접근성 표현·화면 위치(또는 누른 키), 행동 직전 URL, 실패한 행동의 직전 증거, 직후 증거를 찍는 데 걸린 시간 */
   pressed?: { aria?: string; box?: { x: number; y: number; width: number; height: number } | null; key?: string };
   urlBefore?: string; url?: string; before?: string[]; afterCaptureMs?: number;
@@ -31,6 +33,8 @@ export type ScenarioResult = {
   start: 'ok' | 'failed' | 'not_run'; ready?: boolean; startEvidence?: string[]; startCaptureErrors?: string[];
   /** 행동이 새 탭·창을 열었으면 그 단계와 주소. 뒤 검사는 원래 탭을 읽는다 */
   newTabs?: { after: string; url: string }[];
+  /** 앱 설정의 금지 주소로 가려다 막힌 단계(그 뒤 화면은 오류 페이지일 수 있다) */
+  denied?: { after: string; url: string }[];
   /** 선행조건 검사 결과: 없음(시작 조건 미선언) · 모두 통과 · 실패 */
   precondition: 'none' | 'met' | 'failed';
   steps: StepResult[]; checks: CheckResult[];
@@ -126,7 +130,8 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
 
     return { id: s.id, valid: invalid.length === 0, invalid, start, precondition, ...(startEntry?.ready !== undefined ? { ready: startEntry.ready } : {}),
       ...(startEntry?.evidence ? { startEvidence: startEntry.evidence } : {}), ...(startEntry?.captureErrors ? { startCaptureErrors: startEntry.captureErrors } : {}),
-      ...(policy.some(e => e.newTabs?.length) ? { newTabs: policy.flatMap(e => e.newTabs ?? []) } : {}), steps, checks, blocked: policy.flatMap(e => e.blocked ?? []), violations,
+      ...(policy.some(e => e.newTabs?.length) ? { newTabs: policy.flatMap(e => e.newTabs ?? []) } : {}),
+      ...(policy.some(e => e.denied?.length) ? { denied: policy.flatMap(e => e.denied ?? []) } : {}), steps, checks, blocked: policy.flatMap(e => e.blocked ?? []), violations,
       signals: policy.flatMap(e => e.signals ?? []), ...(policy.some(e => e.signalsDropped) ? { signalsDropped: policy.reduce((n, e) => n + (e.signalsDropped ?? 0), 0) } : {}) };
   });
 
