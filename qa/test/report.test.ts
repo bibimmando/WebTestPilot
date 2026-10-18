@@ -32,7 +32,7 @@ function savedRun(): string {
   writeFileSync(join(dir, 'run', 'policy.json'), JSON.stringify({ origins: ['http://app.test'] }));
   writeFileSync(join(dir, 'run', 'results.json'), JSON.stringify({ problems: [], requirements: [], scenarios: ['S1', 'S2'].map(id => ({
     id, valid: true, invalid: [], start: 'ok', precondition: 'none', blocked: [], violations: [],
-    steps: [{ id: `${id}.A1`, status: 'ok', evidence: [`evidence/${id}.A1.after.png`] }],
+    steps: [{ id: `${id}.A1`, status: 'ok', evidence: [`evidence/${id}.A1.after.png`], ...(id === 'S1' ? { captureErrors: ['screenshot: 시간 초과'] } : {}) }],
     checks: [{ id: `${id}.C1`, status: id === 'S1' ? 'mismatch' : 'not_run', source: 'inferred', expected: '1', actual: '0', evidence: [`evidence/${id}.C1.png`] }] })) }));
   const system = { requirement: {}, autonomous: { bug_medium: 1, incomplete: 1 }, preparation: {}, variant: {} };
   writeFileSync(join(dir, 'run', 'verdicts.json'), JSON.stringify({ file: 'verdicts.json', stage: 'done', requirements: [], system, variants: [], features: [],
@@ -43,7 +43,7 @@ function savedRun(): string {
       { id: 'S1.C1', scenario: 'S1', kind: 'check', requirements: [], observed: 'mismatch', class: 'app_defect_candidate', triage: { reason: '목록이 늘지 않음', quotes: [] },
         reproduction: 'reproduced', system: { level: 'bug_medium', reason: '일반 규칙 위반, 재현됨' } },
       { id: 'S2.C1', scenario: 'S2', kind: 'check', requirements: [], observed: 'not_run', class: 'not_run', cause: 'S2.A1', system: { level: 'incomplete', reason: '실행 안 됨(원인 S2.A1)' } },
-      { id: 'S2.A1', scenario: 'S2', kind: 'act', requirements: [], observed: 'not_executed:target_changed:0', class: 'automation_failure', triage: { reason: '대상을 잘못 찾음', quotes: [] },
+      { id: 'S2.A1', scenario: 'S2', kind: 'act', requirements: [], observed: 'not_executed:target_changed:0', class: 'automation_failure', triage: { reason: '대상을 잘못 찾음', quotes: [] }, captureErrors: ['aria: 페이지 닫힘'],
         system: { level: 'not_bug', reason: '자동화 실패로 분류(원래 결과는 보존)' } },
     ] }));
   // 중간에 멈춘 재판정 파일. 끝난 판정(verdicts.json)을 가리면 안 된다.
@@ -74,6 +74,7 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   assert.deepEqual(r.bugs[0].steps, ['http://app.test/list 열기', 'click "Orb Lamp" 영역의 button'], '이름 없는 버튼도 라벨 영역으로 적는다');
   assert.deepEqual([r.bugs[0].check!.target, r.bugs[0].check!.expected, r.bugs[0].check!.actual, r.bugs[0].reproduction], ['listitem (list "담은 상품" 안)', '1', '0', { result: 'reproduced' }]);
   assert.deepEqual(r.bugs[0].evidence, ['run/evidence/S1.C1.png']);
+  assert.deepEqual(r.evidenceGaps, { total: 1, items: ['S1.A1: screenshot: 시간 초과'] }, '통과한 행동의 증거 수집 실패도 센다');
   assert.deepEqual(r.incomplete.byReason, { '실행 안 됨(앞 항목에서 멈춤)': 1, '자동화 실패로 분류(원래 결과 보존)': 1 }, '사유는 항목 ID 없이 종류로 세고, 자동화 실패도 미완료 구역에 보인다');
   assert.deepEqual(r.passed, { checks: 0, byClass: {} }, '통과는 실제 통과한 검사만 센다(자동화 실패는 통과가 아니다)');
   assert.deepEqual([r.errorSignals.map(g => g.status), r.normalRejections], [[500, 403], 1], '정상 거절일 수 있는 신호도 지우지 않고 표시만 한다');
@@ -86,6 +87,7 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   const html = renderHtml(r, dir);
   assert.ok(html.includes('UI 결함 (1) · 개선 제안 (0)') && html.includes('확인하지 못한 점검 발견 (1)') && html.includes('정상 거절일 수 있음'));
   assert.ok(html.includes('<td>S2.A1</td>') && html.includes('대상을 잘못 찾음'), '미완료 구역에 항목·원래 결과·분류 근거를 보인다');
+  assert.ok(html.includes('수집 실패: aria: 페이지 닫힘'), '미완료 항목 표에도 증거 수집 실패를 보인다');
   assert.ok(!html.includes('<script>alert(1)</script>') && html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), '페이지에서 온 글자는 HTML로 해석하지 않는다');
   assert.ok(!html.includes('<b>배지</b>'));
   assert.ok(html.includes('data:image/png;base64,'), '버그 항목에는 실패 시점 화면을 넣는다');

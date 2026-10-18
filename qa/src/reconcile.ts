@@ -8,6 +8,8 @@ import type { Signal } from './browser.ts';
 export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; scenario?: string; id?: string; status?: string;
   actual?: string; expected?: string; count?: number; reason?: string; error?: string; blocked?: string[]; violations?: string[]; signals?: Signal[]; signalsDropped?: number;
   ready?: boolean; evidence?: string[];
+  /** 기록을 남긴 탭(페이지) 식별자, 증거 수집 실패, 시나리오 중에 새로 열린 탭(policy) */
+  tab?: string; captureErrors?: string[]; newTabs?: { after: string; url: string }[];
   /** act: 행동 직전에 관측한 대상의 접근성 표현·화면 위치(또는 누른 키), 행동 직전 URL, 실패한 행동의 직전 증거, 직후 증거를 찍는 데 걸린 시간 */
   pressed?: { aria?: string; box?: { x: number; y: number; width: number; height: number } | null; key?: string };
   urlBefore?: string; url?: string; before?: string[]; afterCaptureMs?: number;
@@ -18,15 +20,17 @@ export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; sc
 export type VisualShot = { viewport: { width: number; height: number } | null; scroll: { x: number; y: number }; box: { x: number; y: number; width: number; height: number } | null; image: string; ready?: boolean };
 
 export type StepResult = { id: string; status: 'ok' | 'not_executed' | 'uncertain_execution' | 'not_run'; reason?: string; error?: string;
-  count?: number; evidence?: string[]; pressed?: Entry['pressed']; urlBefore?: string; url?: string; before?: string[] };
+  count?: number; evidence?: string[]; pressed?: Entry['pressed']; urlBefore?: string; url?: string; before?: string[]; captureErrors?: string[] };
 /** visual_pending: 시각 검사를 촬영했고 판정은 시각 판정이 한다 */
 export type CheckStatus = 'passed' | 'mismatch' | 'unresolved' | 'error' | 'not_run' | 'visual_pending';
 /** expected는 관측 참조면 참조한 검사의 실제 값으로 푼 값이다 (없으면 비어 있다). */
 export type CheckResult = { id: string; status: CheckStatus; source: string; precondition?: boolean; expected?: string; actual?: string; count?: number;
-  reason?: string; error?: string; evidence?: string[]; reads?: number; waitedMs?: number; first?: Entry['first']; visual?: VisualShot };
+  reason?: string; error?: string; evidence?: string[]; reads?: number; waitedMs?: number; first?: Entry['first']; visual?: VisualShot; captureErrors?: string[] };
 export type ScenarioResult = {
   id: string; valid: boolean; invalid: string[];
-  start: 'ok' | 'failed' | 'not_run'; ready?: boolean; startEvidence?: string[];
+  start: 'ok' | 'failed' | 'not_run'; ready?: boolean; startEvidence?: string[]; startCaptureErrors?: string[];
+  /** 행동이 새 탭·창을 열었으면 그 단계와 주소. 뒤 검사는 원래 탭을 읽는다 */
+  newTabs?: { after: string; url: string }[];
   /** 선행조건 검사 결과: 없음(시작 조건 미선언) · 모두 통과 · 실패 */
   precondition: 'none' | 'met' | 'failed';
   steps: StepResult[]; checks: CheckResult[];
@@ -75,12 +79,16 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
     if (records.length && !policy.length) flag('정책 기록(policy)이 없음');
     const violations = policy.flatMap(e => e.violations ?? []);
     if (violations.length) flag(`정책 위반: ${violations.join(', ')}`);
+    // 행동과 증거는 한 탭에 묶여야 한다(설계 6.1 같은 탭). 탭 식별자가 둘 이상이면 기록을 믿을 수 없다.
+    const tabIds = new Set(records.map(e => e.tab).filter(Boolean));
+    if (tabIds.size > 1) flag(`기록이 서로 다른 탭에서 나옴: ${[...tabIds].join(', ')}`);
+    else if (tabIds.size && records.some(e => !e.tab)) flag('탭 식별자가 없는 기록이 섞임');
 
     const steps = s.steps.map((st): StepResult => {
       const e = get('act', st.id);
       if (e && !STEP.has(e.status ?? '')) flag(`${st.id}: 알 수 없는 상태 ${e.status}`);
       const status = e && STEP.has(e.status ?? '') ? e.status as StepResult['status'] : 'not_run';
-      return { id: st.id, status, ...pick(e, 'reason', 'error', 'count', 'evidence', 'pressed', 'urlBefore', 'url', 'before') };
+      return { id: st.id, status, ...pick(e, 'reason', 'error', 'count', 'evidence', 'pressed', 'urlBefore', 'url', 'before', 'captureErrors') };
     });
     // 멈춘 행동 뒤에 기록이 더 있으면 헬퍼 계약이 깨진 것이다.
     const stoppedAt = steps.findIndex(x => x.status === 'not_executed' || x.status === 'uncertain_execution');
@@ -104,7 +112,7 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
       }
       const expected = expectedOf(c);
       return { id: c.id, status, source: c.source.kind, ...(c.precondition ? { precondition: true } : {}), ...(expected === undefined ? {} : { expected }),
-        ...pick(e, 'actual', 'count', 'reason', 'error', 'evidence', 'reads', 'waitedMs', 'first', 'visual') };
+        ...pick(e, 'actual', 'count', 'reason', 'error', 'evidence', 'reads', 'waitedMs', 'first', 'visual', 'captureErrors') };
     });
     // 선행조건이 통과하지 못하면 fixture가 멈춘다. 그 뒤 행동 기록이 있으면 헬퍼 계약이 깨진 것이다.
     const pre = s.checks.filter(c => c.precondition);
@@ -117,7 +125,8 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
       : pre.every(c => checks.find(x => x.id === c.id)!.status === 'passed') ? 'met' : 'failed';
 
     return { id: s.id, valid: invalid.length === 0, invalid, start, precondition, ...(startEntry?.ready !== undefined ? { ready: startEntry.ready } : {}),
-      ...(startEntry?.evidence ? { startEvidence: startEntry.evidence } : {}), steps, checks, blocked: policy.flatMap(e => e.blocked ?? []), violations,
+      ...(startEntry?.evidence ? { startEvidence: startEntry.evidence } : {}), ...(startEntry?.captureErrors ? { startCaptureErrors: startEntry.captureErrors } : {}),
+      ...(policy.some(e => e.newTabs?.length) ? { newTabs: policy.flatMap(e => e.newTabs ?? []) } : {}), steps, checks, blocked: policy.flatMap(e => e.blocked ?? []), violations,
       signals: policy.flatMap(e => e.signals ?? []), ...(policy.some(e => e.signalsDropped) ? { signalsDropped: policy.reduce((n, e) => n + (e.signalsDropped ?? 0), 0) } : {}) };
   });
 

@@ -372,3 +372,33 @@ test('오류 신호: 콘솔 오류·스크립트 예외·400 이상 응답을 �
   assert.deepEqual(grouped.find(g => g.status === 404)!.at, [{ scenario: 'S1', after: 'S1.A1' }, { scenario: 'S2', after: 'S2.A1' }], '같은 신호는 한 항목으로 묶고 난 곳을 모은다');
   assert.equal(grouped.length, 5);
 });
+
+test('reconcile: 탭 식별자가 섞이면 무효, 증거 수집 실패와 새로 열린 탭은 결과에 옮긴다', () => {
+  const tabsMixed = reconcile(plan(), [e('start', 'S1', { status: 'ok', tab: '1-1' }), e('check', 'S1.C1', { status: 'passed', actual: '30', tab: '1-2' }), policyOk('S1')]);
+  assert.ok(tabsMixed.scenarios[0].invalid.some(x => x.includes('서로 다른 탭')), tabsMixed.scenarios[0].invalid.join());
+  const tabMissing = reconcile(plan(), [e('start', 'S1', { status: 'ok' }), e('check', 'S1.C1', { status: 'passed', actual: '30', tab: '1-2' }), policyOk('S1')]);
+  assert.ok(tabMissing.scenarios[0].invalid.includes('탭 식별자가 없는 기록이 섞임'), '식별자가 하나뿐이어도 빠진 기록이 있으면 같은 탭이라 볼 수 없다');
+  const r = reconcile(plan(), [
+    e('start', 'S1', { status: 'ok', tab: '1-1', captureErrors: ['aria: 닫힘'] }),
+    e('check', 'S1.C1', { status: 'mismatch', actual: '29', tab: '1-1', captureErrors: ['screenshot: 시간 초과'] }),
+    e('policy', 'S1', { blocked: [], violations: [], newTabs: [{ after: 'S1.A1', url: 'http://x/list' }] }),
+  ]);
+  const s = r.scenarios[0];
+  assert.equal(s.valid, true, s.invalid.join());
+  assert.deepEqual([s.startCaptureErrors, s.checks[0].captureErrors, s.newTabs], [['aria: 닫힘'], ['screenshot: 시간 초과'], [{ after: 'S1.A1', url: 'http://x/list' }]]);
+});
+
+test('실행: 행동이 새 탭을 열면 기록하고, 모든 기록은 한 탭 식별자를 쓴다', async () => {
+  const p: Plan = { version: 1, textRead: 'name+content', requirements: [{ id: 'R1', text: '목록 링크는 새 창으로 열린다' }], features: [], questions: [], observations: [], unplanned: [],
+    targets: { T1: { target: { role: 'link', name: '^목록 새 창으로 열기$' }, group: false, url: `${origin}/popup.html` }, T2: { target: { role: 'heading', name: '^원래 탭$' }, group: false, url: `${origin}/popup.html` } },
+    scenarios: [{ id: 'S1', title: '새 창', covers: ['R1'], start: { url: `${origin}/popup.html` }, steps: [{ id: 'S1.A1', op: 'click', target: 'T1' }],
+      checks: [{ id: 'S1.C1', after: 'S1.A1', target: 'T2', read: 'visible', op: 'equals', expected: 'true', source: { kind: 'requirement', id: 'R1', quote: '새 창으로 열린다' } }] }] };
+  const dir = runDir('popup');
+  const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: dir, timeoutMs: 1500 });
+  const s = r.scenarios[0];
+  assert.equal(s.valid, true, s.invalid.join());
+  assert.deepEqual(s.newTabs?.map(t => t.after), ['S1.A1'], '새 탭을 연 단계를 남긴다');
+  assert.ok(s.newTabs![0].url.endsWith('/list.html'), `열린 직후가 아니라 끝났을 때의 주소: ${s.newTabs![0].url}`);
+  const tabs = readFileSync(`${dir}/ledger.jsonl`, 'utf8').trim().split('\n').map(l => JSON.parse(l)).filter(x => x.kind !== 'policy').map(x => x.tab);
+  assert.ok(tabs.length === 3 && new Set(tabs).size === 1 && tabs[0], JSON.stringify(tabs));
+});

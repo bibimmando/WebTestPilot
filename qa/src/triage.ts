@@ -37,6 +37,8 @@ export type Verdict = {
   triageLog?: string;
   /** 같은 검사의 원본(또는 앞선 복제본) 분류를 공유했으면 그 항목 ID (C4 복제 실행) */
   triageSharedFrom?: string;
+  /** 이 항목의 실패 시점 증거 수집 실패(aria·screenshot). 실패 시점 snapshot이 없으면 AI 분류를 증거로 확인할 수 없다 */
+  captureErrors?: string[];
   /** 시각 검사의 조건·촬영·모델 응답·코드 판정·재현 비교 */
   visual?: VisualRecord;
   reproduction?: 'reproduced' | 'flaky' | 'reproduction_inconclusive';
@@ -71,12 +73,12 @@ export function preclassify(plan: Plan, run: RunResult): Verdict[] {
           // 복제 실행(C4)에서 이름으로 고정한 대상이 없으면, 페이지마다 다른 이름인지 요소 누락인지 모른다. 숨기지 않고 판단 보류로 둔다(AI 분류는 하지 않음).
           const missing = s.variantOf && st.reason === 'target_changed' && st.count === 0 && byName(plan, st.id && s.steps.find(y => y.id === st.id)?.target);
           out.push({ id: st.id, scenario: s.id, kind: 'act', requirements: s.covers, observed: [st.status, st.reason, st.count].filter(v => v !== undefined).join(':'),
-            ...(st.error ? { error: st.error } : {}), class: missing ? 'not_applicable' : st.status === 'uncertain_execution' ? 'uncertain_execution' : 'needs_triage' });
+            ...(st.error ? { error: st.error } : {}), ...(st.captureErrors ? { captureErrors: st.captureErrors } : {}), class: missing ? 'not_applicable' : st.status === 'uncertain_execution' ? 'uncertain_execution' : 'needs_triage' });
         }
       } else {
         const c = s.checks.find(y => y.id === x.id)!;
         const res = r.checks.find(y => y.id === x.id)!;
-        const base = { id: c.id, scenario: s.id, kind: 'check' as const, ...origin(c), ...(res.error ? { error: res.error } : {}) };
+        const base = { id: c.id, scenario: s.id, kind: 'check' as const, ...origin(c), ...(res.error ? { error: res.error } : {}), ...(res.captureErrors ? { captureErrors: res.captureErrors } : {}) };
         // 근거가 약한 통과는 따로 센다. 관찰값 근거의 통과는 시작 상태 확인이지 기능 검사 통과가 아니다.
         if (res.status === 'visual_pending') out.push({ ...base, observed: 'visual_pending', class: 'needs_visual' });
         else if (res.status === 'passed') out.push({ ...base, observed: 'passed', class: c.source.kind === 'inferred' ? 'passed_inferred' : c.source.kind === 'observed' ? 'passed_observed' : 'passed' });
@@ -274,6 +276,13 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
     // 일반 규칙 근거면 규칙 본문·적용 조건·정상 예외를 함께 준다. 예외에 해당하면 결함이 아니다.
     ...(ruleOf(c?.source.rule) ? [`일반 규칙 ${c!.source.rule}: ${JSON.stringify(ruleOf(c!.source.rule))}`] : []),
     ...(v.error ? [`오류 원문: ${v.error}`] : []),
+    // 증거가 빠진 이유를 알려 준다. 빠진 증거를 근거로 추측하지 않게 한다.
+    ...(() => {
+      const prev = c && c.after !== 'start' ? r.steps.find(x => x.id === c.after)?.captureErrors ?? [] : [];
+      const all = [...(r.startCaptureErrors ?? []).map(e => `시작 ${e}`), ...prev.map(e => `${c!.after} ${e}`), ...(v.captureErrors ?? [])];
+      return all.length ? [`증거 수집 실패(이 증거는 없음): ${all.join('; ')}`] : [];
+    })(),
+    ...(r.newTabs?.length ? [`이 시나리오에서 새 탭이 열림(검사는 원래 탭을 읽음): ${JSON.stringify(r.newTabs)}`] : []),
     // 기대값 없이 잡힌 신호. 행동 직후의 스크립트 예외·서버 오류는 "앱이 반응하지 않았다"를 뒷받침할 수 있다.
     ...(r.signals?.length ? [`이 시나리오의 콘솔·요청 오류 (after = 그 신호가 난 단계${r.signals.length > 20 || r.signalsDropped ? `, 일부만 보임: 전체 ${r.signals.length + (r.signalsDropped ?? 0)}개 중 앞 20개` : ''}): ${JSON.stringify(r.signals.slice(0, 20))}`] : []),
     '증거 파일 (*.start는 시작 직후, *.before·*.after는 그 행동의 직전·직후, 나머지는 실패 시점):',
@@ -347,6 +356,8 @@ export function systemVerdict(plan: Plan, v: Verdict): NonNullable<Verdict['syst
   if (v.class !== 'app_defect_candidate') return incomplete(({ invalid: '무효 시나리오', not_run: `실행 안 됨(원인 ${v.cause ?? '알 수 없음'})`,
     uncertain_execution: '실행 여부 불명확', precondition_failed: '시작 조건 준비 실패', uncertain: 'AI 분류가 판단 불가',
     mismatch: '분류 미완료', needs_triage: '분류 미완료' } as Partial<Record<Class, string>>)[v.class] ?? v.class);
+  // AI가 결함 후보로 봤어도 실패 시점 snapshot을 못 남겼으면 그 분류를 실패 시점 증거로 확인할 수 없다(Q66). 원래 불일치는 남는다.
+  if (v.captureErrors?.some(e => e.startsWith('aria')) && v.triage && 'reason' in v.triage) return incomplete(`증거 부족: 실패 시점 증거 수집 실패(${v.captureErrors.join('; ')})`);
   // 값을 읽어 비교한 불일치만 판정한다. 대상 미해결·오류는 같은 실패가 재현돼도 결함 근거가 아니다.
   if (v.kind === 'check' && v.observed !== 'mismatch') return incomplete(`실제 값을 읽지 못함(${v.observed})`);
   if (v.reproduction === 'flaky') return { level: 'hold', reason: `재실행에서 재현 안 됨${v.reproductionDetail ? `: ${v.reproductionDetail}` : ''}` };

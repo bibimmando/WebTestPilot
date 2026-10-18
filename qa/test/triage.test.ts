@@ -212,6 +212,11 @@ test('시스템 판정: 끝난 항목은 반드시 판정하고, 끝나지 않�
   assert.equal(level({ class: 'app_defect_candidate', source: 'requirement', reproduction: 'flaky' }), 'hold');
   assert.equal(level({ class: 'app_defect_candidate', source: 'requirement', reproduction: 'reproduction_inconclusive' }), 'incomplete');
   assert.equal(level({ class: 'app_defect_candidate', source: 'observed', reproduction: 'reproduced' }), 'incomplete');
+  // 실패 시점 snapshot을 못 남긴 항목의 AI 결함 분류는 증거로 확인할 수 없다. 스크린샷만 빠진 것은 판정을 막지 않는다.
+  const triaged = { class: 'app_defect_candidate' as const, source: 'requirement', reproduction: 'reproduced' as const, triage: { reason: '안 늘어남', quotes: [] } };
+  assert.equal(level({ ...triaged, captureErrors: ['aria: 페이지 닫힘'] }), 'incomplete');
+  assert.match(systemVerdict(p, v({ ...triaged, captureErrors: ['aria: 페이지 닫힘'] })).reason, /증거 부족/);
+  assert.equal(level({ ...triaged, captureErrors: ['screenshot: 시간 초과'] }), 'bug_high');
   // 기술적 미완료는 억지로 판정하지 않는다.
   for (const c of ['mismatch', 'uncertain', 'uncertain_execution', 'precondition_failed', 'not_run', 'invalid'] as const) assert.equal(level({ class: c }), 'incomplete', c);
 });

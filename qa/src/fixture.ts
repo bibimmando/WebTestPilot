@@ -18,14 +18,19 @@ const checks = new Map(plan.scenarios.flatMap(s => s.checks.map(c => [c.id, c] a
 let phase = 'start';
 const SIGNALS_PER_STEP = 10;
 const NORMAL_REJECTIONS = new Set([401, 403, 422]);
+/** 페이지 객체마다의 탭 식별자(워커 프로세스 안에서 유일). 시나리오의 기록이 한 탭에서 나왔는지 대조가 확인한다 */
+const tabs = new WeakMap<Page, string>();
+let tabCount = 0;
+const tabOf = (page: Page) => { let t = tabs.get(page); if (!t) tabs.set(page, t = `${process.pid}-${++tabCount}`); return t; };
 /** 이 실행에서 검사가 읽은 실제 값. 관측 참조(expected_from)가 앞선 검사의 값을 기대값으로 쓴다. */
 const actuals = new Map<string, string>();
 
 /** 실패 시점의 접근성 snapshot과 스크린샷을 evidence/에 남기고 실행 폴더 기준 경로를 돌려준다. 수집 실패는 결과를 바꾸지 않고 따로 기록한다. */
 async function capture(page: Page, id: string): Promise<{ evidence: string[]; captureErrors?: string[] }> {
-  mkdirSync(join(dir!, 'evidence'), { recursive: true });
   const evidence: string[] = [];
   const captureErrors: string[] = [];
+  // 증거 폴더를 못 만들면 아무것도 못 찍는다. 예외를 던지면 그 행동·검사의 기록 자체가 사라지므로 수집 실패로만 남긴다.
+  try { mkdirSync(join(dir!, 'evidence'), { recursive: true }); } catch (e) { return { evidence, captureErrors: [`aria: 증거 폴더 ${brief(e)}`, `screenshot: 증거 폴더 ${brief(e)}`] }; }
   try { writeFileSync(join(dir!, 'evidence', `${id}.aria.txt`), await page.locator('body').ariaSnapshot()); evidence.push(`evidence/${id}.aria.txt`); }
   catch (e) { captureErrors.push(`aria: ${brief(e)}`); }
   try { await page.screenshot({ path: join(dir!, 'evidence', `${id}.png`) }); evidence.push(`evidence/${id}.png`); }
@@ -34,8 +39,8 @@ async function capture(page: Page, id: string): Promise<{ evidence: string[]; ca
 }
 
 /** ledger 한 줄. 예외가 나기 전에 먼저 쓴다. */
-function log(entry: Record<string, unknown>): void {
-  appendFileSync(join(dir!, 'ledger.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n');
+function log(entry: Record<string, unknown>, page?: Page): void {
+  appendFileSync(join(dir!, 'ledger.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...(page ? { tab: tabOf(page) } : {}), ...entry }) + '\n');
 }
 
 export const test = base.extend<{ guard: void }>({
@@ -53,6 +58,10 @@ export const test = base.extend<{ guard: void }>({
     // 응답·실패는 늦게 도착해도 요청을 보낸 단계에 붙인다. 콘솔·스크립트 예외는 보낸 쪽을 알 수 없어 난 시점의 단계에 붙인다.
     const sentIn = new WeakMap<object, string>();
     context.on('request', r => sentIn.set(r, phase));
+    const newTabs: { after: string; url: string; page: import('@playwright/test').Page }[] = [];
+    // 시나리오 시작 때의 첫 탭은 테스트 러너가 연다. 그 뒤에 열린 탭만 센다.
+    let opened = 0;
+    context.on('page', p => { if (opened++ > 0) newTabs.push({ after: phase, url: p.url() || '(주소 없음)', page: p }); });
     const favicon = (url: string) => new URL(url).pathname === '/favicon.ico';
     context.on('console', m => {
       // "Failed to load resource"는 브라우저가 실패한 요청을 다시 알리는 문구라 요청 신호와 겹친다.
@@ -69,7 +78,8 @@ export const test = base.extend<{ guard: void }>({
       add({ kind: 'requestfailed', url: r.url(), text: `${r.method()} ${why}` }, sentIn.get(r));
     });
     await use();
-    log({ kind: 'policy', scenario: info.title.split(' ')[0], blocked: g.blocked, violations: g.violations, signals, ...(signalsDropped ? { signalsDropped } : {}) });
+    log({ kind: 'policy', scenario: info.title.split(' ')[0], blocked: g.blocked, violations: g.violations, signals, ...(signalsDropped ? { signalsDropped } : {}),
+      ...(newTabs.length ? { newTabs: newTabs.map(t => ({ after: t.after, url: (!t.page.isClosed() && t.page.url()) || t.url })) } : {}) });
   }, { auto: true }],
 });
 
@@ -81,15 +91,20 @@ export async function start(page: Page, scenarioId: string): Promise<void> {
     if (s.viewport) await page.setViewportSize(VIEWPORTS[s.viewport]);
     await page.goto(s.start.url);
   } catch (e) {
-    log({ kind: 'start', scenario: scenarioId, status: 'failed', error: brief(e) });
+    log({ kind: 'start', scenario: scenarioId, status: 'failed', error: brief(e) }, page);
     throw e;
   }
   // SPA는 load 뒤에 내용을 그리므로 화면이 멈출 때까지 기다린 뒤 시작 증거를 찍는다. 시작 상태의 확인은 선행조건 검사가 한다.
   const ready = await settle(page, TIMEOUT);
-  const aria = await page.locator('body').ariaSnapshot();
-  mkdirSync(join(dir!, 'evidence'), { recursive: true });
-  writeFileSync(join(dir!, 'evidence', `${scenarioId}.start.aria.txt`), aria);
-  log({ kind: 'start', scenario: scenarioId, status: 'ok', url: page.url(), ready, viewport: page.viewportSize(), evidence: [`evidence/${scenarioId}.start.aria.txt`] });
+  let evidence: string[] = [], captureErrors: string[] = [];
+  try {
+    const aria = await page.locator('body').ariaSnapshot();
+    mkdirSync(join(dir!, 'evidence'), { recursive: true });
+    writeFileSync(join(dir!, 'evidence', `${scenarioId}.start.aria.txt`), aria);
+    evidence = [`evidence/${scenarioId}.start.aria.txt`];
+  } catch (e) { captureErrors = [`aria: ${brief(e)}`]; }
+  log({ kind: 'start', scenario: scenarioId, status: 'ok', url: page.url(), ready, viewport: page.viewportSize(), evidence,
+    ...(captureErrors.length ? { captureErrors } : {}) }, page);
 }
 
 /**
@@ -102,8 +117,10 @@ export async function act(page: Page, stepId: string): Promise<void> {
   const st = steps.get(stepId);
   if (!st) throw new Error(`plan에 없는 단계: ${stepId}`);
   phase = stepId;
-  const stop = async (status: string, extra: Record<string, unknown>) => {
-    log({ kind: 'act', id: stepId, status, ...extra, ...(await capture(page, stepId)) });
+  const stop = async (status: string, extra: Record<string, unknown>, prior: string[] = []) => {
+    const c = await capture(page, stepId);
+    const captureErrors = [...prior, ...(c.captureErrors ?? [])];
+    log({ kind: 'act', id: stepId, status, ...extra, evidence: c.evidence, ...(captureErrors.length ? { captureErrors } : {}) }, page);
     return new Stopped(`${stepId} ${status}`);
   };
   let loc: Locator | undefined;
@@ -135,16 +152,16 @@ export async function act(page: Page, stepId: string): Promise<void> {
     else if (st.op === 'select') await loc!.selectOption({ label: st.value! }, { timeout: TIMEOUT });
     else await (loc ? loc.press(st.value!, { timeout: TIMEOUT }) : page.keyboard.press(st.value!));
   } catch (e) {
-    throw await stop('uncertain_execution', { error: brief(e), urlBefore, pressed, before: before.evidence });
+    throw await stop('uncertain_execution', { error: brief(e), urlBefore, pressed, before: before.evidence }, (before.captureErrors ?? []).map(x => `직전 ${x}`));
   }
   // 직후 화면은 기다리지 않고 바로 찍는다. 기다리면 뒤 검사의 시작이 늦어져 결과가 바뀐다. 찍는 데 걸린 시간은 남긴다.
   // capture는 예외를 던지지 않으므로 행동 성공 기록이 증거 수집 때문에 사라지지 않는다.
   const t = Date.now();
   const after = await capture(page, `${stepId}.after`);
   const afterCaptureMs = Date.now() - t;
-  const captureErrors = [...(before.captureErrors ?? []), ...(after.captureErrors ?? [])];
+  const captureErrors = [...(before.captureErrors ?? []).map(x => `직전 ${x}`), ...(after.captureErrors ?? []).map(x => `직후 ${x}`)];
   log({ kind: 'act', id: stepId, status: 'ok', urlBefore, url: page.url(), pressed, afterCaptureMs, evidence: [...before.evidence, ...after.evidence],
-    ...(captureErrors.length ? { captureErrors } : {}) });
+    ...(captureErrors.length ? { captureErrors } : {}) }, page);
 }
 
 /**
@@ -179,14 +196,14 @@ export async function check(page: Page, checkId: string): Promise<void> {
       }
     }
   } catch (e) {
-    log({ kind: 'check', id: checkId, status: 'error', error: brief(e), reads, url: page.url(), ...(await capture(page, checkId)) });
+    log({ kind: 'check', id: checkId, status: 'error', error: brief(e), reads, url: page.url(), ...(await capture(page, checkId)) }, page);
     throw e;
   }
   if (r.actual !== undefined) actuals.set(checkId, r.actual);
   // 몇 번, 얼마 동안 다시 읽었는지 남긴다. "너무 일찍 읽었다"와 "기다려도 그대로였다"를 분류에서 가른다.
   log({ kind: 'check', id: checkId, ...r, expected, op: c.op, read: c.read, reads, waitedMs: Date.now() - started,
     ...(reads > 1 ? { first: { status: first!.status, actual: first!.actual } } : {}), url: page.url(),
-    ...(r.status === 'passed' ? {} : await capture(page, checkId)) });
+    ...(r.status === 'passed' ? {} : await capture(page, checkId)) }, page);
   if (c.precondition && r.status !== 'passed') throw new Stopped(`${checkId} 선행조건 ${r.status}`);
   expect.soft(r.status, `${checkId}: ${c.read} ${c.op} ${JSON.stringify(expected ?? null)}, 실제 ${JSON.stringify(r.actual ?? null)}`).toBe('passed');
 }
@@ -219,10 +236,10 @@ async function visual(page: Page, c: Check): Promise<void> {
       r = { status: 'visual_pending', count, visual: { viewport: page.viewportSize(), scroll, box, image, ready }, evidence: [image] };
     }
   } catch (e) {
-    log({ kind: 'check', id: c.id, status: 'error', error: brief(e), read: c.read, url: page.url(), ...(await capture(page, c.id)) });
+    log({ kind: 'check', id: c.id, status: 'error', error: brief(e), read: c.read, url: page.url(), ...(await capture(page, c.id)) }, page);
     throw e;
   }
-  log({ kind: 'check', id: c.id, expected: c.expected, op: c.op, read: c.read, url: page.url(), ...r });
+  log({ kind: 'check', id: c.id, expected: c.expected, op: c.op, read: c.read, url: page.url(), ...r }, page);
   if (r.status === 'unresolved') expect.soft('unresolved', `${c.id}: 시각 검사 대상을 하나로 찾지 못함`).toBe('passed');
 }
 
