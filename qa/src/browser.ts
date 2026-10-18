@@ -1,6 +1,6 @@
 // 탐색 에이전트의 브라우저 도구. 페이지는 Playwright 접근성 snapshot(ref 포함)으로 보여주고,
 // 모델이 고른 ref는 값·순서에 의존하지 않는 구조화된 대상 설명(Target)으로 바꿔야만 계획에 쓸 수 있다.
-import type { Browser, BrowserContext, Page, Locator } from 'playwright';
+import type { Browser, BrowserContext, ElementHandle, Page, Locator } from 'playwright';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const LOCAL_SCHEMES = new Set(['data:', 'about:', 'blob:']);
@@ -254,6 +254,32 @@ function shape(scope: Page | Locator, t: Target): Locator {
   return t.href === undefined ? withText : withText.and(scope.locator(`[href=${JSON.stringify(t.href)}]`));
 }
 
+/**
+ * 라벨 영역으로 고정한 대상의 지금 영역 요소. 영역은 "라벨과 같은 모양 요소를 함께 담은 가장 작은 상위 요소"라
+ * 대상이 사라지면 더 큰 영역으로 넓어진다. 그래서 대상을 찾았을 때의 영역을 기억해 두고 사라졌는지는 그 영역에서 본다.
+ */
+export async function areaOf(page: Page, t: Target): Promise<ElementHandle | null> {
+  if (t.anchor === undefined) return null;
+  return page.locator('*').filter({ has: page.getByText(new RegExp(t.anchor)) }).filter({ has: shape(page, t) }).last()
+    .elementHandle({ timeout: 1000 }).catch(() => null);
+}
+
+/**
+ * 기억한 영역에서 대상이 아예 사라졌는가. 영역이 문서에 남아 있고 라벨도 그대로인데 같은 모양 요소가 하나도 없을 때만 참이다.
+ * 하나라도 남아 있으면 어느 것이 사라졌는지 모르므로 거짓(대상이 바뀐 것으로 남긴다). "사라졌다"를 읽을 때만 쓴다.
+ */
+export async function goneFromArea(page: Page, t: Target, area: ElementHandle | null | undefined): Promise<boolean> {
+  // 역할만으로 고정한 대상(이름 없는 버튼 등)만 본다. 짧은 글자 모양으로 고정한 값은 내용이 바뀌면 모양에서 벗어날 뿐 요소는 남아 있다.
+  if (!area || t.anchor === undefined || t.role === undefined || t.name !== undefined || t.text !== undefined) return false;
+  if (!(await area.evaluate(e => e.isConnected).catch(() => false))) return false;
+  const inArea = async (loc: Locator) => {
+    for (const el of await loc.elementHandles()) if (await area.evaluate((a, x) => a.contains(x), el)) return true;
+    return false;
+  };
+  // 라벨이 그 영역에 그대로 있어야 같은 영역이다(영역 전체가 다시 그려졌으면 판단하지 않는다).
+  return await inArea(page.getByText(new RegExp(t.anchor))) && !(await inArea(shape(page, t)));
+}
+
 /** 순서로 고정한 대상의 영역 안 같은 모양 요소 수가 고정 때와 다르면 순서가 다른 요소를 가리킬 수 있다. */
 export async function shapeChanged(page: Page, t: Target): Promise<boolean> {
   // 라벨이 하나 더 생기면 .last()가 다른 영역을 고르므로, 실행 때도 라벨이 유일한지 본다.
@@ -377,6 +403,22 @@ export async function auditPage(page: Page, viewport: AuditFinding['viewport'], 
     const shown = (e: Element) => { const r = e.getBoundingClientRect(); const s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden'; };
     // 실제로 열린 모달이 있으면 그 뒤는 가려지는 것이 정상이라 모달 안만 본다(모달의 닫기·확인 버튼이 가려진 것은 찾는다).
     const modal = [...document.querySelectorAll('[aria-modal="true"], dialog[open]')].find(shown);
+    // ARIA 없이 만든 모달: 화면을 거의 다 덮는 고정 위치의 보이는 배경 덮개. 그 아래 깔린 요소가 가려지는 것은 의도다.
+    // 투명한 전체 덮개는 넣지 않는다(닫은 뒤 남은 덮개처럼 조작을 막는 진짜 결함일 수 있다).
+    const fixed = [...document.body.querySelectorAll('*')].filter(b => getComputedStyle(b).position === 'fixed' && shown(b) && getComputedStyle(b).opacity !== '0');
+    const full = (b: Element) => { const r = b.getBoundingClientRect(); return r.width * r.height >= innerWidth * innerHeight * 0.9; };
+    // 덮개 위에 실제로 떠 있는 창이 있어야 모달이다. 창 없이 남은 덮개는 조작을 막는 결함일 수 있어 그대로 찾는다.
+    const above = (w: Element, b: Element) => { const r = w.getBoundingClientRect(); const st = document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2); const i = st.findIndex(x => w.contains(x)); return i >= 0 && i < st.indexOf(b); };
+    const backdrops = fixed.filter(b => {
+      const s = getComputedStyle(b);
+      const visibleFill = !/rgba\(.*,\s*0\)|transparent/.test(s.backgroundColor) || s.backdropFilter !== 'none' && !!s.backdropFilter;
+      // 창은 덮개와 따로 떠 있는 고정 요소이거나 덮개 안의 작은 내용 상자다.
+      const hasWindow = fixed.some(w => w !== b && !full(w) && !b.contains(w) && above(w, b))
+        || [...b.querySelectorAll('*')].some(w => shown(w) && !full(w) && (w.textContent ?? '').trim() !== '');
+      return visibleFill && full(b) && hasWindow;
+    });
+    // 고정 위치 창 안의 조작 요소(모달 자신의 버튼)는 덮개 아래에 깔려도 결함이다(z-index 오류).
+    const inFixedWindow = (e: Element) => fixed.some(w => !backdrops.includes(w) && w.contains(e));
     const covered: { target: string; detail: string }[] = [];
     for (const e of (modal ?? document).querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea, [role=button], [role=link], [role=tab], [role=checkbox]')) {
       const r = e.getBoundingClientRect();
@@ -399,6 +441,12 @@ export async function auditPage(page: Page, viewport: AuditFinding['viewport'], 
       if (!hit || e.contains(hit) || hit.contains(e)) continue;
       // 자기 라벨이 눌리면 같은 조작이다(라벨 클릭은 그 입력을 조작한다).
       if ([...((e as HTMLInputElement).labels ?? [])].some(l => l.contains(hit))) continue;
+      // 배경 덮개보다 아래에 깔린 요소는 모달 뒤의 내용이다. 덮개 위에 있는 모달 자신의 버튼이 가려진 것은 계속 찾는다.
+      if (backdrops.length && !inFixedWindow(e)) {
+        const stack = document.elementsFromPoint(x, y);
+        const at = stack.findIndex(s => s === e || e.contains(s));
+        if (backdrops.some(b => { const i = stack.indexOf(b); return i >= 0 && (at < 0 || i < at); })) continue;
+      }
       covered.push({ target: label(e), detail: `${label(e)} 를 ${label(hit)} 가 가림` });
     }
     const sw = document.documentElement.scrollWidth;

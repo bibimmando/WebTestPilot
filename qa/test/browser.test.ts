@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
-import { auditPage, MOBILE, openContext, stableOnReload, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
+import { areaOf, auditPage, goneFromArea, MOBILE, openContext, stableOnReload, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
 
 let browser: Browser | undefined;
 let server: Server | undefined;
@@ -86,6 +86,14 @@ test('신원이 약한 요소는 거부한다', async () => {
   assert.deepEqual(await resolveRef(p, unnamed), { ok: false, ref: unnamed, reason: 'unnamed' });
   const digitsOnly = refOf(snap, 'button "3"');
   assert.deepEqual(await resolveRef(p, digitsOnly), { ok: false, ref: digitsOnly, reason: 'value_only' });
+});
+
+test('사라짐 판단: 글자 모양으로 고정한 값은 내용이 바뀌어 모양에서 벗어나도 사라졌다고 보지 않는다', async () => {
+  const p = await page('<section><h2>수량</h2><span>1</span></section>');
+  const t = { text: String.raw`^s*S.{0,39}$`, anchor: '^수량$', of: 1 };
+  const area = await areaOf(p, t);
+  await p.evaluate(() => { document.querySelector('span')!.textContent = '재고를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요 (오류 코드 503)'; });
+  assert.equal(await goneFromArea(p, t, area), false);
 });
 
 test('구분할 수 없는 같은 요소는 순서로 고르지 않고 거부한다', async () => {
@@ -345,4 +353,23 @@ test('품질·사용성 점검: 이름 없는 조작 요소·가려진 버튼·�
   const withModal = (await auditPage(p, 'mobile', new Set(['button']))).filter(f => f.kind === 'covered-control');
   assert.deepEqual(withModal.map(f => f.target), ['button "닫기"'], '모달 안만 보고, 모달의 가려진 닫기 버튼은 찾는다');
   await p.close();
+});
+
+test('품질·사용성 점검: ARIA 없는 모달의 보이는 배경 덮개 아래는 가림이 아니고, 투명한 전체 덮개와 모달 안의 가림은 찾는다', async () => {
+  const base = '<button style="margin:40px">계속 읽기</button>';
+  const modal = '<div style="position:fixed;inset:0;background:rgba(20,20,20,.6)"></div>'
+    + '<div style="position:fixed;top:30%;left:20%;width:60%;padding:20px;background:#fff"><p>쿠폰 안내</p><button>창 닫기</button><span style="position:absolute;left:0;bottom:0;width:100%;height:60px"></span></div>';
+  const covered = async (html: string) => {
+    const p = await page(html);
+    const f = (await auditPage(p, 'desktop')).filter(x => x.kind === 'covered-control').map(x => x.target);
+    await p.close();
+    return f;
+  };
+  assert.deepEqual(await covered(base + modal), ['button "창 닫기"'], '배경 아래 버튼은 빼고, 모달 안에서 가려진 닫기 버튼은 찾는다');
+  assert.deepEqual(await covered(base + '<div style="position:fixed;inset:0"></div>'), ['button "계속 읽기"'], '투명한 전체 덮개는 조작을 막는 결함일 수 있다');
+  assert.deepEqual(await covered(base + '<div style="position:fixed;inset:0;background:rgba(0,0,0,.4)"></div>'), ['button "계속 읽기"'], '창 없이 남은 반투명 덮개도 결함일 수 있다');
+  // z-index가 틀려 모달 창(닫기 버튼 포함)이 덮개 아래에 깔리면 닫기 버튼을 누를 수 없다.
+  assert.ok((await covered(base + '<div style="position:fixed;top:30%;left:20%;width:60%;padding:20px;background:#fff;z-index:1"><p>안내</p><button>창 닫기</button></div><div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2"><p style="position:absolute;top:0;left:0;margin:0;background:#fff">공지</p></div>')).includes('button "창 닫기"'), '모달 창의 버튼은 덮개 아래에 깔려도 결함이다');
+  // 창이 덮개 안에 있는 모양도 모달이다.
+  assert.deepEqual(await covered(base + '<div style="position:fixed;inset:0;background:rgba(0,0,0,.5)"><div style="margin:20% auto;width:50%;background:#fff"><p>공지</p><button>확인</button></div></div>'), [], '덮개 안의 창: 뒤의 버튼은 가림이 아니다');
 });

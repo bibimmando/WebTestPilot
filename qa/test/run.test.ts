@@ -402,3 +402,23 @@ test('실행: 행동이 새 탭을 열면 기록하고, 모든 기록은 한 탭
   const tabs = readFileSync(`${dir}/ledger.jsonl`, 'utf8').trim().split('\n').map(l => JSON.parse(l)).filter(x => x.kind !== 'policy').map(x => x.tab);
   assert.ok(tabs.length === 3 && new Set(tabs).size === 1 && tabs[0], JSON.stringify(tabs));
 });
+
+test('실행: 라벨 영역에서 아예 사라진 대상은 보이지 않음으로 읽고, 같은 모양이 남아 있으면 못 읽음으로 둔다', async () => {
+  const url = `${origin}/notice.html`;
+  const req = (id: string) => ({ kind: 'requirement' as const, id, quote: '닫기를 누르면 사라진다' });
+  const p: Plan = { version: 1, textRead: 'name+content', features: [], questions: [], observations: [], unplanned: [],
+    requirements: [{ id: 'R1', text: '닫기를 누르면 사라진다' }],
+    targets: { T1: { target: { role: 'button', anchor: '^알림 설정$', of: 1 }, group: false, url },
+      T2: { target: { role: 'button', anchor: '^필터 칩$', nth: 0, of: 2 }, group: false, url },
+      T3: { target: { role: 'button', name: '^모두 지우기$' }, group: false, url }, T4: { target: { role: 'button', anchor: '^받은 배지$', of: 1 }, group: false, url } },
+    // S3: 누르는 대상(T3)과 사라졌는지 보는 대상(T4)이 다르다. T4는 시작 때 영역을 기억한다.
+    scenarios: [['T1', 'T1'], ['T2', 'T2'], ['T3', 'T4']].map(([act, t], i) => ({ id: `S${i + 1}`, title: t, covers: ['R1'], start: { url }, steps: [{ id: `S${i + 1}.A1`, op: 'click' as const, target: act }],
+      checks: [{ id: `S${i + 1}.C1`, after: `S${i + 1}.A1`, target: t, read: 'visible' as const, op: 'equals' as const, expected: 'false', source: req('R1') }] })) };
+  const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir('gone'), timeoutMs: 1500 });
+  const [gone, partly, other] = r.scenarios.map(s => s.checks[0]);
+  assert.deepEqual([gone.status, gone.actual, gone.count], ['passed', 'false', 0], JSON.stringify(gone));
+  assert.equal(partly.status, 'unresolved', '하나가 남아 있으면 어느 것이 사라졌는지 모른다');
+  assert.deepEqual([other.status, other.actual], ['passed', 'false'], '행동하지 않은 대상도 시작 때 기억한 영역에서 사라짐을 본다');
+  assert.match(gone.reason ?? '', /사라짐/, '사라짐 판독의 근거를 남긴다');
+  assert.ok(gone.evidence?.some(e => e.endsWith('.png')), '통과해도 그 시점 증거를 찍는다');
+});

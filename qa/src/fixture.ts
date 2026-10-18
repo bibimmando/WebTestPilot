@@ -2,8 +2,8 @@
 // 모든 결과는 즉시 ledger.jsonl에 쓴다. 판정은 테스트 통과 여부가 아니라 ledger와 plan의 대조(reconcile.ts)로 한다.
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { test as base, expect, type Page, type Locator } from '@playwright/test';
-import { ariaText, ariaTextV1, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, type AriaNode, type Policy, type Signal } from './browser.ts';
+import { test as base, expect, type ElementHandle, type Page, type Locator } from '@playwright/test';
+import { areaOf, ariaText, ariaTextV1, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, type AriaNode, type Policy, type Signal } from './browser.ts';
 import { compareValues, expectedFrom, sortKeys, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
@@ -21,6 +21,10 @@ const NORMAL_REJECTIONS = new Set([401, 403, 422]);
 /** 페이지 객체마다의 탭 식별자(워커 프로세스 안에서 유일). 시나리오의 기록이 한 탭에서 나왔는지 대조가 확인한다 */
 const tabs = new WeakMap<Page, string>();
 let tabCount = 0;
+/** 탭·대상마다 처음 찾았을 때의 라벨 영역. 대상이 사라졌는지는 이 영역에서 본다(영역은 대상이 사라지면 넓어진다) */
+const areas = new Map<string, ElementHandle | null>();
+const remember = async (page: Page, id: string) => { if (plan.targets[id].target.anchor !== undefined) areas.set(`${tabOf(page)} ${id}`, await areaOf(page, plan.targets[id].target)); };
+const areaFor = (page: Page, id: string) => areas.get(`${tabOf(page)} ${id}`);
 const tabOf = (page: Page) => { let t = tabs.get(page); if (!t) tabs.set(page, t = `${process.pid}-${++tabCount}`); return t; };
 /** 이 실행에서 검사가 읽은 실제 값. 관측 참조(expected_from)가 앞선 검사의 값을 기대값으로 쓴다. */
 const actuals = new Map<string, string>();
@@ -78,6 +82,9 @@ export const test = base.extend<{ guard: void }>({
       add({ kind: 'requestfailed', url: r.url(), text: `${r.method()} ${why}` }, sentIn.get(r));
     });
     await use();
+    // 마지막 행동이 연 새 탭은 시나리오가 끝난 뒤에 알려질 수 있다(부하가 클 때). 잠깐 더 기다린다.
+    // shortcut: 300ms 안에 열리지 않은 탭은 놓친다. 실측에서 보이면 행동마다 popup 이벤트를 기다린다.
+    if (phase !== 'start') await context.waitForEvent('page', { timeout: 300 }).catch(() => {});
     log({ kind: 'policy', scenario: info.title.split(' ')[0], blocked: g.blocked, violations: g.violations, signals, ...(signalsDropped ? { signalsDropped } : {}),
       ...(newTabs.length ? { newTabs: newTabs.map(t => ({ after: t.after, url: (!t.page.isClosed() && t.page.url()) || t.url })) } : {}) });
   }, { auto: true }],
@@ -103,6 +110,10 @@ export async function start(page: Page, scenarioId: string): Promise<void> {
     writeFileSync(join(dir!, 'evidence', `${scenarioId}.start.aria.txt`), aria);
     evidence = [`evidence/${scenarioId}.start.aria.txt`];
   } catch (e) { captureErrors = [`aria: ${brief(e)}`]; }
+  for (const id of new Set([...s.steps, ...s.checks].map(x => x.target).filter((x): x is string => !!x && plan.targets[x].target.anchor !== undefined))) {
+    const t = plan.targets[id].target;
+    if ((await toLocator(page, t).count().catch(() => 0)) === 1 && !(await shapeChanged(page, t).catch(() => true))) await remember(page, id);
+  }
   log({ kind: 'start', scenario: scenarioId, status: 'ok', url: page.url(), ready, viewport: page.viewportSize(), evidence,
     ...(captureErrors.length ? { captureErrors } : {}) }, page);
 }
@@ -131,6 +142,7 @@ export async function act(page: Page, stepId: string): Promise<void> {
       await loc.first().waitFor({ state: 'attached', timeout: TIMEOUT }).catch(() => {});
       const count = await loc.count();
       if (count !== 1 || await shapeChanged(page, plan.targets[st.target!].target)) throw await stop('not_executed', { reason: 'target_changed', count });
+      await remember(page, st.target!);
       // 효과 없이 행동 가능 여부만 확인한다.
       if (st.op === 'click') await loc.click({ trial: true, timeout: TIMEOUT });
       else if (st.op === 'fill' && !(await loc.isEditable())) throw new Error('not editable');
@@ -187,8 +199,14 @@ export async function check(page: Page, checkId: string): Promise<void> {
       const deadline = Date.now() + TIMEOUT;
       started = Date.now();
       for (;;) {
-        r = loc && await shapeChanged(page, plan.targets[c.target!].target)
-          ? { status: 'unresolved', reason: '순서로 고정한 영역의 요소 수가 바뀜' } : await read(page, loc, c, expected);
+        const t = c.target === undefined ? undefined : plan.targets[c.target].target;
+        // 영역에서 아예 사라진 대상은 "보이지 않음"이 확실하다. 일부만 남았으면 어느 것인지 모르므로 못 읽음으로 둔다.
+        const changed = !!loc && await shapeChanged(page, t!);
+        if (loc && !changed && (await loc.count()) === 1) await remember(page, c.target!);
+        r = changed
+          ? c.read === 'visible' && await goneFromArea(page, t!, areaFor(page, c.target!)) ? { status: compareValues(c.op, 'false', expected) ? 'passed' : 'mismatch', actual: 'false', count: 0, reason: '처음 찾았을 때의 라벨 영역에 같은 모양 요소가 하나도 없음(사라짐)' }
+            : { status: 'unresolved', reason: '순서로 고정한 영역의 요소 수가 바뀜' }
+          : await read(page, loc, c, expected);
         first ??= r;
         reads++;
         if (r.status === 'passed' || Date.now() >= deadline) break;
@@ -203,7 +221,7 @@ export async function check(page: Page, checkId: string): Promise<void> {
   // 몇 번, 얼마 동안 다시 읽었는지 남긴다. "너무 일찍 읽었다"와 "기다려도 그대로였다"를 분류에서 가른다.
   log({ kind: 'check', id: checkId, ...r, expected, op: c.op, read: c.read, reads, waitedMs: Date.now() - started,
     ...(reads > 1 ? { first: { status: first!.status, actual: first!.actual } } : {}), url: page.url(),
-    ...(r.status === 'passed' ? {} : await capture(page, checkId)) }, page);
+    ...(r.status === 'passed' && !r.reason ? {} : await capture(page, checkId)) }, page);
   if (c.precondition && r.status !== 'passed') throw new Stopped(`${checkId} 선행조건 ${r.status}`);
   expect.soft(r.status, `${checkId}: ${c.read} ${c.op} ${JSON.stringify(expected ?? null)}, 실제 ${JSON.stringify(r.actual ?? null)}`).toBe('passed');
 }

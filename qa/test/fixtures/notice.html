@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>알림 설정</title>
+<style>button { width: 28px; height: 28px; }</style></head>
+<body>
+  <!-- 이름 없는 아이콘 버튼: 누르면 자기 자신이 사라진다 -->
+  <section>
+    <h2>알림 설정</h2>
+    <button class="close"><svg width="10" height="10"><path d="M1 1L9 9M9 1L1 9" stroke="#000"/></svg></button>
+  </section>
+  <!-- 같은 모양 버튼 둘 중 첫째만 사라진다 -->
+  <section>
+    <h2>필터 칩</h2>
+    <button class="close"><svg width="10" height="10"><path d="M1 1L9 9" stroke="#000"/></svg></button>
+    <button><svg width="10" height="10"><path d="M9 1L1 9" stroke="#000"/></svg></button>
+  </section>
+  <!-- 행동 대상과 사라짐 검사 대상이 다르다: "모두 지우기"를 누르면 이름 없는 표시 버튼이 사라진다 -->
+  <section>
+    <h2>받은 배지</h2>
+    <button class="badge"><svg width="10" height="10"><circle cx="5" cy="5" r="4"/></svg></button>
+  </section>
+  <button id="clear">모두 지우기</button>
+  <script>
+    document.querySelectorAll('button.close').forEach(b => b.addEventListener('click', () => b.remove()));
+    document.getElementById('clear').addEventListener('click', () => document.querySelector('button.badge').remove());
+  </script>
+</body>
+</html>
