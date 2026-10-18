@@ -4,7 +4,8 @@ import type Anthropic from '@anthropic-ai/sdk';
 
 export type Send = (req: Anthropic.MessageCreateParamsNonStreaming) => Promise<Anthropic.Message>;
 /** stall: 탐색이 정체돼 대화를 끝낼 때 그 사유(완료가 아니라 미완료 사유로 남는다). */
-export type ToolOutcome = { text: string; isError?: boolean; done?: unknown; stall?: string };
+/** image: 도구 결과에 붙일 PNG(base64). 탐색의 screenshot 도구가 쓴다 */
+export type ToolOutcome = { text: string; isError?: boolean; done?: unknown; stall?: string; image?: string };
 export type Tool = { def: Anthropic.Tool; run: (input: any) => Promise<ToolOutcome> };
 
 type Rate = { input: number; output: number; cacheRead?: number };
@@ -20,6 +21,9 @@ export const PRICES: Record<string, Price> = {
   // 프롬프트가 10만 토큰을 넘으면 그 요청 전체가 높은 구간 가격이다.
   'claude-haiku-5-5': { input: 0.1, output: 0.5, over100k: { input: 0.5, output: 2.5 } },
 };
+
+/** 이미지 한 장의 입력 토큰 상한. 고해상도 이미지 지원 모델의 최대치(약 4,800)를 넉넉히 덮는다 */
+export const IMAGE_TOKENS = 5000;
 
 const tier = (p: Price, promptTokens: number): Rate => (p.over100k && promptTokens > 100_000 ? p.over100k : p);
 
@@ -40,7 +44,10 @@ export class Budget {
   /** 요청의 최악 비용(입력은 UTF-8 바이트를 토큰 상한으로, 5분 캐시 쓰기 1.25배, 출력은 max_tokens)을 점유한다. 한도를 넘으면 BudgetError. */
   reserve(req: Anthropic.MessageCreateParamsNonStreaming): number {
     if (!PRICES[req.model]) throw new BudgetError(`가격을 모르는 모델: ${req.model}`);
-    const inputTokens = Buffer.byteLength(JSON.stringify(req), 'utf8');
+    // 이미지는 base64 길이가 아니라 장당 토큰 상한으로 센다(바이트로 세면 수십 배 과대 예약된다).
+    let images = 0;
+    const text = JSON.stringify(req, function (this: { type?: string }, k, v) { return k === 'data' && this?.type === 'base64' ? (images++, '') : v; });
+    const inputTokens = Buffer.byteLength(text, 'utf8') + images * IMAGE_TOKENS;
     const price = tier(PRICES[req.model], inputTokens);
     const worst = (inputTokens * 1.25 * price.input + req.max_tokens * price.output) / 1e6;
     const left = this.limitUsd - this.spent - this.held - this.floorUsd;
@@ -96,7 +103,7 @@ export type AgentResult = {
 };
 
 export async function runAgent(o: {
-  send: Send; model: string; system: string; tools: Tool[]; user: string;
+  send: Send; model: string; system: string; tools: Tool[]; user: string | Anthropic.ContentBlockParam[];
   budget: Budget; maxTurns: number; maxTokens?: number; effort?: 'low' | 'medium' | 'high';
 }): Promise<AgentResult> {
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: o.user }];
@@ -142,7 +149,8 @@ export async function runAgent(o: {
       if (block.type !== 'tool_use') continue;
       // 브라우저 상태를 공유하므로 병렬 호출도 순서대로 실행한다.
       const outcome = await runTool(byName.get(block.name), block.input);
-      results.push({ type: 'tool_result', tool_use_id: block.id, content: outcome.text, ...(outcome.isError ? { is_error: true } : {}) });
+      results.push({ type: 'tool_result', tool_use_id: block.id, ...(outcome.isError ? { is_error: true } : {}),
+        content: outcome.image ? [{ type: 'text', text: outcome.text }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: outcome.image } }] : outcome.text });
       // 제출이 통과하면 같은 응답의 나머지 도구는 실행하지 않는다 (제출 뒤 행동이 계획 상태를 바꾸지 않도록).
       if (outcome.done !== undefined) {
         messages.push({ role: 'user', content: results });

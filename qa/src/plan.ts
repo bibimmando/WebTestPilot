@@ -1,13 +1,15 @@
 // 계획 계약. 모델은 submit_plan으로 Draft를 내고, 하네스가 검증한 뒤 대상(T#)을 실제 Target으로 바꿔 Plan으로 고정한다.
-import type { Target } from './browser.ts';
-import { RULE_IDS, ruleOf } from './rules.ts';
+import type { Target, Viewport } from './browser.ts';
+import { RULES, RULE_IDS, ruleOf } from './rules.ts';
 
 export type Requirement = { id: string; text: string };
 
 export type Step = { id: string; op: 'click' | 'fill' | 'select' | 'press'; target?: string; value?: string };
-export type Read = 'text' | 'value' | 'checked' | 'visible' | 'count' | 'url' | 'items';
+/** visual: 계산할 수 없는 화면 판단(겹침·잘림·읽을 수 있음). 실행은 스크린샷만 남기고, 판정은 시각 판정이 조건별로 한다 */
+export type Read = 'text' | 'value' | 'checked' | 'visible' | 'count' | 'url' | 'items' | 'visual';
 /** record: 복제 실행(C4) 전용 "기록만" — 항상 통과하고 관측 참조용 값만 남긴다. 모델 계획에는 쓸 수 없다. */
-export type Op = 'record' | 'equals' | 'not_equals' | 'contains' | 'less' | 'greater' | 'same_number' | 'all_equal' | 'all_contain' | 'any_equal' | 'any_contain' | 'sorted_asc' | 'sorted_desc';
+/** satisfies: visual 전용. expected는 번호 붙인 조건 목록이고, 코드가 아니라 시각 판정이 조건마다 확인한다 */
+export type Op = 'satisfies' | 'record' | 'equals' | 'not_equals' | 'contains' | 'less' | 'greater' | 'same_number' | 'all_equal' | 'all_contain' | 'any_equal' | 'any_contain' | 'sorted_asc' | 'sorted_desc';
 /**
  * 비교 규칙의 근거. requirement = 요구사항 인용, constraint = 화면 안내·HTML 제약 인용(탐색 중 본 텍스트),
  * observed = 탐색 때 본 값(시작 시점의 기준·선행조건에만), inferred = 일반 규칙 목록(rules.ts)의 규칙 ID 인용(quote는 적용 조건 설명).
@@ -29,7 +31,8 @@ export type Check = {
   precondition?: boolean;
 };
 /** covers: 요구사항(R#) 또는 탐색으로 찾은 기능(F#). variantOf: 같은 템플릿의 다른 페이지에서 실행하려고 복제한 원래 시나리오(C4) */
-export type Scenario = { id: string; title: string; covers: string[]; start: { url: string }; steps: Step[]; checks: Check[]; variantOf?: string };
+/** viewport: 실행 화면 크기. 없으면 desktop */
+export type Scenario = { id: string; title: string; covers: string[]; start: { url: string }; viewport?: Viewport; steps: Step[]; checks: Check[]; variantOf?: string };
 /** 탐색으로 찾은 기능. 요구사항에 없는 기능도 남긴다(자율 탐색). requirements는 관련 요구사항 ID */
 export type Feature = { id: string; name: string; page: string; requirements?: string[] };
 /** 탐색 중 ask_user로 남긴 업무 규칙 질문. 답을 기다리지 않는다. 답 받기는 M5·M7 */
@@ -39,7 +42,8 @@ export type Observation = { page: string; note: string };
 export type Draft = { features?: Feature[]; scenarios: Scenario[]; unplanned: { requirement: string; reason: string }[]; observations?: Observation[] };
 
 /** 탐색 중 pin 도구로 확정한 대상. group은 count·items 검사용으로 여러 요소를 허용한다. */
-export type Pinned = { target: Target; group: boolean; url: string };
+/** viewport: pin한 화면 크기. 없으면 desktop. 같은 요소도 화면 크기에 따라 숨거나(메뉴 접힘) 바뀌므로 시나리오와 같은 크기에서 pin해야 한다 */
+export type Pinned = { target: Target; group: boolean; url: string; viewport?: Viewport };
 
 export type Plan = {
   version: 1;
@@ -60,8 +64,8 @@ export type Plan = {
 
 const NEEDS_VALUE = new Set(['fill', 'select', 'press']);
 const OPS = ['click', 'fill', 'select', 'press'];
-export const READS: Read[] = ['text', 'value', 'checked', 'visible', 'count', 'url', 'items'];
-export const COMPARES: Op[] = ['record', 'equals', 'not_equals', 'contains', 'less', 'greater', 'same_number', 'all_equal', 'all_contain', 'any_equal', 'any_contain', 'sorted_asc', 'sorted_desc'];
+export const READS: Read[] = ['text', 'value', 'checked', 'visible', 'count', 'url', 'items', 'visual'];
+export const COMPARES: Op[] = ['satisfies', 'record', 'equals', 'not_equals', 'contains', 'less', 'greater', 'same_number', 'all_equal', 'all_contain', 'any_equal', 'any_contain', 'sorted_asc', 'sorted_desc'];
 const KINDS = ['requirement', 'constraint', 'observed', 'inferred'];
 /** 읽기 종류마다 쓸 수 있는 비교 */
 const ALLOWED: Record<Read, Op[]> = {
@@ -72,7 +76,19 @@ const ALLOWED: Record<Read, Op[]> = {
   visible: ['equals', 'not_equals'],
   count: ['equals', 'not_equals', 'less', 'greater', 'same_number'],
   items: ['all_equal', 'all_contain', 'any_equal', 'any_contain', 'sorted_asc', 'sorted_desc', 'not_equals'],
+  visual: ['satisfies'],
 };
+
+/** 시각 검사의 조건 목록. 한 줄이면 그 줄이 조건 하나다. 여러 줄이면 모든 줄이 "1." "2)"처럼 1부터 빠짐없이 번호가 붙어야 한다.
+ * 번호 없는 줄이 섞이거나 번호가 건너뛰면 조건을 조용히 버리게 되므로 undefined(계획 거부). */
+export function criteriaOf(expected: string): string[] | undefined {
+  const rows = expected.split('\n').map(l => l.trim()).filter(Boolean);
+  if (rows.length === 1 && !/^\d+[.)]/.test(rows[0])) return rows;
+  const parsed = rows.map(l => l.match(/^(\d+)[.)]\s*(.+)$/));
+  if (!rows.length || parsed.some((m, k) => !m || Number(m[1]) !== k + 1)) return undefined;
+  return parsed.map(m => m![2].trim());
+}
+export const MAX_CRITERIA = 6;
 
 /** 문자열 안의 첫 숫자 (쉼표 제거). "$1,450" → 1450, "장바구니 (2)" → 2. 없으면 NaN. */
 export function numberIn(s: string): number {
@@ -126,6 +142,8 @@ export function compareValues(op: Op, actual: string, expected: string): boolean
     return op.startsWith('all_') ? items.every(one) : items.some(one);
   }
   if (op === 'record') return true;
+  // 시각 조건은 코드가 비교하지 않는다(시각 판정 몫).
+  if (op === 'satisfies') return false;
   if (op === 'equals') return actual === expected;
   if (op === 'not_equals') return actual !== expected;
   if (op === 'contains') return actual.includes(expected);
@@ -149,6 +167,7 @@ function shapeErrors(d: any): string[] {
     const w = `scenarios[${i}]`;
     if (!s || typeof s !== 'object') return e.push(`${w} must be an object`);
     str(s.id, `${w}.id`); str(s.title, `${w}.title`); str(s.start?.url, `${w}.start.url`);
+    if (s.viewport !== undefined) oneOf(s.viewport, ['desktop', 'mobile'], `${w}.viewport`);
     if (!Array.isArray(s.covers) || !s.covers.every((c: unknown) => typeof c === 'string')) e.push(`${w}.covers must be string[]`);
     if (!Array.isArray(s.steps) || !Array.isArray(s.checks)) return e.push(`${w} needs steps[] and checks[]`);
     s.steps.forEach((st: any, j: number) => {
@@ -257,6 +276,12 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
     if (s.covers.some(r => features.has(r)) && !s.checks.some(c => !c.precondition && (c.source.kind === 'inferred' || c.source.kind === 'constraint'))) {
       errors.push(`${s.id}: covers a feature but has no non-precondition check with an inferred rule or constraint basis`);
     }
+    // 화면 크기가 다르면 같은 대상이 숨거나 다른 요소가 된다(접힌 메뉴 등). 시나리오와 같은 크기에서 pin한 대상만 쓴다.
+    const vp = s.viewport ?? 'desktop';
+    for (const id of new Set([...s.steps, ...s.checks].map(x => x.target).filter((t): t is string => !!t))) {
+      const at = pinned.get(id)?.viewport ?? 'desktop';
+      if (pinned.has(id) && at !== vp) errors.push(`${s.id}: target "${id}" was pinned at ${at} size but the scenario runs at ${vp}; switch with the viewport tool and pin it again`);
+    }
   }
 
   for (const u of draft.unplanned) {
@@ -284,6 +309,8 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
     } else if (!ALLOWED[c.read].includes(c.op)) errors.push(`${c.id}: read ${c.read} allows op ${ALLOWED[c.read].join('|')}`);
     if (c.read === 'url') {
       if (c.target !== undefined) errors.push(`${c.id}: read url takes no target`);
+    } else if (c.read === 'visual' && !c.target) {
+      // 대상 없는 시각 검사는 화면 전체를 본다.
     } else if (!c.target) errors.push(`${c.id}: read ${c.read} needs a target`);
     else requireTarget(c.id, c.target, c.read === 'count' || c.read === 'items', c.after === 'start' && !s.variantOf ? s.start.url : undefined);
     if (c.op.startsWith('sorted_') && !(SORT_BY as readonly unknown[]).includes(c.expected)) errors.push(`${c.id}: ${c.op} needs expected ${SORT_BY.join('|')} (the sort key)`);
@@ -292,6 +319,7 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
   function checkExpectation(c: Check, s: Scenario, order: string[]) {
     if ((c.expected === undefined) === (c.expected_from === undefined)) return errors.push(`${c.id}: give exactly one of expected or expected_from`);
     if (c.offset !== undefined && c.expected_from === undefined) errors.push(`${c.id}: offset is only for expected_from`);
+    if (c.read === 'visual' && c.expected_from !== undefined) return errors.push(`${c.id}: visual compares with written criteria, not expected_from`);
     if (c.expected_from !== undefined) {
       const at = order.indexOf(c.expected_from);
       if (at < 0 || at >= order.indexOf(c.id)) errors.push(`${c.id}: expected_from must name a check of the same scenario that runs before it`);
@@ -305,6 +333,14 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
       return;
     }
     const e = c.expected!;
+    if (c.read === 'visual') {
+      const n = criteriaOf(e)?.length ?? 0;
+      if (!n || n > MAX_CRITERIA) errors.push(`${c.id}: visual expects 1-${MAX_CRITERIA} criteria describing what must be visible on screen; with several lines, number every line 1., 2., ... in order`);
+      // 지금 화면이 보이는 대로 정답을 적으면 결함 화면을 정답으로 고정한다. 규칙·요구사항·화면 안내 근거만 쓴다.
+      if (c.source.kind === 'observed') errors.push(`${c.id}: visual checks need a requirement, constraint or inferred rule basis, not observed`);
+      if (c.precondition) errors.push(`${c.id}: a visual check cannot be a precondition`);
+      return;
+    }
     if (c.read === 'count' && !/^\d+$/.test(e)) errors.push(`${c.id}: count expects a whole-number`);
     if ((c.read === 'checked' || c.read === 'visible') && !['true', 'false'].includes(e)) errors.push(`${c.id}: ${c.read} expects "true" or "false"`);
     if ((c.op === 'less' || c.op === 'greater' || c.op === 'same_number') && Number.isNaN(numberIn(e))) errors.push(`${c.id}: ${c.op} needs a number in expected`);
@@ -327,6 +363,7 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
       if (rule.offset && !c.offset) errors.push(`${c.id}: rule ${rule.id} needs offset (how many steps up or down from the value read earlier)`);
       if (rule.form === 'bound' && c.op !== 'less' && c.op !== 'greater') errors.push(`${c.id}: rule ${rule.id} is a bound; use op less or greater`);
       if (rule.form === 'items' && c.read !== 'items') errors.push(`${c.id}: rule ${rule.id} checks every item; use read items`);
+      if ((rule.form === 'visual') !== (c.read === 'visual')) errors.push(`${c.id}: ${rule.form === 'visual' ? `rule ${rule.id} is judged from a screenshot; use read visual` : `read visual needs a visual rule (${RULES.filter(r => r.form === 'visual').map(r => r.id).join(', ')})`}`);
       // 규칙마다 허용한 비교 연산만 쓴다. 다른 연산으로 바꿔 결함 상태를 통과시키는 우회를 막는다(예: 정렬 규칙에 any_equal).
       if (rule.ops && !rule.ops.includes(c.op)) errors.push(`${c.id}: rule ${rule.id} allows op ${rule.ops.join('|')}`);
       return;

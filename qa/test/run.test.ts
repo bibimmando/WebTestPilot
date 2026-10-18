@@ -107,7 +107,7 @@ test('실행: 통과·불일치·대상 사라짐·쓰기 차단을 ledger로 �
   assert.ok(s3.blocked.some(b => b.startsWith('POST') && b.includes('/signup')), JSON.stringify(s3));
   assert.deepEqual(writes, []);
 
-  const n = (o: Partial<Record<string, number>>) => ({ passed: 0, mismatch: 0, unresolved: 0, error: 0, not_run: 0, invalid: 0, ...o });
+  const n = (o: Partial<Record<string, number>>) => ({ passed: 0, mismatch: 0, unresolved: 0, error: 0, not_run: 0, visual_pending: 0, invalid: 0, ...o });
   assert.deepEqual(r.scenarios.map(s => [s.id, s.valid]), [['S1', true], ['S2', true], ['S3', true], ['S4', true]], JSON.stringify(r.scenarios.map(s => s.invalid)));
   assert.deepEqual(r.requirements.map(q => [q.id, q.plan, q.checks]), [
     ['R1', 'planned', n({ passed: 1 })],

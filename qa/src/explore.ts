@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import type { Browser, Page } from 'playwright';
 import type Anthropic from '@anthropic-ai/sdk';
-import { openContext, snapshot, resolveRef, resolveGroup, resolveText, resolvePosition, settle, stableOnReload, type Policy } from './browser.ts';
+import { openContext, snapshot, resolveRef, resolveGroup, resolveText, resolvePosition, settle, stableOnReload, DESKTOP, MOBILE, VIEWPORTS, type Policy, type Viewport } from './browser.ts';
 import { validate, freeze, mergePlans, cloneScenarios, startTargetsElsewhere, READS, COMPARES, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
 import { rulesText } from './rules.ts';
 import { crawl, pathOf, type SiteMap, type Template } from './sitemap.ts';
@@ -240,7 +240,7 @@ export function exploreTools(page: Page, o: Task, violations: string[], part?: P
         for (const { id, url } of startTargetsElsewhere(draft, pinned).slice(0, MAX_START_CHECKS)) {
           const p = pinned.get(id)!;
           const ok = !p.group && o.policy.origins.includes(new URL(url).origin)
-            && await stableOnReload(page, p.target, false, SETTLE_TIMEOUT, url).catch(() => false);
+            && await stableOnReload(page, p.target, false, SETTLE_TIMEOUT, url, VIEWPORTS[p.viewport ?? 'desktop']).catch(() => false);
           if (violations.length) return { text: `시작 페이지 확인 중 정책 위반: ${violations.join(', ')}`, isError: true };
           if (ok) onStart.add(`${id} ${url}`);
         }
@@ -273,6 +273,7 @@ function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, v
     return { text };
   };
   const ref = { type: 'string', description: 'snapshot의 ref (예: e12)' } as const;
+  const viewportNow = (): Viewport => page.viewportSize()?.width === MOBILE.width ? 'mobile' : 'desktop';
   const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[],
     run: (input: any) => Promise<string | ToolOutcome>): Tool => ({
     def: { name, description, strict: true, input_schema: { type: 'object', properties, required, additionalProperties: false } },
@@ -324,6 +325,15 @@ function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, v
       await page.keyboard.press(key);
       return after(`${key} 누름`, before);
     }),
+    // 접근성 트리로는 겹침·잘림이 보이지 않는다. 시각 검사(read visual)를 계획할 근거를 보려고 지금 보이는 영역만 찍는다.
+    tool('screenshot', '지금 보이는 화면을 이미지로 본다. 겹침·잘림처럼 접근성 트리로 알 수 없는 화면 상태를 확인할 때만 쓴다(이미지는 비용이 크다).', {}, [],
+      async () => ({ text: `현재 URL: ${page.url()}, 화면 크기 ${JSON.stringify(page.viewportSize())}`, image: (await page.screenshot()).toString('base64') })),
+    tool('viewport', `화면 크기를 바꾼다. desktop ${DESKTOP.width}×${DESKTOP.height}, mobile ${MOBILE.width}×${MOBILE.height}. 모바일 전용 검사(접힌 메뉴·모달·버튼 접근)를 볼 때 쓴다.`,
+      { size: { enum: ['desktop', 'mobile'] } }, ['size'], async ({ size }: { size: Viewport }) => {
+        const before = await state();
+        await page.setViewportSize(VIEWPORTS[size]);
+        return after(`화면 크기 ${size}`, before);
+      }),
     tool('pin', '계획에 쓸 요소를 고정하고 대상 ID(T1 등)를 받는다. 개수를 세거나 항목들을 읽을 요소는 group=true. '
       + 'ref가 없는 텍스트(예: "- text: 합계 100원")는 그 줄을 담은 요소의 ref와 text로 고정한다. '
       + '새로고침마다 바뀌는 목록(추천 등)의 요소는 position=true로 이름 대신 순서로 고정한다.',
@@ -339,7 +349,8 @@ function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, v
             + '바뀌는 목록이면 position=true로 순서로 고정하고, 기대값은 클릭 전에 읽은 값(expected_from)으로 비교하세요.');
         }
         const id = nextTarget();
-        pinned.set(id, { target: r.target, group, url: page.url() });
+        const vp = viewportNow();
+        pinned.set(id, { target: r.target, group, url: page.url(), ...(vp === 'mobile' ? { viewport: vp } : {}) });
         return `${id} = ${JSON.stringify(r.target)}`;
       }),
   ];
@@ -372,6 +383,7 @@ const DRAFT_SCHEMA: Anthropic.Tool.InputSchema = {
         id: { type: 'string', description: 'S1, S2 ...' }, title: { type: 'string' },
         covers: { type: 'array', items: { type: 'string' }, description: '요구사항(R#) 또는 기능(F#) ID' },
         start: { type: 'object', additionalProperties: false, required: ['url'], properties: { url: { type: 'string' } } },
+        viewport: { enum: ['desktop', 'mobile'], description: '실행 화면 크기. 생략하면 desktop. 대상은 같은 크기에서 pin해야 한다' },
         steps: { type: 'array', items: {
           type: 'object', additionalProperties: false, required: ['id', 'op'],
           properties: { id: { type: 'string', description: 'S1.A1 ...' }, op: { enum: ['click', 'fill', 'select', 'press'] },

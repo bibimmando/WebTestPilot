@@ -1,7 +1,7 @@
 // 일반 웹 규칙 목록 (설계 3.3, 5장 6단계). 요구사항이 없을 때 `inferred` 근거는 이 목록의 규칙 ID를 인용한다.
 import type { Op } from './plan.ts';
 // 공통 엔진의 데이터이며 사이트별 규칙을 넣지 않는다. 앱 고유 규칙은 업무 규칙 질문의 답으로 앱 설정에 둔다.
-// group 1 = 거의 예외 없음, 2 = 대부분 맞지만 앱마다 다름. 3(품질·사용성)은 아직 없다.
+// group 1 = 거의 예외 없음, 2 = 대부분 맞지만 앱마다 다름, 3 = 품질·사용성(조작을 막으면 UI 결함, 아니면 개선 제안).
 // shortcut: 3묶음(품질·사용성)과 적용 조건의 자동 확인은 없다. 비교 형태(form)만 검증하고, 결정적 관계 규칙만 확신 높음, 나머지는 최대 확신 중간(Q22 제한 승인).
 // shortcut: form 'any' 규칙(no-error-page, invalid-input-feedback, required-input)은 고정 기대값을 허용해 관찰값 고정 우회가 남는다(판정은 최대 확신 중간).
 // shortcut: page-changes의 not_equals는 같은 항목의 순서만 바뀌어도 통과한다. 항목 집합 비교 연산이 필요해지면 추가한다.
@@ -14,7 +14,8 @@ import type { Op } from './plan.ts';
  */
 /** deterministic: 화면에서 읽은 두 값을 하네스가 직접 비교해 판정이 정해지는 규칙. 위반이면 확신 높음까지 허용한다(Q22 제한 승인 2026-10-16). */
 /** ops: 이 규칙에 쓸 수 있는 비교 연산(없으면 형태 검사만). */
-export type Rule = { id: string; group: 1 | 2; rule: string; applies: string; exceptions?: string; form: 'relation' | 'bound' | 'items' | 'any'; offset?: true; deterministic?: true;
+/** form visual: 계산할 수 없어 스크린샷을 보고 조건별로 판정하는 규칙(read visual, op satisfies). */
+export type Rule = { id: string; group: 1 | 2 | 3; rule: string; applies: string; exceptions?: string; form: 'relation' | 'bound' | 'items' | 'any' | 'visual'; offset?: true; deterministic?: true;
   ops?: Op[] };
 
 export const RULES: Rule[] = [
@@ -48,6 +49,10 @@ export const RULES: Rule[] = [
     exceptions: '검토·승인 뒤에 보이도록 설계된 경우', form: 'relation', ops: ['any_equal', 'any_contain'] },
   { id: 'state-persists', group: 2, rule: '새로고침하거나 뒤로 갔다 와도 사용자가 바꾼 상태가 유지된다', applies: '앱이 반영한 상태(저장한 설정, 추가한 항목, 고른 필터·탭). 저장하지 않은 입력칸은 제외',
     exceptions: '의도적으로 세션 단위로 두는 상태', form: 'relation', ops: ['equals', 'same_number'] },
+  // 계산 점검(③ auditPage: 이름 없음·가림·가로 넘침)으로 잡히지 않는 화면 판단. 범용 표현 언어 대신 조건 문장과 시각 판정을 쓴다(설계 6.2).
+  { id: 'content-readable', group: 3, rule: '내용과 조작 요소가 다른 요소에 겹치거나 잘리지 않고 읽을 수 있게 보인다',
+    applies: '행동 뒤 또는 화면 크기를 바꾼 뒤 보이는 영역(메뉴·모달·목록·긴 텍스트). 무엇이 어떻게 보여야 하는지 번호 붙인 조건으로 적는다',
+    exceptions: '의도적으로 접어 둔 내용(더보기·말줄임 표시가 있음), 화면 밖으로 스크롤해야 보이는 영역', form: 'visual', ops: ['satisfies'] },
 ];
 
 export const RULE_IDS = new Set(RULES.map(r => r.id));
@@ -55,4 +60,4 @@ export const ruleOf = (id?: string) => RULES.find(r => r.id === id);
 
 /** 탐색 프롬프트에 넣을 규칙 목록. */
 export const rulesText = (): string => RULES.map(r =>
-  `- ${r.id} (${r.group === 1 ? '거의 예외 없음' : '앱마다 다를 수 있음'}): ${r.rule}. 적용: ${r.applies}${r.exceptions ? `. 예외: ${r.exceptions}` : ''}`).join('\n');
+  `- ${r.id} (${r.group === 1 ? '거의 예외 없음' : r.group === 2 ? '앱마다 다를 수 있음' : '품질·사용성, 화면을 보고 판정'}): ${r.rule}. 적용: ${r.applies}${r.exceptions ? `. 예외: ${r.exceptions}` : ''}`).join('\n');

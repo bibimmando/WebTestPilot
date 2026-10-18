@@ -105,7 +105,7 @@ export async function resolveGroup(page: Page, ref: string): Promise<Resolved> {
  * anchor·nth·of는 이름 없는 아이콘 버튼·숫자만 있는 값처럼 스스로 신원이 없는 요소용이다: 페이지에서 유일한 라벨(anchor)을 담은
  * 가장 작은 영역 안에서, 같은 모양 요소 of개 중 nth번째(0부터). 영역 안 개수가 of와 다르면 대상이 바뀐 것으로 본다.
  */
-export type Target = { role?: string; name?: string; text?: string; within?: Target; anchor?: string; nth?: number; of?: number };
+export type Target = { role?: string; name?: string; text?: string; within?: Target; anchor?: string; nth?: number; of?: number; href?: string };
 
 export type Resolved =
   | { ok: true; ref: string; target: Target }
@@ -132,10 +132,40 @@ export async function resolveRef(page: Page, ref: string): Promise<Resolved> {
   for (let up = node.parent, tries = 0; ; up = up?.parent) {
     const loc = toLocator(page, target);
     if ((await loc.count()) === 1 && (await loc.and(same).count()) === 1) return { ok: true, ref, target };
-    while (up && typeof describe(up) === 'string') up = up.parent;
-    if (!up || ++tries > 2) return { ok: false, ref, reason: 'ambiguous' };
-    target = { ...base, within: describe(up) as Target };
+    while (up && !scopeOf(up)) up = up.parent;
+    if (!up || ++tries > 2) {
+      const link = await sameDestination(page, base, same);
+      return link ? { ok: true, ref, target: link } : { ok: false, ref, reason: 'ambiguous' };
+    }
+    target = { ...base, within: scopeOf(up)! };
   }
+}
+
+// 이름이 없어도 페이지에 보통 하나뿐인 영역(머리말·꼬리말·본문 등). 유일하지 않으면 위 반복이 개수로 거른다.
+const LANDMARKS = new Set(['banner', 'contentinfo', 'main', 'navigation', 'complementary', 'search']);
+/** 범위로 쓸 상위 요소: 이름·텍스트로 식별되는 요소, 또는 이름 없는 랜드마크(역할만) */
+const scopeOf = (n: Node): Target | undefined => {
+  const d = describe(n);
+  return typeof d !== 'string' ? d : LANDMARKS.has(n.role) ? { role: n.role } : undefined;
+};
+
+/**
+ * 같은 영역 안의 로고와 메뉴처럼 영역으로도 나뉘지 않는데 이름도 주소도 같은 링크는 같은 곳으로 가므로 동등한 대상으로 본다.
+ * 주소까지 같은 링크 안에서의 순서로 고정한다. 이름만 같고 주소가 다른 링크는 섞지 않는다.
+ * shortcut: 같은 주소의 두 링크가 서로 다른 클릭 동작을 갖거나 재렌더링으로 순서만 바뀌면 다른 링크를 누를 수 있다(개수가 바뀌면 거부). 실측에서 보이면 링크별 고유 속성을 함께 고정한다.
+ */
+async function sameDestination(page: Page, base: Target, same: Locator): Promise<Target | undefined> {
+  if (base.role !== 'link') return undefined;
+  const href = await same.getAttribute('href').catch(() => null);
+  if (!href) return undefined;
+  const t: Target = { ...base, href };
+  const n = await toLocator(page, t).count();
+  if (n === 1) return t;
+  for (let i = 0; i < n && n <= MAX_GROUP; i++) {
+    const one: Target = { ...t, nth: i, of: n };
+    if ((await toLocator(page, one).and(same).count()) === 1) return one;
+  }
+  return undefined;
 }
 
 /**
@@ -189,9 +219,12 @@ export async function resolvePosition(page: Page, ref: string): Promise<Resolved
  * 고정한 대상이 같은 URL을 새로 열어도 있는지 확인한다. 새로고침마다 바뀌는 영역의 요소는 재실행에서 사라진다.
  * shortcut: 한 번만 다시 연다. 우연히 같은 항목이 다시 나오면 놓친다. 오탐이 보이면 횟수를 늘린다.
  */
-export async function stableOnReload(page: Page, t: Target, group: boolean, timeoutMs: number, url = page.url()): Promise<boolean> {
+export async function stableOnReload(page: Page, t: Target, group: boolean, timeoutMs: number, url = page.url(),
+  size = page.viewportSize()): Promise<boolean> {
   const fresh = await page.context().newPage();
   try {
+    // 화면 크기는 페이지마다 바꿀 수 있어 새 페이지에 넘어가지 않는다. pin한 크기(기본은 지금 크기)에서 다시 확인한다.
+    if (size) await fresh.setViewportSize(size);
     await fresh.goto(url, { timeout: timeoutMs * 3 });
     await settle(fresh, timeoutMs);
     const n = await toLocator(fresh, t).count();
@@ -216,7 +249,9 @@ function shape(scope: Page | Locator, t: Target): Locator {
   if (t.role === undefined) return scope.getByText(new RegExp(t.text!));
   const loc = scope.getByRole(t.role as Parameters<Page['getByRole']>[0],
     t.name === undefined ? {} : { name: new RegExp(t.name) });
-  return t.text === undefined ? loc : loc.filter({ hasText: new RegExp(t.text) });
+  const withText = t.text === undefined ? loc : loc.filter({ hasText: new RegExp(t.text) });
+  // href 속성 원문과 비교한다. JSON 문자열의 따옴표·역슬래시 이스케이프는 CSS 문자열에서도 같은 뜻이다.
+  return t.href === undefined ? withText : withText.and(scope.locator(`[href=${JSON.stringify(t.href)}]`));
 }
 
 /** 순서로 고정한 대상의 영역 안 같은 모양 요소 수가 고정 때와 다르면 순서가 다른 요소를 가리킬 수 있다. */
@@ -312,6 +347,11 @@ export type AuditFinding = { kind: 'unnamed-control' | 'covered-control' | 'hori
   target: string;
   detail: string };
 export const MOBILE = { width: 390, height: 844 };
+/** Playwright 기본 화면 크기. 탐색·실행 컨텍스트가 따로 정하지 않으므로 데스크톱은 이 크기다 */
+export const DESKTOP = { width: 1280, height: 720 };
+export type Viewport = 'desktop' | 'mobile';
+// shortcut: 화면 크기만 바꾼다. 터치·모바일 UA(isMobile·hasTouch)는 컨텍스트 단위라 켜지 않는다. 터치 전용 동작을 검사해야 하면 모바일 컨텍스트를 따로 연다.
+export const VIEWPORTS: Record<Viewport, { width: number; height: number }> = { desktop: DESKTOP, mobile: MOBILE };
 const NAMED_ROLES = new Set(['link', 'button', 'textbox', 'searchbox', 'checkbox', 'radio', 'combobox', 'switch', 'slider', 'spinbutton', 'tab', 'menuitem']);
 
 /**

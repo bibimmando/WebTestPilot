@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
-import { auditPage, MOBILE, openContext, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
+import { auditPage, MOBILE, openContext, stableOnReload, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
 
 let browser: Browser | undefined;
 let server: Server | undefined;
@@ -92,6 +92,37 @@ test('구분할 수 없는 같은 요소는 순서로 고르지 않고 거부한
   const p = await page('<button>삭제</button><button>삭제</button>');
   const ref = refs(await snapshot(p), 'button "삭제"')[1];
   assert.deepEqual(await resolveRef(p, ref), { ok: false, ref, reason: 'ambiguous' });
+});
+
+test('같은 이름 링크: 이름 없는 머리말·꼬리말은 영역으로 나누고, 영역으로도 안 나뉘면 주소가 같은 링크끼리만 순서로 고정한다', async () => {
+  const p = await page('<header><a href="/shop">Shop</a></header><footer><a href="/shop">Shop</a></footer>');
+  const [head, foot] = refs(await snapshot(p), 'link "Shop"');
+  assert.deepEqual(await resolveRef(p, foot), { ok: true, ref: foot, target: { role: 'link', name: '^Shop$', within: { role: 'contentinfo' } } });
+  assert.deepEqual(await resolveRef(p, head), { ok: true, ref: head, target: { role: 'link', name: '^Shop$', within: { role: 'banner' } } });
+
+  // 한 영역 안의 같은 이름 링크 셋: 주소가 같은 둘은 순서로, 주소가 다른 하나는 주소로 고정한다.
+  const q = await page('<div><a href="/shop">Shop</a><a href="/sale">Shop</a><a href="/shop">Shop</a></div>');
+  const [a, sale, b] = refs(await snapshot(q), 'link "Shop"');
+  const r = await resolveRef(q, b);
+  assert.deepEqual(r, { ok: true, ref: b, target: { role: 'link', name: '^Shop$', href: '/shop', nth: 1, of: 2 } });
+  assert.equal(await toLocator(q, r.ok ? r.target : {}).and(q.getByRef(b)).count(), 1, '자기 요소를 가리킨다');
+  assert.deepEqual(await resolveRef(q, sale), { ok: true, ref: sale, target: { role: 'link', name: '^Shop$', href: '/sale' } });
+  assert.ok((await resolveRef(q, a)).ok);
+  // 같은 주소 링크가 하나 더 생기면 순서가 다른 요소를 가리킬 수 있어 대상이 바뀐 것으로 본다.
+  await q.evaluate(() => document.body.insertAdjacentHTML('beforeend', '<a href="/shop">Shop</a>'));
+  assert.ok(r.ok && await shapeChanged(q, r.target));
+});
+
+test('새로 열어 확인: 지정한 화면 크기에서 연다(모바일에서만 보이는 요소)', async () => {
+  const html = '<style>button{display:none}@media (max-width:600px){button{display:inline}}</style><button>메뉴</button>';
+  // stableOnReload는 같은 컨텍스트에 새 페이지를 연다. browser.newPage()의 페이지는 컨텍스트에 새 페이지를 열 수 없다.
+  const context = await browser!.newContext();
+  const p = await context.newPage();
+  const url = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+  const t = { role: 'button', name: '^메뉴$' };
+  assert.equal(await stableOnReload(p, t, false, 1000, url), false, '지금 크기(데스크톱)에서는 숨는다');
+  assert.equal(await stableOnReload(p, t, false, 1000, url, MOBILE), true);
+  await context.close();
 });
 
 test('텍스트 고정: ref 없는 span의 값을 찾고, 자식 버튼의 같은 텍스트는 거부한다', async () => {

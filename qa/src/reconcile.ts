@@ -12,14 +12,18 @@ export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; sc
   pressed?: { aria?: string; box?: { x: number; y: number; width: number; height: number } | null; key?: string };
   urlBefore?: string; url?: string; before?: string[]; afterCaptureMs?: number;
   /** check: 다시 읽은 횟수·기다린 시간·첫 읽기 */
-  reads?: number; waitedMs?: number; first?: { status: string; actual?: string } };
+  reads?: number; waitedMs?: number; first?: { status: string; actual?: string };
+  /** check(visual): 촬영 때 화면 크기·스크롤 위치·대상 위치. 재현은 같은 크기·스크롤일 때만 비교한다 */
+  visual?: VisualShot };
+export type VisualShot = { viewport: { width: number; height: number } | null; scroll: { x: number; y: number }; box: { x: number; y: number; width: number; height: number } | null; image: string; ready?: boolean };
 
 export type StepResult = { id: string; status: 'ok' | 'not_executed' | 'uncertain_execution' | 'not_run'; reason?: string; error?: string;
   count?: number; evidence?: string[]; pressed?: Entry['pressed']; urlBefore?: string; url?: string; before?: string[] };
-export type CheckStatus = 'passed' | 'mismatch' | 'unresolved' | 'error' | 'not_run';
+/** visual_pending: 시각 검사를 촬영했고 판정은 시각 판정이 한다 */
+export type CheckStatus = 'passed' | 'mismatch' | 'unresolved' | 'error' | 'not_run' | 'visual_pending';
 /** expected는 관측 참조면 참조한 검사의 실제 값으로 푼 값이다 (없으면 비어 있다). */
 export type CheckResult = { id: string; status: CheckStatus; source: string; precondition?: boolean; expected?: string; actual?: string; count?: number;
-  reason?: string; error?: string; evidence?: string[]; reads?: number; waitedMs?: number; first?: Entry['first'] };
+  reason?: string; error?: string; evidence?: string[]; reads?: number; waitedMs?: number; first?: Entry['first']; visual?: VisualShot };
 export type ScenarioResult = {
   id: string; valid: boolean; invalid: string[];
   start: 'ok' | 'failed' | 'not_run'; ready?: boolean; startEvidence?: string[];
@@ -37,7 +41,7 @@ export type RequirementResult = { id: string; plan: 'planned' | 'unplanned' | 'm
 export type Reconciled = { scenarios: ScenarioResult[]; requirements: RequirementResult[]; problems: string[] };
 
 const STEP = new Set(['ok', 'not_executed', 'uncertain_execution']);
-const CHECK = new Set(['passed', 'mismatch', 'unresolved', 'error']);
+const CHECK = new Set(['passed', 'mismatch', 'unresolved', 'error', 'visual_pending']);
 
 export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
   const problems: string[] = [];
@@ -87,6 +91,11 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
       let status: CheckStatus = 'not_run';
       if (e) {
         status = CHECK.has(e.status ?? '') ? e.status as CheckStatus : 'error';
+        // 시각 검사는 촬영만 기록한다. 다른 상태(통과·불일치)를 적은 기록은 헬퍼 계약 위반이다.
+        if ((c.read === 'visual') !== (status === 'visual_pending') && (status === 'passed' || status === 'mismatch' || status === 'visual_pending')) {
+          flag(`${c.id}: 시각 검사와 기록 상태가 맞지 않음(${e.status})`);
+          status = 'error';
+        }
         if (status === 'passed' || status === 'mismatch') {
           const recomputed = compare(c, e.actual, expectedOf(c));
           if (recomputed !== status) flag(`${c.id}: 기록된 ${e.status}와 다시 계산한 ${recomputed}가 다름`);
@@ -95,7 +104,7 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
       }
       const expected = expectedOf(c);
       return { id: c.id, status, source: c.source.kind, ...(c.precondition ? { precondition: true } : {}), ...(expected === undefined ? {} : { expected }),
-        ...pick(e, 'actual', 'count', 'reason', 'error', 'evidence', 'reads', 'waitedMs', 'first') };
+        ...pick(e, 'actual', 'count', 'reason', 'error', 'evidence', 'reads', 'waitedMs', 'first', 'visual') };
     });
     // 선행조건이 통과하지 못하면 fixture가 멈춘다. 그 뒤 행동 기록이 있으면 헬퍼 계약이 깨진 것이다.
     const pre = s.checks.filter(c => c.precondition);
@@ -120,7 +129,7 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
 
   const resultOf = new Map(scenarios.flatMap(s => s.checks.map(c => [c.id, { c, valid: s.valid }] as const)));
   const requirements = plan.requirements.map((r): RequirementResult => {
-    const counts = { passed: 0, mismatch: 0, unresolved: 0, error: 0, not_run: 0, invalid: 0 };
+    const counts = { passed: 0, mismatch: 0, unresolved: 0, error: 0, not_run: 0, visual_pending: 0, invalid: 0 };
     for (const [id, c] of checksById) {
       if (c.source.kind !== 'requirement' || c.source.id !== r.id) continue;
       const { c: res, valid } = resultOf.get(id)!;

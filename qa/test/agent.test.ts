@@ -98,3 +98,12 @@ test('분류 몫 하한: 하한으로 건 금액은 예약에 쓰지 않는다',
   b.floorUsd = 0;
   assert.ok(b.reserve(req) > 0);
 });
+
+test('도구가 이미지를 돌려주면 다음 요청의 도구 결과에 이미지 블록으로 붙는다', async () => {
+  const seen: Anthropic.MessageCreateParamsNonStreaming[] = [];
+  const tool: Tool = { def: { name: 'screenshot', input_schema: { type: 'object' } }, run: async () => ({ text: '화면', image: 'aGVsbG8=' }) };
+  await runAgent({ send: async req => { seen.push(req); return seen.length === 1 ? reply([use('screenshot')]) : reply([], 'end_turn'); },
+    model: 'claude-sonnet-5-5', system: 's', tools: [tool], user: 'u', budget: new Budget(1), maxTurns: 3 });
+  const result = (seen[1].messages.at(-1)!.content as Anthropic.ToolResultBlockParam[])[0];
+  assert.deepEqual(result.content, [{ type: 'text', text: '화면' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGVsbG8=' } }]);
+});

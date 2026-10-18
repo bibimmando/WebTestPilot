@@ -447,3 +447,34 @@ test('정체 판정: Tab으로 포커스만 옮기는 행동은 화면 변화로
   assert.equal(r.stop, 'max_turns');
   assert.ok(results.length >= 4 && !results.some(t => t.includes('화면 변화 없음')), results.join(' | '));
 });
+
+test('화면 크기: 모바일에서 pin한 대상은 모바일 시나리오에서만 쓰고, 실행도 같은 크기에서 한다', async () => {
+  const { runPlan } = await import('../src/run.ts');
+  const { fileURLToPath } = await import('node:url');
+  const draft = (viewport?: 'mobile') => ({ name: 'submit_plan', input: {
+    scenarios: [{ id: 'S1', title: '모바일 메뉴', covers: ['R1'], start: { url: origin + '/responsive.html' }, ...(viewport ? { viewport } : {}),
+      steps: [{ id: 'S1.A1', op: 'click', target: 'T1' }],
+      checks: [{ id: 'S1.C1', after: 'S1.A1', target: 'T2', read: 'visible', op: 'equals', expected: 'true',
+        source: { kind: 'requirement', id: 'R1', quote: '주 메뉴 링크가 보인다' } }] }],
+    unplanned: [] } });
+  let firstError = '';
+  const r = await run('/responsive.html', [{ id: 'R1', text: '좁은 화면에서 메뉴 버튼을 누르면 주 메뉴 링크가 보인다' }], [
+    () => [{ name: 'viewport', input: { size: 'mobile' } }],
+    () => [{ name: 'snapshot', input: {} }],
+    // 데스크톱에서는 숨는 버튼이다. 새로 열어 확인할 때도 모바일 크기여야 고정된다.
+    snap => [{ name: 'pin', input: { ref: ref(snap, 'button "메뉴 열기"'), group: false } }],
+    out => { assert.match(out, /T1 =/, out); return [{ name: 'click', input: { ref: 'e999' } }]; },
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [{ name: 'click', input: { ref: ref(snap, 'button "메뉴 열기"') } }],
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [{ name: 'pin', input: { ref: ref(snap, 'link "소개"'), group: false } }],
+    () => [draft()],
+    out => { firstError = out; return [draft('mobile')]; },
+  ]);
+  assert.equal(r.stop, 'done', r.detail ?? '');
+  assert.match(firstError, /pinned at mobile size but the scenario runs at desktop/);
+  assert.equal(r.plan!.targets.T1.viewport, 'mobile');
+  const res = await runPlan({ plan: r.plan!, policy: { origins: [origin] }, timeoutMs: 1500,
+    runDir: fileURLToPath(new URL(`../runs/test-viewport-${Date.now()}`, import.meta.url)) });
+  assert.deepEqual(res.scenarios[0].checks.map(c => c.status), ['passed'], JSON.stringify(res.scenarios[0]));
+});

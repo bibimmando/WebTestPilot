@@ -53,7 +53,7 @@ server.setRequestHandler(CallToolRequestSchema, async req => {
       writeFileSync(a.out!, JSON.stringify({ ...(r.done as object), blocked, violations }, null, 2));
       return { content: [{ type: 'text', text: `${r.text} 저장: ${a.out}` }] };
     }
-    return { content: [{ type: 'text', text: r.text }], isError: r.isError ?? false };
+    return { content: [{ type: 'text', text: r.text }, ...(r.image ? [{ type: 'image' as const, data: r.image, mimeType: 'image/png' }] : [])], isError: r.isError ?? false };
   } catch (e) {
     return { content: [{ type: 'text', text: `도구 오류: ${(e as Error).message.split('\n')[0]}` }], isError: true };
   }

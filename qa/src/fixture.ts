@@ -3,7 +3,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test as base, expect, type Page, type Locator } from '@playwright/test';
-import { ariaText, ariaTextV1, guardContext, settle, shapeChanged, toLocator, type AriaNode, type Policy, type Signal } from './browser.ts';
+import { ariaText, ariaTextV1, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, type AriaNode, type Policy, type Signal } from './browser.ts';
 import { compareValues, expectedFrom, sortKeys, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
@@ -78,6 +78,7 @@ export async function start(page: Page, scenarioId: string): Promise<void> {
   if (!s) throw new Error(`plan에 없는 시나리오: ${scenarioId}`);
   phase = 'start';
   try {
+    if (s.viewport) await page.setViewportSize(VIEWPORTS[s.viewport]);
     await page.goto(s.start.url);
   } catch (e) {
     log({ kind: 'start', scenario: scenarioId, status: 'failed', error: brief(e) });
@@ -88,7 +89,7 @@ export async function start(page: Page, scenarioId: string): Promise<void> {
   const aria = await page.locator('body').ariaSnapshot();
   mkdirSync(join(dir!, 'evidence'), { recursive: true });
   writeFileSync(join(dir!, 'evidence', `${scenarioId}.start.aria.txt`), aria);
-  log({ kind: 'start', scenario: scenarioId, status: 'ok', url: page.url(), ready, evidence: [`evidence/${scenarioId}.start.aria.txt`] });
+  log({ kind: 'start', scenario: scenarioId, status: 'ok', url: page.url(), ready, viewport: page.viewportSize(), evidence: [`evidence/${scenarioId}.start.aria.txt`] });
 }
 
 /**
@@ -159,6 +160,7 @@ export async function check(page: Page, checkId: string): Promise<void> {
   let first: Reading | undefined;
   let reads = 0;
   let started = Date.now();
+  if (c.read === 'visual') return visual(page, c);
   // 관측 참조: 참조한 검사가 값을 읽지 못했으면 비교할 기대값이 없다.
   const expected = c.expected_from !== undefined ? expectedFrom(c, actuals.get(c.expected_from)) : c.expected;
   try {
@@ -187,6 +189,41 @@ export async function check(page: Page, checkId: string): Promise<void> {
     ...(r.status === 'passed' ? {} : await capture(page, checkId)) });
   if (c.precondition && r.status !== 'passed') throw new Stopped(`${checkId} 선행조건 ${r.status}`);
   expect.soft(r.status, `${checkId}: ${c.read} ${c.op} ${JSON.stringify(expected ?? null)}, 실제 ${JSON.stringify(r.actual ?? null)}`).toBe('passed');
+}
+
+/**
+ * 시각 검사: 판단하지 않고 화면이 멈추길 기다려 현재 화면(전체 페이지가 아니라 보이는 영역)을 찍고, 화면 크기·스크롤·대상 위치를 남긴다.
+ * 대상이 하나로 찾아지지 않으면 무엇을 봐야 할지 모르므로 unresolved다. 촬영에 실패하면 판정할 증거가 없어 error다.
+ */
+async function visual(page: Page, c: Check): Promise<void> {
+  let r: Record<string, unknown>;
+  // 대상 조회·대기·촬영·위치 읽기 중 어느 단계의 예외도 기록 없이 사라지지 않게 한 곳에서 error로 남긴다.
+  try {
+    const loc = c.target === undefined ? undefined : toLocator(page, plan.targets[c.target].target);
+    let ready = await settle(page, TIMEOUT);
+    const count = loc ? await loc.count() : undefined;
+    if (loc && (count !== 1 || await shapeChanged(page, plan.targets[c.target!].target))) {
+      r = { status: 'unresolved', count, reason: '시각 검사 대상을 하나로 찾지 못함', ...(await capture(page, c.id)) };
+    } else {
+      // 대상이 화면 밖이면 보이게 옮긴 뒤 찍는다. 옮겼으면 다시 멈추길 기다린다. 스크롤 위치는 재현 비교에 남긴다.
+      if (loc && !(await loc.evaluate(e => { const b = e.getBoundingClientRect(); return b.top >= 0 && b.bottom <= innerHeight; }))) {
+        await loc.scrollIntoViewIfNeeded({ timeout: TIMEOUT });
+        ready = (await settle(page, TIMEOUT)) && ready;
+      }
+      const image = `evidence/${c.id}.visual.png`;
+      mkdirSync(join(dir!, 'evidence'), { recursive: true });
+      await page.screenshot({ path: join(dir!, image) });
+      const scroll = await page.evaluate(() => ({ x: Math.round(scrollX), y: Math.round(scrollY) }));
+      const box = loc ? await loc.boundingBox() : null;
+      // ready=false: 기한 안에 화면이 멈추지 않았다(로딩·전환 중일 수 있음). 판정은 이 촬영으로 결함을 만들지 않는다.
+      r = { status: 'visual_pending', count, visual: { viewport: page.viewportSize(), scroll, box, image, ready }, evidence: [image] };
+    }
+  } catch (e) {
+    log({ kind: 'check', id: c.id, status: 'error', error: brief(e), read: c.read, url: page.url(), ...(await capture(page, c.id)) });
+    throw e;
+  }
+  log({ kind: 'check', id: c.id, expected: c.expected, op: c.op, read: c.read, url: page.url(), ...r });
+  if (r.status === 'unresolved') expect.soft('unresolved', `${c.id}: 시각 검사 대상을 하나로 찾지 못함`).toBe('passed');
 }
 
 /** ledger에 이미 기록하고 멈출 때 쓰는 예외. */

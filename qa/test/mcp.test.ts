@@ -35,7 +35,7 @@ test('MCP 서버: CLI처럼 도구를 불러 계획을 제출하면 plan.json을
   }));
   try {
     const tools = (await client.listTools()).tools;
-    assert.deepEqual(tools.map(t => t.name).sort(), ['ask_user', 'click', 'fill', 'navigate', 'pin', 'press', 'select', 'snapshot', 'submit_plan']);
+    assert.deepEqual(tools.map(t => t.name).sort(), ['ask_user', 'click', 'fill', 'navigate', 'pin', 'press', 'screenshot', 'select', 'snapshot', 'submit_plan', 'viewport']);
     const ops = (tools.find(t => t.name === 'submit_plan')!.inputSchema as any).properties.scenarios.items.properties.checks.items.properties.op.enum;
     assert.ok(ops.includes('sorted_asc') && ops.includes('sorted_desc') && !ops.includes('record'), '도구 스키마는 계약의 연산을 그대로 열고 내부 연산은 숨긴다');
     const prompt = await client.getPrompt({ name: 'explore' });

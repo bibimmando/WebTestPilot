@@ -9,6 +9,7 @@ import { sequence } from './generate.ts';
 import { runPlan, type RunResult } from './run.ts';
 import type { ScenarioResult } from './reconcile.ts';
 import { runAgent, type Budget, type Send, type Tool } from './agent.ts';
+import { judgeVisual, replayVisual, type VisualRecord } from './visual.ts';
 
 const SYSTEM = readFileSync(new URL('../prompts/triage.md', import.meta.url), 'utf8');
 const EVIDENCE_CHARS = 30_000;
@@ -16,7 +17,9 @@ const MIN_QUOTE = 6;
 
 export type Class = 'passed' | 'passed_inferred' | 'passed_observed' | 'mismatch' | 'not_run' | 'invalid' | 'uncertain_execution'
   | 'precondition_failed' | 'not_applicable'
-  | 'needs_triage' | 'app_defect_candidate' | 'automation_failure' | 'uncertain';
+  | 'needs_triage' | 'app_defect_candidate' | 'automation_failure' | 'uncertain'
+  /** 시각 검사: 판정 대기, 모든 조건 충족 */
+  | 'needs_visual' | 'passed_visual';
 export type Quote = { file: string; text: string };
 export type Verdict = {
   id: string; scenario: string; kind: 'start' | 'act' | 'check';
@@ -34,12 +37,15 @@ export type Verdict = {
   triageLog?: string;
   /** 같은 검사의 원본(또는 앞선 복제본) 분류를 공유했으면 그 항목 ID (C4 복제 실행) */
   triageSharedFrom?: string;
+  /** 시각 검사의 조건·촬영·모델 응답·코드 판정·재현 비교 */
+  visual?: VisualRecord;
   reproduction?: 'reproduced' | 'flaky' | 'reproduction_inconclusive';
   reproductionDetail?: string;
   /** 단계별 결과 위에 붙이는 시스템 판정 (설계 3.3, 5장 6단계) */
   system?: { level: SystemLevel; reason: string };
 };
-export type SystemLevel = 'bug_high' | 'bug_medium' | 'not_bug' | 'hold' | 'incomplete';
+/** ui_defect·improvement: 시각 검사(일반 규칙 ③ 등) 위반. 조작을 막으면 UI 결함, 아니면 개선 제안. 버그와 따로 센다 */
+export type SystemLevel = 'bug_high' | 'bug_medium' | 'not_bug' | 'hold' | 'incomplete' | 'ui_defect' | 'improvement';
 
 /** 실행 기록만으로 하는 1차 분류. 실패 위치만으로 원인을 정하지 않고, 원인을 모르는 실패는 needs_triage로 둔다. */
 export function preclassify(plan: Plan, run: RunResult): Verdict[] {
@@ -72,7 +78,8 @@ export function preclassify(plan: Plan, run: RunResult): Verdict[] {
         const res = r.checks.find(y => y.id === x.id)!;
         const base = { id: c.id, scenario: s.id, kind: 'check' as const, ...origin(c), ...(res.error ? { error: res.error } : {}) };
         // 근거가 약한 통과는 따로 센다. 관찰값 근거의 통과는 시작 상태 확인이지 기능 검사 통과가 아니다.
-        if (res.status === 'passed') out.push({ ...base, observed: 'passed', class: c.source.kind === 'inferred' ? 'passed_inferred' : c.source.kind === 'observed' ? 'passed_observed' : 'passed' });
+        if (res.status === 'visual_pending') out.push({ ...base, observed: 'visual_pending', class: 'needs_visual' });
+        else if (res.status === 'passed') out.push({ ...base, observed: 'passed', class: c.source.kind === 'inferred' ? 'passed_inferred' : c.source.kind === 'observed' ? 'passed_observed' : 'passed' });
         // 선행조건 실패는 검사할 상태를 만들지 못한 것이다. 결함 후보로 세지 않고 뒤 항목의 원인으로 남긴다.
         else if (res.status === 'not_run') out.push({ ...base, observed: 'not_run', class: 'not_run', cause: cause ?? '알 수 없음' });
         else if (c.precondition) {
@@ -298,6 +305,8 @@ export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir
     if (changed.length) { inconclusive(`실행 코드가 최초와 다름: ${changed.join(', ')}`); continue; }
     if (!second.valid) { inconclusive(`재실행 무효: ${second.invalid.join('; ')}`); continue; }
     if (second.precondition === 'failed') { inconclusive('재실행에서 선행조건(시작 조건)이 통과하지 못함'); continue; }
+    // 시각 검사는 촬영 상태만 같으므로 서명으로 비교하지 않는다. 같은 위반이 다시 보이는지는 replayVisual이 이미지로 판단한다.
+    if (v.visual) continue;
     const relative = plan.scenarios.flatMap(s => s.checks).find(c => c.id === v.id)?.expected_from !== undefined;
     const before = signature(first, v, relative);
     const after = signature(second, v, relative);
@@ -322,6 +331,17 @@ export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir
 export function systemVerdict(plan: Plan, v: Verdict): NonNullable<Verdict['system']> {
   const incomplete = (reason: string) => ({ level: 'incomplete' as const, reason });
   if (v.class === 'passed' || v.class === 'passed_inferred' || v.class === 'passed_observed') return { level: 'not_bug', reason: '검사 통과' };
+  if (v.class === 'passed_visual') return { level: 'not_bug', reason: '시각 검사의 모든 조건 충족' };
+  if (v.class === 'needs_visual') return incomplete('시각 판정 미완료');
+  // 시각 위반은 기계 비교가 아니라 AI 판정이라 버그 등급을 주지 않는다. 같은 위반이 재현 화면에서도 보였을 때만 UI 결함·개선 제안이다.
+  if (v.class === 'app_defect_candidate' && v.visual?.assessment) {
+    if (v.reproduction === 'flaky') return { level: 'hold', reason: `시각 위반이 재현 화면에서 보이지 않음${v.reproductionDetail ? `: ${v.reproductionDetail}` : ''}` };
+    if (v.reproduction !== 'reproduced') return incomplete(`시각 위반 재현 판단 불가${v.reproductionDetail ? `: ${v.reproductionDetail}` : ''}`);
+    const basis = v.source === 'requirement' ? '요구사항' : v.source === 'constraint' ? '화면 안내' : `일반 규칙 ${plan.scenarios.flatMap(s => s.checks).find(c => c.id === v.id)?.source.rule ?? '?'}`;
+    return v.visual.assessment.blocks_use
+      ? { level: 'ui_defect', reason: `${basis} 근거 시각 위반(${v.visual.decision}), 정보 확인·조작을 막음, 재현됨` }
+      : { level: 'improvement', reason: `${basis} 근거 시각 위반(${v.visual.decision}), 조작은 막지 않음, 재현됨` };
+  }
   if (v.class === 'automation_failure') return { level: 'not_bug', reason: '자동화 실패로 분류(원래 결과는 보존)' };
   if (v.class === 'not_applicable') return { level: 'hold', reason: '같은 템플릿 다른 페이지에서 이름으로 고정한 대상이 없음: 페이지마다 다른 이름인지 요소 누락인지 사람이 확인' };
   if (v.class !== 'app_defect_candidate') return incomplete(({ invalid: '무효 시나리오', not_run: `실행 안 됨(원인 ${v.cause ?? '알 수 없음'})`,
@@ -414,9 +434,12 @@ export async function judge(o: { plan: Plan; run: RunResult; send: Send; model: 
   save('preclassified');
   await triage({ plan: o.plan, run: o.run, verdicts, send: o.send, model: o.model, budget: o.budget, maxItems: o.maxTriageItems,
     onUpdate: () => save('triage'), logDir: n === 1 ? 'triage' : `triage-${n}`, concurrency: o.concurrency });
+  await judgeVisual({ plan: o.plan, run: o.run, verdicts, send: o.send, model: o.model, budget: o.budget,
+    logDir: n === 1 ? 'triage' : `triage-${n}`, concurrency: o.concurrency, onUpdate: () => save('triage') });
   save('triaged');
   try {
-    await reproduce({ run: o.run, verdicts, runDir: o.reproduceDir, timeoutMs: o.timeoutMs });
+    const again = await reproduce({ run: o.run, verdicts, runDir: o.reproduceDir, timeoutMs: o.timeoutMs });
+    await replayVisual({ plan: o.plan, first: o.run, again, verdicts, send: o.send, model: o.model, budget: o.budget, logDir: n === 1 ? 'triage' : `triage-${n}` });
   } catch (e) {
     for (const v of verdicts) if (isCandidate(v) && !v.reproduction) {
       v.reproduction = 'reproduction_inconclusive';

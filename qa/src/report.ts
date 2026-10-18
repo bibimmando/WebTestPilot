@@ -10,7 +10,7 @@ import type { Plan, Check } from './plan.ts';
 import type { Judgment, Verdict, SystemLevel } from './triage.ts';
 import type { RunResult } from './run.ts';
 import type { SiteMap } from './sitemap.ts';
-import type { AuditFinding, Target } from './browser.ts';
+import { MOBILE, type AuditFinding, type Target } from './browser.ts';
 import { pathOf } from './sitemap.ts';
 
 export type ReportItem = {
@@ -33,6 +33,8 @@ export type ReportItem = {
   reproduction?: { result: 'reproduced' | 'not_reproduced' | 'inconclusive'; reason?: string; evidence?: string[] };
   /** 보고서 폴더 기준 증거 경로(최초 실행). 재실행 증거는 reproduction.evidence */
   evidence: string[];
+  /** 시각 검사: 조건마다 판정 AI의 답과 근거, 조작을 막는지 */
+  visual?: { criteria: { text: string; status?: string; evidence?: string }[]; blocksUse?: boolean; decision?: string };
 };
 
 /** 사이트 지도에서 페이지마다 계산한 품질·사용성 점검(AI 없음). confirmed = 새로 열어 다시 점검해도 같음 */
@@ -80,12 +82,18 @@ export type Report = {
   auditErrors: string[];
   /** 자동화 실패(분류 결과, 원래 불일치 보존)·미완료: 사유별 개수와 항목 */
   incomplete: { total: number; byReason: Record<string, number>; items: ReportItem[] };
+  /** 계획된 행동의 실행 결과. failureRate = (미실행 + 실행 여부 불명확) / 시도. 시도하지 못한 행동은 notRun에 원인별로 */
+  actions: { planned: number; attempted: number; completed: number; notExecuted: Record<string, number>; uncertain: number;
+    notRun: Record<string, number>; invalid: number; failureRate: number | null; repeated: { target: string; failures: number; steps: string[] }[] };
+  /** 시각 검사에서 재현된 위반(UI 결함·개선 제안). AI 판정이라 버그와 따로 센다 */
+  visual: ReportItem[];
   /** 실제로 통과한 검사 범위. 사이트 정상 보장이 아니다 */
   passed: { checks: number; byClass: Record<string, number> };
 };
 
 const AUDIT_TEXT: Record<AuditFinding['kind'], string> = { 'unnamed-control': '이름 없는 조작 요소', 'covered-control': '가려진 조작 요소', 'horizontal-overflow': '가로 넘침' };
-const LEVEL_TEXT: Record<SystemLevel, string> = { bug_high: '버그 — 확신 높음', bug_medium: '버그 — 확신 중간', hold: '판단 보류', incomplete: '미완료', not_bug: '버그 아님' };
+const LEVEL_TEXT: Record<SystemLevel, string> = { bug_high: '버그 — 확신 높음', bug_medium: '버그 — 확신 중간', hold: '판단 보류', incomplete: '미완료', not_bug: '버그 아님',
+  ui_defect: 'UI 결함(시각 판정)', improvement: '개선 제안(시각 판정)' };
 
 /**
  * 판정 파일은 다시 판정할 때마다 verdicts-2.json …으로 늘어난다. 판정이 끝난(stage done) 것 중 가장 최근 것을 쓰고,
@@ -122,7 +130,7 @@ export function buildReport(dir: string): Report {
   const plain = (p?: string) => p?.replace(/^\^|\$$/g, '');
   const label = (x: Target): string => [
     x.anchor ? `"${plain(x.anchor)}" 영역의` : '', x.role ?? '요소', x.name ? `"${plain(x.name)}"` : '', x.text ? `글자 "${plain(x.text)}"` : '',
-    x.nth !== undefined ? `(${x.of ?? '?'}개 중 ${x.nth + 1}번째)` : '', x.within ? `(${label(x.within)} 안)` : '',
+    x.href ? `(주소 ${x.href})` : '', x.nth !== undefined ? `(${x.of ?? '?'}개 중 ${x.nth + 1}번째)` : '', x.within ? `(${label(x.within)} 안)` : '',
   ].filter(Boolean).join(' ');
   const describe = (t?: string) => !t ? undefined : plan.targets[t] ? label(plan.targets[t].target as Target) : t;
   const describeCheck = (c: Check) => `${describe(c.target) ?? 'URL'}의 ${c.read} ${c.op} ${c.expected !== undefined ? JSON.stringify(c.expected) : `${c.expected_from}의 값`}`;
@@ -134,7 +142,7 @@ export function buildReport(dir: string): Report {
     const res = c ? r?.checks.find(x => x.id === c.id) : undefined;
     // 재현 절차: 이 항목 전까지의 행동. 행동 항목이면 그 행동까지.
     const upto = v.kind === 'start' ? -1 : v.kind === 'act' ? s.steps.findIndex(x => x.id === v.id) : c!.after === 'start' ? -1 : s.steps.findIndex(x => x.id === c!.after);
-    const steps = [`${s.start.url} 열기`, ...s.steps.slice(0, upto + 1).map(st => `${st.op} ${describe(st.target) ?? ''}${st.value !== undefined ? ` 값 ${JSON.stringify(st.value)}` : ''}`.trim())];
+    const steps = [`${s.viewport === 'mobile' ? `화면 폭 ${MOBILE.width}px(모바일)로 ` : ''}${s.start.url} 열기`, ...s.steps.slice(0, upto + 1).map(st => `${st.op} ${describe(st.target) ?? ''}${st.value !== undefined ? ` 값 ${JSON.stringify(st.value)}` : ''}`.trim())];
     const stepEvidence = v.kind === 'act' ? r?.steps.find(x => x.id === v.id)?.evidence : undefined;
     const rep = v.reproduction;
     return {
@@ -149,8 +157,12 @@ export function buildReport(dir: string): Report {
       ...(rep ? { reproduction: { result: rep === 'reproduced' ? 'reproduced' as const : rep === 'flaky' ? 'not_reproduced' as const : 'inconclusive' as const,
         ...(v.reproductionDetail ? { reason: v.reproductionDetail } : {}),
         // 재실행 폴더(repro/)에 같은 항목의 증거가 있으면 연결한다. 재현 판정을 따라가 확인할 수 있게 한다.
-        ...(() => { const e = ['png', 'aria.txt'].map(x => `repro/evidence/${v.id}.${x}`).filter(p => existsSync(join(dir, p))); return e.length ? { evidence: e } : {}; })() } } : {}),
+        ...(() => { const e = ['png', 'aria.txt', 'visual.png'].map(x => `repro/evidence/${v.id}.${x}`).filter(p => existsSync(join(dir, p))); return e.length ? { evidence: e } : {}; })() } } : {}),
       evidence: [...(res?.evidence ?? []), ...(stepEvidence ?? [])].map(e => `run/${e}`),
+      ...(v.visual ? { visual: { criteria: v.visual.criteria.map((text, i) => {
+        const a = v.visual!.assessment?.criteria.find(x => x.n === i + 1);
+        return { text, ...(a ? { status: a.status, evidence: a.evidence } : {}) };
+      }), ...(v.visual.assessment ? { blocksUse: v.visual.assessment.blocks_use } : {}), ...(v.visual.decision ? { decision: v.visual.decision } : {}) } } : {}),
     };
   };
 
@@ -181,6 +193,8 @@ export function buildReport(dir: string): Report {
   const signals = judgment.errorSignals ?? [];
   const audit: AuditItem[] = (explore.sitemap?.audit ?? []).flatMap(a => a.findings.map(f => ({ ...f, page: a.url })));
   if (!explore.sitemap) incompleteReasons.push('탐색 기록(explore.json의 사이트 지도) 없음: 탐색 범위를 알 수 없다');
+  const actions = actionSummary(plan, resultOf);
+  actions.repeated = actions.repeated.map(r => ({ ...r, target: describe(r.target) ?? r.target }));
 
   return {
     version: 'report/2',
@@ -203,15 +217,56 @@ export function buildReport(dir: string): Report {
     coverage: { templates, unvisitedLinks: explore.sitemap?.unvisited ?? [], failedUrls: explore.sitemap?.failed ?? [],
       requirements: judgment.requirements, features: judgment.features ?? [] },
     system: judgment.system,
-    bugs, hold: of('hold'), questions: judgment.pendingQuestions ?? [], observations: plan.observations,
+    bugs, hold: of('hold'), visual: of('ui_defect', 'improvement'), questions: judgment.pendingQuestions ?? [], observations: plan.observations,
     errorSignals: signals, normalRejections: signals.filter(g => g.normal).length,
     signalsDropped: results.scenarios.reduce((n, s) => n + (s.signalsDropped ?? 0), 0),
     uiDefects: audit.filter(a => a.confirmed && a.level === 'ui_defect'), improvements: audit.filter(a => a.confirmed && a.level === 'improvement'),
     auditUnconfirmed: audit.filter(a => !a.confirmed), auditErrors: explore.sitemap?.auditErrors ?? [],
     incomplete: { total: incomplete.length, byReason, items: incomplete },
+    actions,
     passed: { checks: Object.values(passedClasses).reduce((a, b) => a + b, 0), byClass: passedClasses },
   };
 }
+
+/**
+ * 계획된 행동마다 시도·완료·미실행(사유별)·실행 여부 불명확·실행 안 됨(원인별)을 센다. 실패율은 시도한 행동 기준이고,
+ * 시도하지 못한 행동은 분모에서 숨기지 않고 원인과 함께 따로 남긴다. 무효 시나리오의 행동은 믿을 수 없어 invalid로만 센다.
+ * 같은 대상에서 두 번 이상 실패한 행동은 평균에 묻히지 않게 따로 보인다(복제 페이지·여러 시나리오의 같은 대상).
+ */
+export function actionSummary(plan: Plan, resultOf: Map<string, RunResult['scenarios'][number]>): Report['actions'] {
+  const a: Report['actions'] = { planned: 0, attempted: 0, completed: 0, notExecuted: {}, uncertain: 0, notRun: {}, invalid: 0, failureRate: null, repeated: [] };
+  const add = (m: Record<string, number>, k: string) => { m[k] = (m[k] ?? 0) + 1; };
+  const failed = new Map<string, { id: string; steps: string[] }>();
+  for (const s of plan.scenarios) {
+    const r = resultOf.get(s.id);
+    a.planned += s.steps.length;
+    if (r && !r.valid) { a.invalid += s.steps.length; continue; }
+    // 실행 안 된 행동의 원인: 시나리오가 돌지 않음 → 시작 실패 → 선행조건 실패 → 앞 행동에서 멈춤 → 검사 오류로 멈춤.
+    const stoppedAt = r?.steps.find(x => x.status === 'not_executed' || x.status === 'uncertain_execution');
+    const cause = !r || r.start === 'not_run' ? '시나리오 실행 안 됨' : r.start === 'failed' ? '시작 실패'
+      : r.precondition === 'failed' ? '선행조건 실패' : stoppedAt ? `앞 행동(${stoppedAt.id})에서 멈춤` : r.checks.some(c => c.status === 'error') ? '검사 오류로 멈춤' : '기록 없음';
+    for (const st of s.steps) {
+      const x = r?.steps.find(y => y.id === st.id);
+      if (!x || x.status === 'not_run') { add(a.notRun, cause.startsWith('앞 행동') ? '앞 행동에서 멈춤' : cause); continue; }
+      a.attempted++;
+      if (x.status === 'ok') { a.completed++; continue; }
+      if (x.status === 'uncertain_execution') a.uncertain++;
+      else add(a.notExecuted, x.reason ?? 'unknown');
+      // 같은 요소를 다른 ID로 pin한 경우도 한 대상으로 묶는다(대상 설명이 같으면 같은 대상).
+      if (st.target) { const k = JSON.stringify(plan.targets?.[st.target]?.target ?? st.target); failed.set(k, { id: failed.get(k)?.id ?? st.target, steps: [...failed.get(k)?.steps ?? [], st.id] }); }
+    }
+  }
+  a.failureRate = a.attempted ? Number(((a.attempted - a.completed) / a.attempted).toFixed(3)) : null;
+  a.repeated = [...failed.values()].filter(f => f.steps.length > 1).map(f => ({ target: f.id, failures: f.steps.length, steps: f.steps }));
+  return a;
+}
+
+const actionText = (a: Report['actions']) => {
+  const list = (m: Record<string, number>) => Object.entries(m).map(([k, n]) => `${esc(k)} ${n}`).join(', ');
+  return `계획 ${a.planned} · 시도 ${a.attempted} · 완료 ${a.completed} · 미실행 ${Object.values(a.notExecuted).reduce((x, y) => x + y, 0)}${Object.keys(a.notExecuted).length ? ` (${list(a.notExecuted)})` : ''}`
+    + ` · 실행 여부 불명확 ${a.uncertain} · 실행 실패율 ${a.failureRate === null ? '—' : `${(a.failureRate * 100).toFixed(1)}%`}`
+    + `${Object.keys(a.notRun).length ? `. 시도하지 못한 행동: ${list(a.notRun)}` : ''}${a.invalid ? `. 무효 시나리오의 행동 ${a.invalid}개는 세지 않음` : ''}`;
+};
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!));
 
@@ -230,8 +285,9 @@ export function renderHtml(rep: Report, dir: string): string {
       <dt>판정 이유</dt><dd>${esc(x.reason)}</dd>
       ${x.check ? `<dt>검사</dt><dd>${esc(x.check.target ?? 'URL')}의 ${esc(x.check.read)}를 ${esc(x.check.op)}로 비교</dd>
       <dt>기대</dt><dd>${x.check.op === 'not_equals' ? '다음 값과 달라야 함: ' : ''}${esc(x.check.expected ?? '')}${x.check.expectedFrom ? ` (${esc(x.check.expectedFrom)}에서 읽은 값)` : ''}</dd>
-      <dt>실제</dt><dd>${esc(x.check.actual ?? '(읽지 못함)')}</dd>
+      ${x.check.read === 'visual' ? '' : `<dt>실제</dt><dd>${esc(x.check.actual ?? '(읽지 못함)')}</dd>`}
       <dt>기대 근거</dt><dd>${esc(x.check.source.kind)}${x.check.source.id ? ` ${esc(x.check.source.id)}` : ''}${x.check.source.rule ? ` 규칙 ${esc(x.check.source.rule)}` : ''}${x.check.source.quote ? ` — “${esc(x.check.source.quote)}”` : ''}</dd>` : ''}
+      ${x.visual ? `<dt>시각 조건</dt><dd><ol>${x.visual.criteria.map(c => `<li>${esc(c.text)}${c.status ? ` — <b>${esc(c.status)}</b>: ${esc(c.evidence)}` : ''}</li>`).join('')}</ol>${x.visual.blocksUse !== undefined ? `조작을 막음: ${x.visual.blocksUse ? '예' : '아니요'}` : ''}</dd>` : ''}
       <dt>원래 결과</dt><dd>${esc(x.observed)}</dd>
       <dt>분류</dt><dd>${esc(x.classification.class)}${x.classification.reason ? ` — ${esc(x.classification.reason)}` : ''}${x.classification.error ? ` — ${esc(x.classification.error)}` : ''}</dd>
       ${x.reproduction ? `<dt>재현</dt><dd>${esc(x.reproduction.result)}${x.reproduction.reason ? ` — ${esc(x.reproduction.reason)}` : ''}${x.reproduction.evidence ? `<br>재실행 증거: ${x.reproduction.evidence.map(esc).join(', ')}` : ''}</dd>` : ''}
@@ -268,11 +324,13 @@ export function renderHtml(rep: Report, dir: string): string {
     <tr><th>다른 페이지 실행(복제)</th><td>${count(rep.system.variant)}</td></tr><tr><th>준비 확인(선행조건)</th><td>${count(rep.system.preparation)}</td></tr>
     <tr><th>오류 신호</th><td>${rep.errorSignals.length - rep.normalRejections}건 (정상 거절일 수 있는 것 ${rep.normalRejections}건 별도${rep.signalsDropped ? `, 상한을 넘어 버린 신호 ${rep.signalsDropped}건` : ''})</td></tr>
     <tr><th>UI 결함 · 개선 제안</th><td>${rep.uiDefects.length}건 · ${rep.improvements.length}건 (버그와 따로 셈, 확인하지 못한 발견 ${rep.auditUnconfirmed.length}건 별도)</td></tr>
+    <tr><th>시각 판정</th><td>UI 결함 ${rep.visual.filter(x => x.level === 'ui_defect').length}건 · 개선 제안 ${rep.visual.filter(x => x.level === 'improvement').length}건 (재현된 것만, 버그와 따로 셈)</td></tr>
     <tr><th>답을 기다리는 질문</th><td>${rep.questions.length}개</td></tr>
   </table>
   <h2>버그 (${rep.bugs.length})</h2>${rep.bugs.map(x => card(x, true)).join('') || '<p>없음</p>'}
   <h2>판단 보류 (${rep.hold.length})</h2>${rep.hold.map(x => card(x, false)).join('') || '<p>없음</p>'}
   ${rep.questions.length ? `<h3>업무 규칙 질문</h3><ul>${rep.questions.map(q => `<li>${esc(q.id)} ${esc(q.question)} — 선택지: ${q.options.map(esc).join(' / ')}${q.feature ? ` (기능 ${esc(q.feature)})` : ''}${q.overLimit ? ' (질문 한도 초과: 규칙 미확인)' : ''}</li>`).join('')}</ul>` : ''}
+  <h2>시각 판정 (${rep.visual.length})</h2><p class="note">화면을 보고 조건마다 판정한 결과 중 재현 화면에서도 같은 위반이 보인 것이다. AI 판정이라 버그와 따로 센다.</p>${rep.visual.map(x => card(x, true)).join('') || '<p>없음</p>'}
   <h2>탐색 중 관찰한 이상 (${rep.observations.length})</h2>${rep.observations.length ? `<ul>${rep.observations.map(o => `<li>${esc(o.page)} — ${esc(o.note)}</li>`).join('')}</ul>` : '<p>없음</p>'}
   <h2>UI 결함 (${rep.uiDefects.length}) · 개선 제안 (${rep.improvements.length})</h2>
   <p class="note">페이지마다 브라우저가 계산한 품질·사용성 점검이다(AI 없음). 조작을 막으면 UI 결함, 아니면 개선 제안이며 버그와 따로 센다. "확인됨"은 페이지를 새로 열어 다시 점검해도 같았다는 뜻이다.</p>
@@ -285,6 +343,8 @@ export function renderHtml(rep: Report, dir: string): string {
   <h2>자동화 실패·미완료 (${rep.incomplete.total})</h2>
   <table><tr><th>사유</th><th>개수</th></tr>${Object.entries(rep.incomplete.byReason).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<tr><td>${esc(k)}</td><td>${n}</td></tr>`).join('')}</table>
   ${rep.incomplete.items.length ? `<h3>항목</h3><table><tr><th>항목</th><th>페이지</th><th>원래 결과</th><th>사유·분류</th><th>증거</th></tr>${rep.incomplete.items.map(x => `<tr><td>${esc(x.id)}</td><td>${esc(x.page)}</td><td>${esc(x.observed)}</td><td>${esc(x.reason)}${x.classification.reason ? ` — ${esc(x.classification.reason)}` : ''}</td><td>${x.evidence.map(esc).join('<br>')}</td></tr>`).join('')}</table>` : ''}
+  <h2>행동 실행 결과</h2><p>${actionText(rep.actions)}</p>
+  ${rep.actions.repeated.length ? `<h3>같은 대상에서 반복된 실패</h3><table><tr><th>대상</th><th>실패</th><th>행동</th></tr>${rep.actions.repeated.map(x => `<tr><td>${esc(x.target)}</td><td>${x.failures}</td><td>${x.steps.map(esc).join(', ')}</td></tr>`).join('')}</table>` : ''}
   <h2>통과한 검사 범위</h2><p>${rep.passed.checks}개 (${Object.entries(rep.passed.byClass).map(([k, n]) => `${esc(k)} ${n}`).join(', ')}). 실제로 완료한 검사만 센다.</p>
   <h2>페이지 종류</h2><table><tr><th>페이지 종류</th><th>탐색 대화</th><th>계획 실행 페이지</th></tr>
   ${rep.coverage.templates.map(t => `<tr><td>${esc(t.template)}</td><td>${t.conversations.map(c => `${esc(c.stop)}${c.planned ? ' (계획함)' : ''}, 턴 ${c.turns}${c.detail ? ` — ${esc(c.detail)}` : ''}`).join('<br>') || '대화 없음'}</td><td>${t.executedPages.map(esc).join('<br>') || '없음'}</td></tr>`).join('')}</table>

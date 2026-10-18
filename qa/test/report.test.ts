@@ -98,3 +98,27 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   await writeReport(dir, browser);
   assert.equal(readFileSync(join(dir, 'report.json'), 'utf8'), before);
 });
+
+test('행동 실행 집계: 시도 기준 실패율, 시도하지 못한 행동의 원인, 같은 대상의 반복 실패', async () => {
+  const { actionSummary } = await import('../src/report.ts');
+  const step = (id: string, target?: string) => ({ id, op: 'click' as const, ...(target ? { target } : {}) });
+  const plan = { scenarios: [
+    { id: 'S1', steps: [step('S1.A1', 'T1'), step('S1.A2', 'T2')] },
+    // 같은 버튼을 다른 ID(T3)로 pin했다. 반복 실패는 같은 대상으로 묶는다.
+    { id: 'S2', steps: [step('S2.A1', 'T3')] },
+    { id: 'S3', steps: [step('S3.A1')] },
+    { id: 'S4', steps: [step('S4.A1')] },
+    { id: 'S5', steps: [step('S5.A1')] },
+  ], targets: { T1: { target: { role: 'button', name: '^담기$' } }, T3: { target: { role: 'button', name: '^담기$' } } } } as unknown as Plan;
+  const res = (id: string, steps: { id: string; status: string; reason?: string }[], extra = {}) =>
+    [id, { id, valid: true, invalid: [], start: 'ok', precondition: 'none', steps, checks: [], blocked: [], violations: [], ...extra }] as const;
+  const a = actionSummary(plan, new Map<string, any>([
+    res('S1', [{ id: 'S1.A1', status: 'not_executed', reason: 'target_changed' }, { id: 'S1.A2', status: 'not_run' }]),
+    res('S2', [{ id: 'S2.A1', status: 'uncertain_execution' }]),
+    res('S3', [{ id: 'S3.A1', status: 'ok' }]),
+    res('S4', [{ id: 'S4.A1', status: 'not_run' }], { start: 'failed' }),
+    res('S5', [{ id: 'S5.A1', status: 'ok' }], { valid: false }),
+  ]));
+  assert.deepEqual(a, { planned: 6, attempted: 3, completed: 1, notExecuted: { target_changed: 1 }, uncertain: 1,
+    notRun: { '앞 행동에서 멈춤': 1, '시작 실패': 1 }, invalid: 1, failureRate: 0.667, repeated: [{ target: 'T1', failures: 2, steps: ['S1.A1', 'S2.A1'] }] });
+});

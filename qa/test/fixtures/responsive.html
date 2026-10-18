@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>반응형 메뉴</title>
+<style>
+  #toggle { display: none; }
+  @media (max-width: 600px) {
+    #toggle { display: inline-block; }
+    nav:not(.open) { display: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <button id="toggle" aria-label="메뉴 열기" aria-expanded="false">☰</button>
+    <nav aria-label="주 메뉴"><a href="/about.html">소개</a> <a href="/list.html">목록</a></nav>
+  </header>
+  <main><h1>홈</h1></main>
+  <script>
+    const toggle = document.getElementById('toggle');
+    toggle.addEventListener('click', () => {
+      const open = document.querySelector('nav').classList.toggle('open');
+      toggle.setAttribute('aria-expanded', String(open));
+    });
+  </script>
+</body>
+</html>
