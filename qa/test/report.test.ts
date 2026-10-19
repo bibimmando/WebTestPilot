@@ -33,7 +33,7 @@ function savedRun(): string {
   writeFileSync(join(dir, 'run', 'results.json'), JSON.stringify({ problems: [], requirements: [], scenarios: ['S1', 'S2'].map(id => ({
     id, valid: true, invalid: [], start: 'ok', precondition: 'none', blocked: [], violations: [],
     steps: [{ id: `${id}.A1`, status: 'ok', evidence: [`evidence/${id}.A1.after.png`], ...(id === 'S1' ? { captureErrors: ['screenshot: 시간 초과'] } : {}) }],
-    checks: [{ id: `${id}.C1`, status: id === 'S1' ? 'mismatch' : 'not_run', source: 'inferred', expected: '1', actual: '0', evidence: [`evidence/${id}.C1.png`] }] })) }));
+    checks: [{ id: `${id}.C1`, status: id === 'S1' ? 'mismatch' : 'not_run', source: 'inferred', expected: '1', actual: '0', evidence: [`evidence/${id}.C1.png`] }], ...(id === 'S1' ? { signalsDropped: 3 } : {}) })) }));
   const system = { requirement: {}, autonomous: { bug_medium: 1, incomplete: 1 }, preparation: {}, variant: {} };
   writeFileSync(join(dir, 'run', 'verdicts.json'), JSON.stringify({ file: 'verdicts.json', stage: 'done', requirements: [], system, variants: [], features: [],
     pendingQuestions: plan.questions,
@@ -71,8 +71,8 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   assert.deepEqual(r.run.incompleteReasons, ['http://app.test/cart: stalled (화면이 바뀌지 않는 행동 8번 연속)'], '계획 못 한 페이지 종류와 사유');
   assert.match(r.run.scope.writes, /차단/);
   assert.deepEqual(r.bugs.map(b => [b.id, b.level, b.basis]), [['S1.C1', 'bug_medium', 'autonomous']]);
-  assert.deepEqual(r.bugs[0].steps, ['http://app.test/list 열기', 'click "Orb Lamp" 영역의 button'], '이름 없는 버튼도 라벨 영역으로 적는다');
-  assert.deepEqual([r.bugs[0].check!.target, r.bugs[0].check!.expected, r.bugs[0].check!.actual, r.bugs[0].reproduction], ['listitem (list "담은 상품" 안)', '1', '0', { result: 'reproduced' }]);
+  assert.deepEqual(r.bugs[0].steps, ['http://app.test/list 열기', '"Orb Lamp" 영역의 버튼 누르기'], '이름 없는 버튼도 라벨 영역으로, 읽는 말로 적는다');
+  assert.deepEqual([r.bugs[0].check!.target, r.bugs[0].check!.expected, r.bugs[0].check!.actual, r.bugs[0].reproduction], ['"담은 상품" 목록 안의 목록 항목', '1', '0', { result: 'reproduced' }]);
   assert.deepEqual(r.bugs[0].evidence, ['run/evidence/S1.C1.png']);
   assert.deepEqual(r.evidenceGaps, { total: 1, items: ['S1.A1: screenshot: 시간 초과'] }, '통과한 행동의 증거 수집 실패도 센다');
   assert.deepEqual(r.incomplete.byReason, { '실행 안 됨(앞 항목에서 멈춤)': 1, '자동화 실패로 분류(원래 결과 보존)': 1 }, '사유는 항목 ID 없이 종류로 세고, 자동화 실패도 미완료 구역에 보인다');
@@ -88,6 +88,13 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   assert.ok(html.includes('UI 결함 (1) · 개선 제안 (0)') && html.includes('확인하지 못한 점검 발견 (1)') && html.includes('정상 거절일 수 있음'));
   assert.ok(html.includes('<td>S2.A1</td>') && html.includes('대상을 잘못 찾음'), '미완료 구역에 항목·원래 결과·분류 근거를 보인다');
   assert.ok(html.includes('수집 실패: aria: 페이지 닫힘'), '미완료 항목 표에도 증거 수집 실패를 보인다');
+  assert.ok(html.includes('not_executed:target_changed:0'), '부록의 판정 못 한 항목에 원래 결과를 남긴다');
+  assert.ok(html.includes('수집 상한을 넘어 버린 신호 3건'), '버린 오류 신호 수를 숨기지 않는다');
+  // 시각 판정이 개선 제안뿐이면 UI 결함 타일에 넣지 않는다.
+  const onlyImprovement = renderHtml({ ...r, bugs: [], visual: [{ ...r.bugs[0], level: 'improvement' }] }, dir);
+  assert.ok(onlyImprovement.includes('<p class="num">1</p><p class="tlabel">UI 결함</p>'), '점검 UI 결함 1건만 센다');
+  const { targetText } = await import('../src/report.ts');
+  assert.equal(targetText({ role: 'link', name: '^Shop$', href: '/shop', nth: 1, of: 2 }), '"Shop" 링크 (주소 /shop) (2개 중 2번째)', '주소로 구별한 링크는 주소도 적는다');
   assert.ok(!html.includes('<script>alert(1)</script>') && html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), '페이지에서 온 글자는 HTML로 해석하지 않는다');
   assert.ok(!html.includes('<b>배지</b>'));
   assert.ok(html.includes('data:image/png;base64,'), '버그 항목에는 실패 시점 화면을 넣는다');

@@ -422,3 +422,16 @@ test('실행: 라벨 영역에서 아예 사라진 대상은 보이지 않음으
   assert.match(gone.reason ?? '', /사라짐/, '사라짐 판독의 근거를 남긴다');
   assert.ok(gone.evidence?.some(e => e.endsWith('.png')), '통과해도 그 시점 증거를 찍는다');
 });
+
+test('실행 폴더를 상대 경로로 줘도 실행한다', async () => {
+  const p = plan();
+  p.scenarios = [p.scenarios[0]];
+  p.unplanned = p.requirements.filter(r => !p.scenarios[0].covers.includes(r.id)).map(r => ({ requirement: r.id, reason: '테스트' }));
+  const rel = `runs/test-relative-${Date.now()}`;
+  const cwd = process.cwd();
+  process.chdir(fileURLToPath(new URL('..', import.meta.url)));
+  try {
+    const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: rel, timeoutMs: 1500 });
+    assert.equal(r.scenarios[0].start, 'ok', JSON.stringify(r.scenarios[0]));
+  } finally { process.chdir(cwd); }
+});

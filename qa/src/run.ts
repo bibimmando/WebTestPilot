@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Policy } from './browser.ts';
 import type { StorageState } from './login.ts';
@@ -24,6 +24,8 @@ export type RunResult = Reconciled & { runDir: string; exitCode: number | null }
 /** storageState: 로그인 상태. 실행 폴더가 아니라 임시 폴더에 두고 실행이 끝나면 지운다(세션 쿠키는 비밀값이다). */
 /** hideEnv: 실행 프로세스에 넘기지 않을 환경 변수 이름(앱 설정의 계정 비밀값 변수 등). */
 export async function runPlan(o: { plan: Plan; policy: Policy; runDir: string; timeoutMs?: number; only?: string[]; workers?: number; storageState?: StorageState; hideEnv?: string[] }): Promise<RunResult> {
+  // 실행 프로세스는 실행 폴더에서 돌므로 상대 경로면 폴더 경로가 두 번 붙는다. 처음에 절대 경로로 고정한다.
+  o = { ...o, runDir: resolve(o.runDir) };
   if (existsSync(o.runDir)) throw new Error(`실행 폴더가 이미 있음 (덮어쓰지 않음): ${o.runDir}`);
   const errors = validate(o.plan, o.plan.requirements, new Map(Object.entries(o.plan.targets)), o.policy.origins, undefined, new Set(o.plan.startVerified ?? []));
   if (errors.length) throw new Error(`plan이 계약을 통과하지 못함:\n- ${errors.join('\n- ')}`);
