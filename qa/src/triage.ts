@@ -20,7 +20,7 @@ const MIN_QUOTE = 6;
 export type Class = 'passed' | 'passed_inferred' | 'passed_observed' | 'mismatch' | 'not_run' | 'invalid' | 'uncertain_execution'
   | 'precondition_failed' | 'not_applicable'
   /** 앱 설정이 금지한 행동(로그아웃 등)이라 실행하지 않음. 결함도 자동화 실패도 아니다 */
-  | 'policy_blocked'
+  | 'policy_blocked' | 'write_blocked'
   | 'needs_triage' | 'app_defect_candidate' | 'automation_failure' | 'uncertain'
   /** 시각 검사: 판정 대기, 모든 조건 충족 */
   | 'needs_visual' | 'passed_visual';
@@ -125,6 +125,22 @@ export function preclassify(plan: Plan, run: RunResult): Verdict[] {
       const from = order.indexOf(deniedAt.after === 'start' ? s.id : deniedAt.after);
       for (const v of out) if (v.scenario === s.id && !v.class.startsWith('passed') && order.indexOf(v.id) >= from && from >= 0) { v.class = 'policy_blocked'; v.cause = `앱 설정 금지 주소로 가려다 막힘(${deniedAt.url})`; }
     }
+    // 쓰기를 막은 실행: 같은 화면에서 한 행동이 앱의 쓰기 요청을 보냈고 우리가 막았다면, 그 행동 바로 뒤의 통과 못 한 검사는 차단의 결과일 수 있다(앱 결함으로 세지 않는다).
+    // 다음 행동 뒤의 검사는 바꾸지 않는다(그 행동 자체의 결함을 숨기지 않는다). 화면을 이동한 행동도 뺀다. 새 화면이 열리며 보낸 요청(읽음 표시 등)은 행동의 결과가 아니고, 이동이 틀린 결함까지 숨기면 안 된다.
+    // shortcut: 시작 화면·이동 뒤에 막힌 쓰기, 행동이 실행 불명확으로 끝난 경우, URL이 같은 SPA 화면 교체는 구분하지 않는다(분류 입력에만 알린다). 실측에서 오탐·누락이 나오면 넓힌다.
+    const sameScreen = new Map((r.writeBlocked ?? []).flatMap(w => {
+      const st = r.steps.find(y => y.id === w.after);
+      // 새 탭을 연 행동은 뺀다(새 탭이 보낸 요청인데 원래 탭 주소는 그대로라 같은 화면처럼 보인다).
+      const sameTab = !r.newTabs?.some(t => t.after === w.after);
+      return st?.status === 'ok' && sameTab && !!st.urlBefore && st.urlBefore === st.url ? [[w.after, w.request] as const] : [];
+    }));
+    for (const v of out) {
+      const after = v.kind === 'check' ? s.checks.find(c => c.id === v.id)?.after : undefined;
+      const request = after && sameScreen.get(after);
+      if (request && v.scenario === s.id && !v.class.startsWith('passed') && !['policy_blocked', 'not_run', 'invalid'].includes(v.class)) {
+        v.class = 'write_blocked'; v.cause = `${after}에서 앱의 쓰기 요청을 막음(${request})`;
+      }
+    }
   }
   return out;
 }
@@ -142,18 +158,20 @@ const origin = (c: Plan['scenarios'][number]['checks'][number]) =>
  * 분류하지 못한 mismatch는 mismatch로 남겨 재현 대상에 둔다. 대화 기록은 triage/에 남긴다.
  */
 export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[]; send: Send; model: string; budget: Budget;
-  maxItems?: number; onUpdate?: () => void; logDir?: string; concurrency?: number }): Promise<void> {
+  maxItems?: number; onUpdate?: () => void; logDir?: string; concurrency?: number; system?: string }): Promise<void> {
   // 판정 회차마다 다른 폴더에 대화를 남긴다. 다시 판정해도 이전 분류의 대화·사용량이 덮이지 않는다.
   const logDir = o.logDir ?? 'triage';
   const unclassified = (v: Verdict, error: string) => {
-    v.class = v.observed === 'mismatch' ? 'mismatch' : 'uncertain';
+    // AI가 증거를 보고 고른 판단 불가(uncertain)와 구분한다. 분류를 끝내지 못했으면 아직 분류가 필요한 상태다.
+    v.class = v.observed === 'mismatch' ? 'mismatch' : 'needs_triage';
     v.triage = { error };
   };
   const scenarioOf = new Map(o.plan.scenarios.map(s => [s.id, s]));
   // 같은 검사(원본 시나리오·같은 검사 번호·같은 결과)는 한 번 분류하고 복제본이 공유한다. 페이지가 달라도 원인 판단(읽기 방식·앱 동작)은 같다.
   // 실제 값·기대값까지 같아야 같은 원인으로 본다. 값이 다르면 페이지마다 원인이 다를 수 있어 따로 분류한다.
   const valuesOf = (v: Verdict) => { const c = o.run.scenarios.find(x => x.id === v.scenario)?.checks.find(x => x.id === v.id); return JSON.stringify([c?.expected ?? null, c?.actual ?? null, c?.count ?? null]); };
-  const keyOf = (v: Verdict) => { const s = scenarioOf.get(v.scenario)!; return `${s.variantOf ?? s.id}${v.id.slice(v.scenario.length)}|${v.observed}|${valuesOf(v)}`; };
+  // 시작·행동 실패는 공유하지 않는다. 같은 기록이어도 화면(가림·준비 상태)이 페이지마다 달라 원인이 다를 수 있다.
+  const keyOf = (v: Verdict) => { const s = scenarioOf.get(v.scenario)!; return v.kind !== 'check' ? v.id : `${s.variantOf ?? s.id}${v.id.slice(v.scenario.length)}|${v.observed}|${valuesOf(v)}`; };
   const items = o.verdicts.filter(x => x.class === 'needs_triage' || x.class === 'mismatch');
   // 값을 읽어 비교한 불일치를 먼저, 그다음 검사 실패, 행동·시작 실패 순. 같은 순위에서는 원본을 복제본보다 먼저 분류해 공유할 수 있게 한다.
   const rank = (v: Verdict) => (v.observed === 'mismatch' ? 0 : v.kind === 'check' ? 1 : 2) * 2 + (scenarioOf.get(v.scenario)?.variantOf ? 1 : 0);
@@ -183,7 +201,7 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
   async function classifyOne(v: Verdict) {
     const s = o.plan.scenarios.find(x => x.id === v.scenario)!;
     const r = o.run.scenarios.find(x => x.id === v.scenario)!;
-    const { files, own } = evidenceFor(o.run.runDir, v, r, o.plan);
+    const { files, own, image } = evidenceFor(o.run.runDir, v, r, o.plan);
     let accepted: { class: Class; reason: string; quotes: Quote[] } | undefined;
     const classify: Tool = {
       def: { name: 'classify', description: '실패 한 건의 분류와 근거 인용을 제출한다.', strict: true, input_schema: {
@@ -201,8 +219,11 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
         return { text: '받았습니다.', done: true };
       },
     };
-    const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools: [classify],
-      user: triageMessage(o.plan, s, v, files, r), budget: o.budget, maxTurns: 3, maxTokens: 8000 });
+    const result = await runAgent({ send: o.send, model: o.model, system: o.system ?? SYSTEM, tools: [classify],
+      user: image ? [{ type: 'text', text: `${triageMessage(o.plan, s, v, files, r)}
+첨부 이미지: ${image} (실패 시점 화면. 이미지에서 본 것은 reason에 적고, 인용은 텍스트 증거 파일에서만 한다)` },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: readFileSync(join(o.run.runDir, image)).toString('base64') } }]
+        : triageMessage(o.plan, s, v, files, r), budget: o.budget, maxTurns: 3, maxTokens: 8000 });
     mkdirSync(join(o.run.runDir, logDir), { recursive: true });
     v.triageLog = `${logDir}/${v.id}.json`;
     writeFileSync(join(o.run.runDir, v.triageLog), JSON.stringify({ stop: result.stop, detail: result.detail, turns: result.turns }, null, 2));
@@ -220,16 +241,19 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
  * 이 항목에 쓸 수 있는 증거: 실패 시점 snapshot(own), 같은 시나리오의 시작 snapshot, 그리고 관련 행동의 직전·직후 snapshot
  * (검사면 그 검사 직전 행동, 행동이면 그 행동의 직전). 다른 시나리오의 증거는 주지 않는다.
  */
-function evidenceFor(runDir: string, v: Verdict, r: ScenarioResult, plan: Plan): { files: Map<string, string>; own: Set<string> } {
+function evidenceFor(runDir: string, v: Verdict, r: ScenarioResult, plan: Plan): { files: Map<string, string>; own: Set<string>; image?: string } {
   const step = v.kind === 'act' ? r.steps.find(x => x.id === v.id) : undefined;
-  const ownPaths = (v.kind === 'start' ? r.startEvidence ?? []
+  const ownAll = v.kind === 'start' ? r.startEvidence ?? []
     : v.kind === 'act' ? (step?.evidence ?? []).filter(p => !p.includes('.before.'))
-    : r.checks.find(x => x.id === v.id)?.evidence ?? []).filter(p => p.endsWith('.txt'));
+    : r.checks.find(x => x.id === v.id)?.evidence ?? [];
+  const ownPaths = ownAll.filter(p => p.endsWith('.txt'));
+  // 실패 시점 화면 한 장. 접근성 텍스트에는 가림·겹침·잘림이 드러나지 않는다. 비밀번호 칸은 촬영 때 가렸다.
+  const image = ownAll.find(p => p.endsWith('.png') && existsSync(join(runDir, p)));
   const after = v.kind === 'check' ? plan.scenarios.flatMap(s => s.checks).find(c => c.id === v.id)?.after : undefined;
   const actionPaths = v.kind === 'act' ? step?.before ?? (step?.evidence ?? []).filter(p => p.includes('.before.'))
     : after && after !== 'start' ? r.steps.find(x => x.id === after)?.evidence ?? [] : [];
   const paths = [...new Set([...ownPaths, ...(r.startEvidence ?? []), ...actionPaths])].filter(p => p.endsWith('.txt') && existsSync(join(runDir, p)));
-  return { files: new Map(paths.map(p => [p, readFileSync(join(runDir, p), 'utf8')])), own: new Set(ownPaths.filter(p => paths.includes(p))) };
+  return { files: new Map(paths.map(p => [p, readFileSync(join(runDir, p), 'utf8')])), own: new Set(ownPaths.filter(p => paths.includes(p))), ...(image ? { image } : {}) };
 }
 
 /**
@@ -309,6 +333,8 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
       const all = [...(r.startCaptureErrors ?? []).map(e => `시작 ${e}`), ...prev.map(e => `${c!.after} ${e}`), ...(v.captureErrors ?? [])];
       return all.length ? [`증거 수집 실패(이 증거는 없음): ${all.join('; ')}`] : [];
     })(),
+    // 우리가 막은 쓰기 요청. 실패가 그 요청의 결과(저장·전송)에 기대면 앱이 아니라 차단 때문일 수 있다.
+    ...(r.writeBlocked?.length ? [`이 시나리오에서 테스트 정책이 막은 앱의 쓰기 요청 (after = 요청이 나간 단계): ${JSON.stringify(r.writeBlocked.slice(0, 10))}`] : []),
     ...(r.newTabs?.length ? [`이 시나리오에서 새 탭이 열림(검사는 원래 탭을 읽음): ${JSON.stringify(r.newTabs)}`] : []),
     // 기대값 없이 잡힌 신호. 행동 직후의 스크립트 예외·서버 오류는 "앱이 반응하지 않았다"를 뒷받침할 수 있다.
     ...(r.signals?.length ? [`이 시나리오의 콘솔·요청 오류 (after = 그 신호가 난 단계${r.signals.length > 20 || r.signalsDropped ? `, 일부만 보임: 전체 ${r.signals.length + (r.signalsDropped ?? 0)}개 중 앞 20개` : ''}): ${JSON.stringify(r.signals.slice(0, 20))}`] : []),
@@ -402,7 +428,7 @@ export function systemVerdict(plan: Plan, v: Verdict): NonNullable<Verdict['syst
   if (v.class === 'automation_failure') return { level: 'not_bug', reason: '자동화 실패로 분류(원래 결과는 보존)' };
   if (v.class === 'not_applicable') return { level: 'hold', reason: '같은 템플릿 다른 페이지에서 이름으로 고정한 대상이 없음: 페이지마다 다른 이름인지 요소 누락인지 사람이 확인' };
   if (v.class !== 'app_defect_candidate') return incomplete(({ invalid: '무효 시나리오', not_run: `실행 안 됨(원인 ${v.cause ?? '알 수 없음'})`,
-    uncertain_execution: '실행 여부 불명확', precondition_failed: '시작 조건 준비 실패', policy_blocked: '앱 설정이 금지한 행동이라 실행하지 않음', uncertain: 'AI 분류가 판단 불가',
+    uncertain_execution: '실행 여부 불명확', precondition_failed: '시작 조건 준비 실패', policy_blocked: '앱 설정이 금지한 행동이라 실행하지 않음', write_blocked: '쓰기 차단으로 확인 불가', uncertain: 'AI 분류가 판단 불가',
     mismatch: '분류 미완료', needs_triage: '분류 미완료' } as Partial<Record<Class, string>>)[v.class] ?? v.class);
   // AI가 결함 후보로 봤어도 실패 시점 snapshot을 못 남겼으면 그 분류를 실패 시점 증거로 확인할 수 없다(Q66). 원래 불일치는 남는다.
   if (v.captureErrors?.some(e => e.startsWith('aria')) && v.triage && 'reason' in v.triage) return incomplete(`증거 부족: 실패 시점 증거 수집 실패(${v.captureErrors.join('; ')})`);
@@ -426,7 +452,8 @@ export function systemVerdict(plan: Plan, v: Verdict): NonNullable<Verdict['syst
   return { level: 'bug_medium', reason: `일반 규칙 ${c?.source.rule ?? '?'} 위반, 재현됨 (일반 규칙 상한)` };
 }
 
-const isCandidate = (v: Verdict) => v.observed === 'mismatch' || v.class === 'app_defect_candidate';
+// 쓰기 차단 항목은 같은 정책으로 다시 돌려도 판정할 수 없어 재현하지 않는다(쓰기 허용 실행에서 다시 확인한다).
+const isCandidate = (v: Verdict) => v.class !== 'write_blocked' && (v.observed === 'mismatch' || v.class === 'app_defect_candidate');
 
 /** 같은 결과인지 비교하는 서명. 오류 문구의 숫자(시간 등)는 지우고 비교한다. */
 function signature(r: ScenarioResult, v: Verdict, relative = false): string {

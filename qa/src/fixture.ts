@@ -3,7 +3,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test as base, expect, type ElementHandle, type Page, type Locator } from '@playwright/test';
-import { areaOf, ariaText, ariaTextV1, deniedLink, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, type AriaNode, type Policy, type Signal } from './browser.ts';
+import { areaOf, ariaText, whyNot, ariaTextV1, deniedLink, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, type AriaNode, type Policy, type Signal } from './browser.ts';
 import { compareValues, expectedFrom, sortKeys, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
@@ -52,7 +52,9 @@ export const test = base.extend<{ guard: void }>({
   guard: [async ({ context }, use, info) => {
     // 금지 주소 요청(Enter·스크립트 이동·리다이렉트)이 막히면 그 단계를 남긴다. 그 뒤 화면은 오류 페이지일 수 있다.
     const denied: { after: string; url: string }[] = [];
-    const g = await guardContext(context, policy, [], url => denied.push({ after: phase, url }));
+    // 쓰기를 막은 실행에서 앱의 쓰기 요청을 막은 단계. 그 단계 뒤 화면의 실패는 앱이 아니라 차단 때문일 수 있다.
+    const writeBlocked: { after: string; request: string }[] = [];
+    const g = await guardContext(context, policy, [], url => denied.push({ after: phase, url }), request => writeBlocked.push({ after: phase, request }));
     // 오류 신호: 콘솔 오류, 잡히지 않은 스크립트 예외, 400 이상 응답, 실패한 요청.
     // 정책 차단(우리가 막은 요청)·이동으로 취소된 요청·브라우저가 스스로 여는 /favicon.ico는 앱의 신호가 아니라 뺀다.
     const signals: Signal[] = [];
@@ -88,7 +90,7 @@ export const test = base.extend<{ guard: void }>({
     // shortcut: 300ms 안에 열리지 않은 탭은 놓친다. 실측에서 보이면 행동마다 popup 이벤트를 기다린다.
     if (phase !== 'start') await context.waitForEvent('page', { timeout: 300 }).catch(() => {});
     log({ kind: 'policy', scenario: info.title.split(' ')[0], blocked: g.blocked, violations: g.violations, signals, ...(signalsDropped ? { signalsDropped } : {}),
-      ...(denied.length ? { denied } : {}), ...(newTabs.length ? { newTabs: newTabs.map(t => ({ after: t.after, url: (!t.page.isClosed() && t.page.url()) || t.url })) } : {}) });
+      ...(denied.length ? { denied } : {}), ...(writeBlocked.length ? { writeBlocked } : {}), ...(newTabs.length ? { newTabs: newTabs.map(t => ({ after: t.after, url: (!t.page.isClosed() && t.page.url()) || t.url })) } : {}) });
   }, { auto: true }],
 });
 
@@ -154,7 +156,7 @@ export async function act(page: Page, stepId: string): Promise<void> {
     }
   } catch (e) {
     if (e instanceof Stopped) throw e;
-    throw await stop('not_executed', { reason: 'not_actionable', error: brief(e) });
+    throw await stop('not_executed', { reason: 'not_actionable', error: whyNot(e) });
   }
   const urlBefore = page.url();
   const before = await capture(page, `${stepId}.before`);
@@ -168,7 +170,7 @@ export async function act(page: Page, stepId: string): Promise<void> {
     else if (st.op === 'select') await loc!.selectOption({ label: st.value! }, { timeout: TIMEOUT });
     else await (loc ? loc.press(st.value!, { timeout: TIMEOUT }) : page.keyboard.press(st.value!));
   } catch (e) {
-    throw await stop('uncertain_execution', { error: brief(e), urlBefore, pressed, before: before.evidence }, (before.captureErrors ?? []).map(x => `직전 ${x}`));
+    throw await stop('uncertain_execution', { error: whyNot(e), urlBefore, pressed, before: before.evidence }, (before.captureErrors ?? []).map(x => `직전 ${x}`));
   }
   // 직후 화면은 기다리지 않고 바로 찍는다. 기다리면 뒤 검사의 시작이 늦어져 결과가 바뀐다. 찍는 데 걸린 시간은 남긴다.
   // capture는 예외를 던지지 않으므로 행동 성공 기록이 증거 수집 때문에 사라지지 않는다.

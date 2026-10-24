@@ -12,6 +12,8 @@ export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; sc
   tab?: string; captureErrors?: string[]; newTabs?: { after: string; url: string }[];
   /** policy: 앱 설정의 금지 주소로 가려다 막힌 단계와 주소 */
   denied?: { after: string; url: string }[];
+  /** policy: 쓰기를 막은 실행에서 앱의 쓰기 요청을 막은 단계와 요청 */
+  writeBlocked?: { after: string; request: string }[];
   /** act: 행동 직전에 관측한 대상의 접근성 표현·화면 위치(또는 누른 키), 행동 직전 URL, 실패한 행동의 직전 증거, 직후 증거를 찍는 데 걸린 시간 */
   pressed?: { aria?: string; box?: { x: number; y: number; width: number; height: number } | null; key?: string };
   urlBefore?: string; url?: string; before?: string[]; afterCaptureMs?: number;
@@ -35,6 +37,8 @@ export type ScenarioResult = {
   newTabs?: { after: string; url: string }[];
   /** 앱 설정의 금지 주소로 가려다 막힌 단계(그 뒤 화면은 오류 페이지일 수 있다) */
   denied?: { after: string; url: string }[];
+  /** 쓰기를 막은 실행에서 앱의 쓰기 요청을 막은 단계와 요청 */
+  writeBlocked?: { after: string; request: string }[];
   /** 선행조건 검사 결과: 없음(시작 조건 미선언) · 모두 통과 · 실패 */
   precondition: 'none' | 'met' | 'failed';
   steps: StepResult[]; checks: CheckResult[];
@@ -131,7 +135,8 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
     return { id: s.id, valid: invalid.length === 0, invalid, start, precondition, ...(startEntry?.ready !== undefined ? { ready: startEntry.ready } : {}),
       ...(startEntry?.evidence ? { startEvidence: startEntry.evidence } : {}), ...(startEntry?.captureErrors ? { startCaptureErrors: startEntry.captureErrors } : {}),
       ...(policy.some(e => e.newTabs?.length) ? { newTabs: policy.flatMap(e => e.newTabs ?? []) } : {}),
-      ...(policy.some(e => e.denied?.length) ? { denied: policy.flatMap(e => e.denied ?? []) } : {}), steps, checks, blocked: policy.flatMap(e => e.blocked ?? []), violations,
+      ...(policy.some(e => e.denied?.length) ? { denied: policy.flatMap(e => e.denied ?? []) } : {}),
+      ...(policy.some(e => e.writeBlocked?.length) ? { writeBlocked: policy.flatMap(e => e.writeBlocked ?? []) } : {}), steps, checks, blocked: policy.flatMap(e => e.blocked ?? []), violations,
       signals: policy.flatMap(e => e.signals ?? []), ...(policy.some(e => e.signalsDropped) ? { signalsDropped: policy.reduce((n, e) => n + (e.signalsDropped ?? 0), 0) } : {}) };
   });
 

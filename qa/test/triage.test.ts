@@ -8,6 +8,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { runPlan, type RunResult } from '../src/run.ts';
 import { actionsUpTo, checkQuotes, judge, preclassify, systemVerdict, triage, type Verdict } from '../src/triage.ts';
 import { Budget, type Send } from '../src/agent.ts';
+import { whyNot } from '../src/browser.ts';
 import type { Plan } from '../src/plan.ts';
 
 let server: Server | undefined;
@@ -24,6 +25,8 @@ before(async () => {
     res.setHeader('content-type', 'text/html; charset=utf-8');
     if (path === '/counter') return res.end(++counter % 2 ? '홀수' : '짝수');
     if (path === '/flaky.html') return res.end(FLAKY);
+    // 쓰기를 허용한 실행에서만 닿는 저장 API(save.html)
+    if (req.method !== 'GET' && path.startsWith('/api/')) return res.end('{"ok":true}');
     try { res.end(await readFile(new URL(`./fixtures${path}`, import.meta.url))); } catch { res.statusCode = 404; res.end(); }
   });
   await new Promise<void>(r => server!.listen(0, '127.0.0.1', r));
@@ -75,7 +78,9 @@ function plan(): Plan {
 function fakeTriage(): Send & { calls: number; firstMessages: string[] } {
   const send = async (req: Anthropic.MessageCreateParamsNonStreaming) => {
     send.calls++;
-    const first = String(req.messages[0].content);
+    const c0 = req.messages[0].content;
+    // 실패 시점 화면이 붙으면 내용이 [글, 이미지] 블록이다.
+    const first = typeof c0 === 'string' ? c0 : c0.map(b => b.type === 'text' ? b.text : `[${b.type}]`).join('\n');
     if (req.messages.length === 1) send.firstMessages.push(first);
     const last = req.messages.at(-1)!;
     const rejected = Array.isArray(last.content) && last.content.some(b => b.type === 'tool_result' && b.is_error);
@@ -141,7 +146,7 @@ test('분류·재현: 재현되는 불일치, AI가 인용으로 분류한 사�
   ]);
 });
 
-test('AI 분류가 끝나지 않으면 uncertain으로 남기고 이유를 기록한다', async () => {
+test('AI 분류가 끝나지 않으면 판단 불가와 구분해 분류 미완료로 남기고 이유를 기록한다', async () => {
   const p = plan();
   p.scenarios = [p.scenarios[1]];
   p.requirements = [p.requirements[1]];
@@ -150,9 +155,10 @@ test('AI 분류가 끝나지 않으면 uncertain으로 남기고 이유를 기�
   const j = await judge({ plan: p, run, send: fakeTriage(), model: 'claude-sonnet-5-5', budget: new Budget(0.0001),
     reproduceDir: dir('triage-fail-repro'), timeoutMs: 1000 });
   const a1 = j.verdicts.find(x => x.id === 'S2.A1')!;
-  assert.equal(a1.class, 'uncertain');
+  assert.equal(a1.class, 'needs_triage', 'AI가 고른 판단 불가(uncertain)가 아니다');
   assert.match(JSON.stringify(a1.triage), /budget/);
-  assert.equal(a1.reproduction, undefined, 'uncertain은 재실행하지 않는다');
+  assert.equal(a1.system?.reason, '분류 미완료');
+  assert.equal(a1.reproduction, undefined, '분류를 못 한 행동 실패는 재실행하지 않는다');
   const again = await judge({ plan: p, run, send: fakeTriage(), model: 'claude-sonnet-5-5', budget: new Budget(0.0001),
     reproduceDir: dir('triage-fail-repro2'), timeoutMs: 1000 });
   assert.ok(j.file.endsWith('verdicts.json') && again.file.endsWith('verdicts-2.json'), '이전 판정 파일을 덮어쓰지 않는다');
@@ -290,4 +296,100 @@ test('분류: 같은 검사의 복제본은 원본 분류를 공유하고, 불�
   const par = [v('S9.C2', 'S9', 'check', 'mismatch'), v('S1.A1', 'S1', 'act', 'not_executed:not_actionable'), v('S1.C2', 'S1', 'check', 'mismatch')];
   await triage({ plan: p, run, verdicts: par, send: slow, model: 'claude-sonnet-5-5', budget: new Budget(1), concurrency: 3 });
   assert.deepEqual([[...order].sort(), peak, par[0].class, par[0].triageSharedFrom], [['S1.A1', 'S1.C2'], 2, 'uncertain', 'S1.C2']);
+});
+
+test('행동 불가 사유: 색 코드를 지우고, 긴 요소 HTML 뒤의 사유를 남긴다', () => {
+  const header = `<header class="${'x'.repeat(400)}">…</header>`;
+  const msg = `locator.click: Timeout 5000ms exceeded.\nCall log:\n  \x1b[2m  - waiting for getByRole('link')\x1b[22m\n  \x1b[2m    - <div>…</div> from ${header} subtree intercepts pointer events\x1b[22m\n  \x1b[2m    - <div>…</div> from ${header} subtree intercepts pointer events\x1b[22m`;
+  const out = whyNot(new Error(msg)).split('\n');
+  assert.equal(out.length, 2, '같은 사유는 한 번만');
+  assert.equal(out[0], 'locator.click: Timeout 5000ms exceeded.');
+  assert.match(out[1], /^<div>…<\/div> from <header .* subtree intercepts pointer events$/);
+  assert.ok(!out[1].includes('\x1b') && out[1].length < 300, out[1]);
+});
+
+test('행동 불가 사유: 아는 문구가 없으면 호출 기록의 마지막 줄을 남긴다', () => {
+  const out = whyNot(new Error('locator.click: Timeout 5000ms exceeded.\nCall log:\n  - waiting for getByRole(link)\n  - element does not receive pointer events')).split('\n');
+  assert.deepEqual(out, ['locator.click: Timeout 5000ms exceeded.', 'element does not receive pointer events']);
+  assert.deepEqual(whyNot(new Error('not editable')).split('\n'), ['not editable']);
+});
+
+test('누르지 못한 행동은 Playwright가 남긴 사유(가로챈 요소)와 실패 시점 화면을 분류에 넘긴다', async () => {
+  const page = `${origin}/covered.html`;
+  const rule = src('R1', '링크를 누르면 해당 위치로 이동한다');
+  const p: Plan = {
+    version: 1, textRead: 'name+content', requirements: [{ id: 'R1', text: '링크를 누르면 해당 위치로 이동한다' }], observations: [], questions: [], unplanned: [],
+    features: [],
+    targets: { T1: { target: { role: 'link', name: '^처음$' }, group: false, url: page }, T2: { target: { role: 'link', name: '^도움말$' }, group: false, url: page } },
+    scenarios: [
+      { id: 'S1', title: '가려진 경로 링크', covers: ['R1'], start: { url: page }, steps: [{ id: 'S1.A1', op: 'click', target: 'T1' }],
+        checks: [{ id: 'S1.C1', after: 'S1.A1', read: 'url', op: 'contains', expected: '#home', source: rule }] },
+      { id: 'S2', title: '가려지지 않은 링크', covers: ['R1'], start: { url: page }, steps: [{ id: 'S2.A1', op: 'click', target: 'T2' }],
+        checks: [{ id: 'S2.C1', after: 'S2.A1', read: 'url', op: 'contains', expected: '#help', source: rule }] },
+    ],
+  };
+  const run = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: dir('covered'), timeoutMs: 1500 });
+  const a1 = run.scenarios.find(x => x.id === 'S1')!.steps.find(x => x.id === 'S1.A1')!;
+  assert.equal(a1.reason, 'not_actionable');
+  assert.match(a1.error ?? '', /intercepts pointer events/, '시간 초과 첫 줄만 남기지 않는다');
+  assert.equal(run.scenarios.find(x => x.id === 'S2')!.checks[0].status, 'passed', '가려지지 않은 링크는 그대로 누른다');
+
+  const verdicts = preclassify(p, run);
+  const send = fakeTriage();
+  const images: string[] = [];
+  const recording: Send = async req => {
+    const c0 = req.messages[0].content;
+    if (Array.isArray(c0)) for (const b of c0) if (b.type === 'image') images.push(b.source.type);
+    return send(req);
+  };
+  await triage({ plan: p, run, verdicts, send: recording, model: 'claude-sonnet-5-5', budget: new Budget(1) });
+  const msg = send.firstMessages.find(m => m.includes('실패한 항목 S1.A1'))!;
+  assert.match(msg, /오류 원문: [\s\S]*intercepts pointer events/);
+  assert.match(msg, /첨부 이미지: evidence\/S1\.A1\.png/);
+  assert.deepEqual(images, ['base64']);
+});
+
+test('쓰기를 막은 실행: 같은 화면의 저장 요청을 막은 뒤의 실패는 "쓰기 차단", 쓰기 없는 결함·이동 결함은 그대로', async () => {
+  const page = `${origin}/save.html`;
+  const text = '항목을 입력하고 저장하면 저장됨이 표시된다. 보기 전환을 누르면 자세히 보기가 표시된다. 다음을 누르면 next.html로 간다';
+  const rule = (quote: string) => src('R1', quote);
+  const p: Plan = {
+    version: 1, textRead: 'name+content', requirements: [{ id: 'R1', text }], observations: [], questions: [], unplanned: [], features: [],
+    targets: {
+      T1: { target: { role: 'textbox', name: '^항목$' }, group: false, url: page },
+      T2: { target: { role: 'button', name: '^저장$' }, group: false, url: page },
+      T3: { target: { role: 'status' }, group: false, url: page },
+      T4: { target: { role: 'button', name: '^보기 전환$' }, group: false, url: page },
+      T5: { target: { role: 'link', name: '^다음$' }, group: false, url: page },
+    },
+    scenarios: [
+      { id: 'S1', title: '저장', covers: ['R1'], start: { url: page }, steps: [{ id: 'S1.A1', op: 'fill', target: 'T1', value: '우유' }, { id: 'S1.A2', op: 'click', target: 'T2' }, { id: 'S1.A3', op: 'click', target: 'T4' }],
+        checks: [{ id: 'S1.C1', after: 'S1.A2', read: 'text', target: 'T3', op: 'equals', expected: '저장됨', source: rule('저장하면 저장됨이 표시된다') },
+          // 막힌 저장 뒤 같은 시나리오의 다음 행동(고장 난 보기 전환)의 결함은 숨기지 않는다
+          { id: 'S1.C2', after: 'S1.A3', read: 'text', target: 'T3', op: 'equals', expected: '자세히 보기', source: rule('자세히 보기가 표시된다') }] },
+      { id: 'S2', title: '보기 전환', covers: ['R1'], start: { url: page }, steps: [{ id: 'S2.A1', op: 'click', target: 'T4' }],
+        checks: [{ id: 'S2.C1', after: 'S2.A1', read: 'text', target: 'T3', op: 'equals', expected: '자세히 보기', source: rule('자세히 보기가 표시된다') }] },
+      { id: 'S3', title: '다음 페이지', covers: ['R1'], start: { url: page }, steps: [{ id: 'S3.A1', op: 'click', target: 'T5' }],
+        checks: [{ id: 'S3.C1', after: 'S3.A1', read: 'url', op: 'contains', expected: 'next.html', source: rule('next.html로 간다') }] },
+    ],
+  };
+  const blocked = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: dir('save-blocked'), timeoutMs: 1500 });
+  const s1 = blocked.scenarios.find(x => x.id === 'S1')!;
+  assert.deepEqual(s1.writeBlocked?.map(w => [w.after, w.request.split(' ')[0]]), [['S1.A2', 'POST']]);
+  assert.ok(blocked.scenarios.find(x => x.id === 'S3')!.writeBlocked?.some(w => w.request.endsWith('/api/read')), '이동한 화면의 쓰기도 기록은 한다');
+  const v = Object.fromEntries(preclassify(p, blocked).map(x => [x.id, x]));
+  assert.equal(v['S1.C1'].class, 'write_blocked');
+  assert.match(v['S1.C1'].cause ?? '', /S1\.A2.*POST .*\/api\/items/);
+  assert.equal(v['S1.C1'].observed, 'mismatch', '원래 결과는 보존한다');
+  assert.equal(systemVerdict(p, v['S1.C1']).reason, '쓰기 차단으로 확인 불가');
+  assert.equal(v['S1.C2'].class, 'mismatch', '막힌 저장 뒤 다른 행동의 결함은 그대로');
+  assert.ok(!s1.writeBlocked![0].request.includes('?') && !s1.writeBlocked![0].request.includes('secret'), '요청 기록에 쿼리(토큰)를 남기지 않는다');
+  assert.equal(v['S2.C1'].class, 'mismatch', '쓰기 없는 결함은 숨기지 않는다');
+  assert.equal(v['S3.C1'].class, 'mismatch', '이동한 행동 뒤 새 화면의 쓰기는 판정을 바꾸지 않는다(이동이 틀린 결함)');
+
+  const allowed = await runPlan({ plan: p, policy: { origins: [origin], allowWrites: true }, runDir: dir('save-allowed'), timeoutMs: 1500 });
+  const w = Object.fromEntries(preclassify(p, allowed).map(x => [x.id, x]));
+  assert.equal(allowed.scenarios.find(x => x.id === 'S1')!.writeBlocked, undefined);
+  assert.equal(w['S1.C1'].class, 'passed', '쓰기를 허용하면 저장이 반영된다');
+  assert.equal(w['S2.C1'].class, 'mismatch');
 });

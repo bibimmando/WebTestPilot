@@ -33,7 +33,9 @@ export async function deniedLink(loc: Locator, policy: Policy): Promise<string |
 }
 
 /** 이미 만든 컨텍스트에 정책을 건다. Playwright 테스트 러너의 컨텍스트(trace 기록 포함)에도 쓴다. 서비스 워커 차단은 컨텍스트 생성 옵션이다. */
-export async function guardContext(context: BrowserContext, policy: Policy, violations: string[] = [], onDeny?: (url: string) => void): Promise<Omit<Guarded, 'context'>> {
+/** onWrite: 쓰기를 막은 실행에서 허용 origin 안의 쓰기 요청(POST·PUT 등)을 막을 때마다 부른다. 그 뒤 앱 화면은 우리가 만든 실패일 수 있다 */
+export async function guardContext(context: BrowserContext, policy: Policy, violations: string[] = [], onDeny?: (url: string) => void,
+  onWrite?: (request: string) => void): Promise<Omit<Guarded, 'context'>> {
   const blocked: string[] = [];
   const allowed = (url: string) => {
     const u = new URL(url);
@@ -58,6 +60,8 @@ export async function guardContext(context: BrowserContext, policy: Policy, viol
     if (permitted) return route.continue();
     if (denied) { blocked.push(`DENY ${req.method()} ${req.url()}`); onDeny?.(req.url()); return route.abort('blockedbyclient'); }
     blocked.push(`${req.method()} ${req.url()}`);
+    // 모델 입력으로 가는 기록이라 쿼리·해시·사용자 정보(토큰이 들어 있을 수 있다)는 빼고 origin과 경로만 남긴다.
+    if (allowed(req.url()) && !SAFE_METHODS.has(req.method())) { const u = new URL(req.url()); onWrite?.(`${req.method()} ${u.origin}${u.pathname}`); }
     return route.abort('blockedbyclient');
   });
   // route 핸들러는 리다이렉트의 다음 요청을 보지 못하므로 사후에 감지한다.
@@ -538,3 +542,18 @@ function named(n: Exclude<AriaNode, string>): string {
   if (!inner || name.includes(inner) || !inner.replace(name, '').replace(/[\s\p{P}\p{S}]/gu, '')) return name;
   return inner.includes(name) ? inner : `${name} ${inner}`;
 }
+
+/**
+ * 행동 불가 사유: 오류 첫 줄 + Playwright 호출 기록 중 왜 누르지 못했는지 말하는 줄(가로챈 요소·안 보임·비활성·불안정·화면 밖·DOM에서 빠짐).
+ * 첫 줄(시간 초과)만으로는 앱과 자동화를 가를 수 없다. 가로챈 요소가 고정 헤더 같은 앱 요소면 사람도 누를 수 없는 화면 결함의 근거다.
+ */
+export const whyNot = (e: unknown) => {
+  // 호출 기록에는 터미널 색 코드가 섞여 있다. 요소 HTML이 길면 사유("… intercepts pointer events")가 줄 끝에 오므로 앞뒤를 남기고 가운데를 줄인다.
+  const [first, ...rest] = String((e as Error)?.message ?? e).replace(/\x1b\[[0-9;]*m/g, '').split('\n');
+  // 요소 HTML의 속성 값(data-token·value 등에 비밀값이 있을 수 있다)은 지우고 태그 모양만 남긴다. 이 글은 분류 모델 입력으로 간다.
+  const log = rest.map(l => l.replace(/^\s*-\s*/, '').replace(/="[^"]*"/g, '=…').trim()).filter(l => l && l !== 'Call log:');
+  const known = [...new Set(log.filter(l => /intercepts pointer events|is not (visible|enabled|stable|editable)|outside of the viewport|detached/.test(l)))].slice(0, 3);
+  // 아는 문구가 없으면(Playwright 버전마다 표현이 다를 수 있다) 호출 기록의 마지막 줄을 남긴다. 사유가 조용히 사라지지 않게 한다.
+  const why = known.length ? known : log.slice(-1);
+  return [first, ...why.map(l => l.length > 300 ? `${l.slice(0, 160)} … ${l.slice(-120)}` : l)].join('\n');
+};

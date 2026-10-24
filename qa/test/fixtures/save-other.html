@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>다른 페이지</title></head>
+<body>
+  <h1>다른 페이지</h1>
+  <!-- 열릴 때 읽음 표시 같은 쓰기 요청을 보낸다 -->
+  <script>fetch('/api/read', { method: 'POST' }).catch(() => {});</script>
+</body>
+</html>

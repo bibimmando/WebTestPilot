@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>메모</title></head>
+<body>
+  <!-- 저장은 서버 쓰기 요청이 성공해야 반영된다(쓰기를 막으면 실패 문구). 보기 전환은 쓰기 없이 고장 나 있다(진짜 결함).
+       다음 링크는 엉뚱한 페이지로 가고, 그 페이지는 열릴 때 쓰기 요청(읽음 표시)을 보낸다. -->
+  <label>항목 <input id="item"></label>
+  <button id="save">저장</button>
+  <button id="toggle">보기 전환</button>
+  <a href="save-other.html">다음</a>
+  <p role="status" id="status">대기</p>
+  <ul id="list"></ul>
+  <script>
+    const status = document.getElementById('status');
+    document.getElementById('save').onclick = async () => {
+      try {
+        const r = await fetch('/api/items?token=secret123', { method: 'POST', body: document.getElementById('item').value });
+        if (!r.ok) throw new Error(r.status);
+        const li = document.createElement('li'); li.textContent = document.getElementById('item').value;
+        document.getElementById('list').append(li);
+        status.textContent = '저장됨';
+      } catch { status.textContent = '저장 실패: 서버에 연결할 수 없음'; }
+    };
+    // 결함: 문구를 바꾸지 않는다
+    document.getElementById('toggle').onclick = () => {};
+  </script>
+</body>
+</html>

@@ -331,7 +331,7 @@ const OP_TEXT: Record<string, string> = { equals: '기대와 같은지', not_equ
 const SOURCE_TEXT: Record<string, string> = { requirement: '요구사항', constraint: '화면 안내 문구', inferred: '일반적인 웹 동작', observed: '시작 시점 관찰', business_rule: '업무 규칙 답변' };
 const CLASS_TEXT: Record<string, string> = { passed: '통과', passed_inferred: '통과(일반 규칙)', passed_observed: '통과(시작 상태)', passed_visual: '통과(화면)', mismatch: '불일치(분류 전)',
   app_defect_candidate: '앱 결함 후보', automation_failure: '자동화 실패', uncertain: '판단 불가', not_run: '실행 안 됨', invalid: '무효', uncertain_execution: '실행 여부 불명확',
-  precondition_failed: '시작 조건 준비 실패', not_applicable: '다른 페이지에 대상 없음', needs_triage: '분류 필요', needs_visual: '시각 판정 필요', policy_blocked: '정책이 막음' };
+  precondition_failed: '시작 조건 준비 실패', not_applicable: '다른 페이지에 대상 없음', needs_triage: '분류 미완료', needs_visual: '시각 판정 필요', policy_blocked: '정책이 막음', write_blocked: '쓰기 차단' };
 const SEVERITY: SystemLevel[] = ['bug_high', 'bug_medium', 'ui_defect', 'improvement'];
 /** 미완료 사유(앞부분)별 뜻. 판정하지 못한 이유를 읽는 사람이 이해하도록 */
 const INCOMPLETE_MEANING: [string, string][] = [
@@ -340,6 +340,7 @@ const INCOMPLETE_MEANING: [string, string][] = [
   ['자동화 실패', '앱 문제가 아니라 자동화가 다른 요소를 누르거나 값을 잘못 읽은 것으로 판단했다. 원래 결과는 부록에 남겼다.'],
   ['AI 분류가 판단 불가', '실패 원인이 앱인지 자동화인지 증거로 가르지 못했다.'],
   ['분류 미완료', '실패 원인 분류를 끝내지 못했다.'],
+  ['쓰기 차단으로 확인 불가', '앱의 저장·전송 요청을 검사 정책이 막아서, 그 뒤 화면 결과가 앱 탓인지 알 수 없다. 테스트 계정과 초기화를 준비해 쓰기 허용 실행에서 다시 확인한다.'],
   ['재현 판단 불가', '다시 실행해 같은 결과인지 확인하지 못했다.'],
   ['시각 위반 재현 판단 불가', '다시 실행한 화면으로 같은 위반인지 확인하지 못했다.'],
   ['실행 여부 불명확', '행동이 실제로 실행됐는지 확인하지 못했다.'],
