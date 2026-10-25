@@ -13,7 +13,42 @@ WebTestPilot 캡스톤 프로젝트의 **테스트 대상 사이트**입니다. 
 - 중복 제출 방어, 성공 응답 확인 후 상태 변경 등 **방어 코드를 제자리에 배치**
 - 로딩·실패·빈 결과를 `role=status` / `role=alert` 로 **접근성 트리에 남김**
 
-지금 저장소에는 **결함이 하나도 들어 있지 않습니다.** 이 상태가 측정의 기준선입니다.
+결함은 환경변수로 켤 때만 들어갑니다. 아무것도 켜지 않은 상태가 측정의 기준선입니다.
+
+## 떠 있는 곳
+
+```
+http://13.124.7.113:8080   정상
+http://13.124.7.113:8081   결함 17건 전부
+```
+
+두 주소가 같은 빌드에서 나옵니다. 차이는 환경변수 하나뿐이라, 두 사이트의
+차이가 주입한 결함뿐이라고 말할 수 있습니다. 다른 테스트 사이트 주소는
+허브(http://13.124.7.113:8888)에 모여 있습니다.
+
+## 이 폴더는 사본입니다
+
+| | |
+|---|---|
+| 원본 | https://github.com/Majunseo/Maison (브랜치 `develop`) |
+| 사본 기준 커밋 | `3c0e4fe` |
+
+WTP 로 옮긴 뒤 이 README 는 WTP 에서 직접 고쳤습니다. 나머지 파일은 기준
+커밋과 같습니다. 원본에서 코드를 고쳤다면 이 폴더를 다시 내보냅니다.
+
+```sh
+DST=teams/member-03/maison
+rm -rf "$DST" && mkdir -p "$DST"
+git -C <Maison 경로> archive develop | tar -x -C "$DST"
+cd "$DST"
+rm -f vite.config.ts.timestamp-*.mjs      # Vite 임시 파일
+rm -rf .lovable                           # 생성 도구 기록
+mv doc/* docs/ 2>/dev/null && rmdir doc   # 문서 폴더 통합
+```
+
+`git archive` 는 git 이 추적하는 파일만 내보냅니다. `node_modules`(300MB)와
+`dist` 는 애초에 들어가지 않습니다. 다시 내보내면 이 README 가 원본 것으로
+돌아가므로, WTP 에서 고친 부분을 다시 옮겨야 합니다.
 
 ## 실행
 
@@ -184,16 +219,48 @@ POST   /_reset
 
 ## 결함 현황
 
-현재 **0건**입니다. 이 상태가 측정의 기준선입니다. 레지스트리는
-`server/bugs/` 에 분야별로 나뉘어 있고 전부 비어 있습니다.
+**17건**입니다. 재현 절차와 "규칙으로 잡히는가" 판정표는
+[docs/bugs-injected.md](docs/bugs-injected.md) 에 있습니다.
 
-| 접두사 | 분야 | 파일 |
-|---|---|---|
-| `F` | 기능적 | `server/bugs/functional.ts` |
-| `V` | 입력 검증 | `server/bugs/validation.ts` |
-| `N` | 이동·라우팅 | `server/bugs/routing.ts` |
-| `U` | UI | `server/bugs/ui.ts` + `src/styles/bugs-ui.css` |
+| 접두사 | 분야 | 건수 | 레지스트리 |
+|---|---|---|---|
+| `F` | 기능적 | 4 | `server/bugs/functional.ts` |
+| `V` | 입력 검증 | 5 | `server/bugs/validation.ts` |
+| `N` | 이동·라우팅 | 3 | `server/bugs/routing.ts` |
+| `U` | UI | 5 | `server/bugs/ui.ts` + `src/styles/bugs-ui.css` |
+
+증상 분포는 `false_result` 6 · `visual` 5 · `wrong_target` 3 ·
+`no_response` 2 · `partial` 1 입니다. `duplicate` 는 아직 비어 있습니다.
+
+`N2` 는 비어 있습니다. 없는 상품 주소에서 빈 화면을 보여주는 결함이었는데,
+사이트 어디에도 그 주소로 가는 링크가 없어 링크를 따라가는 도구는 도달할
+수 없었습니다. 번호는 당기지 않았습니다 — 앞선 커밋에서 N2 가 그 결함을
+가리켰기 때문입니다.
+
+### 도달이 필요한 곳
+
+`V1`\~`V5` 와 `N4` 는 로그인·체크아웃 폼 뒤에 있습니다. 링크만 따라가는
+크롤러는 `/login` `/signup` `/checkout` `/account` `/orders` 에 도달하지
+못합니다. 탐지 0 이 나왔을 때 **탐지 실패인지 도달 실패인지** 구분해
+보고해야 합니다.
+
+### 개발용 사이트입니다 — 정답지가 공개돼 있습니다
+
+`server/bugs/*.ts` 에 17건의 제목·위치·재현 절차가 모두 적혀 있고
+`/gt.json` 이 그 파일들에서 생성됩니다. Maison 은 **개발용**이므로 공개가
+맞습니다. **최종 평가용 사이트는 이렇게 올리지 않습니다.** 정상 비교본·
+라벨·주입 위치·정답을 검사 모델에 노출하면 평가가 무효가 됩니다.
 
 ## 아직 없는 것
 
 문의 폼(현재 `mailto:`), 쿠폰, 상품 리뷰, 재고·품절, 주문 취소, 페이지네이션. 안내 페이지 본문은 **없는 기능을 설명하지 않도록** 작성했습니다.
+
+## 자세한 문서
+
+| 문서 | 내용 |
+|---|---|
+| [docs/bugs-injected.md](docs/bugs-injected.md) | 결함 17건의 재현 절차와 "규칙으로 잡히는가" 판정표 |
+| [docs/bugs.md](docs/bugs.md) | 결함 추가 절차 · ID 규칙 · 증상 분류 |
+| [docs/bugs-ui.md](docs/bugs-ui.md) | UI 결함 5건의 전후 사진과 확인 절차 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 구조 |
+| [docs/BUG_INJECTION_GUIDE.md](docs/BUG_INJECTION_GUIDE.md) | 주입 지침 |

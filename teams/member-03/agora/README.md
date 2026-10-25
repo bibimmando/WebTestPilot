@@ -44,6 +44,8 @@ npm run typecheck
 | `GET /api/bugs` · `GET /gt.json` | 켜져 있는 결함 목록과 정답. 검사 대상 모델에는 주지 않는다. |
 | `BUGS_ON=all` · `BUG_F1=1` | 결함 켜기 (`server/bugs/`). 기본은 모두 꺼진 정상 사이트. |
 
+결함 10건의 재현 절차와 "규칙으로 잡히는가" 판정표는 [`docs/bugs-injected.md`](docs/bugs-injected.md) 에 있다.
+
 시드 글의 시각은 "지금으로부터 몇 분 전" 으로 정해져 있어 언제 띄워도 정렬 결과가 같다.
 
 ## 미디어 출처

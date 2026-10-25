@@ -1,9 +1,5 @@
 # 주입한 결함 목록 (F · V · N · U)
 
-> Maison 저장소 `docs/bugs-injected.md`(브랜치 `docs/bugs-injected`, 커밋 `5a4ef9e`)를 옮긴 것이다.
-> 본문의 파일 경로(`server/bugs/...`, `src/...`)는 사본 폴더 [`../maison/`](../maison/) 기준이다.
-> 사본의 기준 커밋 `9424d2e` 와 이 문서가 설명하는 코드는 같다.
-
 레지스트리 네 파일에 등록된 **17건**의 증상과 확인 방법을 한곳에 모았다.
 레지스트리는 기계가 읽는 자리(정답지 생성)이고, 이 문서는 사람이 읽는
 자리다. 증상·재현 절차·확인용 코드 조각은 여기에만 둔다.
@@ -327,7 +323,7 @@ window.scrollY   // 0 이 아니다
 `<body data-bugs="U1 U2">` 로 찍히고 CSS 가 `~=` 로 받는다 (`*=` 를 쓰면
 `U1` 규칙이 `U12` 에도 걸린다).
 
-> **정상/결함 비교 사진은 [bugs-ui.md](../maison/docs/bugs-ui.md) 에 있다.** 창 너비
+> **정상/결함 비교 사진은 [bugs-ui.md](bugs-ui.md) 에 있다.** 창 너비
 > 1100px 에서 한 건씩만 켜고 찍은 10장이다. 아래는 증상과 확인 방법만 둔다.
 
 ## U1 — 가로 스크롤이 생겨 오른쪽이 잘림
@@ -415,7 +411,7 @@ const m = document.querySelector('main').getBoundingClientRect();
 보이지 않고, 그 자리를 눌러도 헤더가 클릭을 가져간다. 상품 목록
 (`/products`)의 제목 `All Pieces` 는 큰 사진 아래쪽에 있어서 가려지지 않는다.
 
-정상/결함 비교 사진은 [bugs-ui.md](../maison/docs/bugs-ui.md) 에 있다.
+정상/결함 비교 사진은 [bugs-ui.md](bugs-ui.md) 에 있다.
 
 ---
 
