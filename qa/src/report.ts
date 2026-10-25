@@ -45,6 +45,9 @@ export type ReportItem = {
 /** 사이트 지도에서 페이지마다 계산한 품질·사용성 점검(AI 없음). confirmed = 새로 열어 다시 점검해도 같음 */
 export type AuditItem = AuditFinding & { page: string; confirmed: boolean };
 
+/** 발견(findingKey)마다 AI가 쓴 문제 한 줄. 숫자·인용이 검사 기록에 있는지 코드가 대조해 통과한 것만 둔다(headline.ts) */
+export type Headlines = Record<string, { text: string; model: string }>;
+
 export type Report = {
   version: 'report/2';
   run: {
@@ -79,6 +82,8 @@ export type Report = {
   /** 시나리오별 상한을 넘어 버린 신호 수 */
   signalsDropped: number;
   /** 품질·사용성 점검(일반 규칙 ③). 조작을 막으면 UI 결함, 아니면 개선 제안. 버그 집계와 따로 센다 */
+  /** 발견 제목(AI). 없으면 보고서는 기대 동작과 코드가 만든 실제 한 줄을 보인다. 판정·등급에는 쓰지 않는다 */
+  headlines?: Headlines;
   uiDefects: AuditItem[];
   improvements: AuditItem[];
   /** 다시 나오지 않았거나 화면이 안정되지 않아 확인하지 못한 점검 발견(관찰). 결함 건수에 넣지 않는다 */
@@ -125,14 +130,19 @@ const ROLE_TEXT: Record<string, string> = { link: '링크', button: '버튼', te
   listbox: '목록 상자', option: '선택지', heading: '제목', listitem: '목록 항목', list: '목록', article: '카드', paragraph: '문단', img: '이미지', banner: '머리말',
   contentinfo: '꼬리말', navigation: '메뉴', main: '본문', region: '영역', dialog: '창', tab: '탭', menuitem: '메뉴 항목', spinbutton: '숫자 입력칸', switch: '스위치',
   slider: '슬라이더', table: '표', row: '표 행', cell: '표 칸', status: '상태 표시', alert: '알림', form: '입력 양식', group: '묶음', complementary: '보조 영역', search: '검색 영역' };
-/** 대상 패턴(정규식)을 읽는 글자로: 숫자 자리는 "…", 이스케이프는 원래 글자, 너무 길면 줄인다. */
-const shownText = (p: string) => { const t = p.replace(/^\^|\$$/g, '').replace(/\.\*\?/g, '…').replace(/\\(.)/g, '$1').trim(); return t.length > 40 ? `${t.slice(0, 38)}…` : t; };
+/** 대상 패턴(정규식)을 읽는 글자로: 아무 글자·숫자 자리는 "…", 이스케이프는 원래 글자, 너무 길면 줄인다. 그 밖의 정규식 문법(그룹·글자 묶음·반복)이 남으면 읽는 말로 못 옮기므로 undefined. */
+const shownText = (p: string) => {
+  const t = p.replace(/^\^|\$$/g, '').replace(/\\d(?:[+*]|\{[\d,]+\})?|\.[*+]\??/g, '…').trim();
+  if (/\\[a-zA-Z]|(?<!\\)[()[\]{}|+*?]/.test(t)) return undefined;
+  const u = t.replace(/\\(.)/g, '$1');
+  return u.length > 40 ? `${u.slice(0, 38)}…` : u;
+};
 /** 대상 설명: "Start Shopping" 링크, "수량" 영역의 버튼 (2개 중 2번째) */
 export function targetText(x: Target): string {
   const role = x.role ? ROLE_TEXT[x.role] ?? x.role : '';
-  const name = x.name ?? x.text;
-  let s = name ? `"${shownText(name)}" ${role || '글자'}` : role || '요소';
-  if (x.anchor) s = `"${shownText(x.anchor)}" 영역의 ${s}`;
+  const name = x.name ?? x.text, shown = name && shownText(name), area = x.anchor && shownText(x.anchor);
+  let s = shown ? `"${shown}" ${role || '글자'}` : role || '요소';
+  if (area) s = `"${area}" 영역의 ${s}`;
   if (x.href) s += ` (주소 ${x.href})`;
   if (x.nth !== undefined && (x.of ?? 0) > 1) s += ` (${x.of}개 중 ${x.nth + 1}번째)`;
   return x.within ? `${targetText(x.within)} 안의 ${s}` : s;
@@ -277,7 +287,29 @@ export function buildReport(dir: string): Report {
     evidenceGaps: { total: gaps.length, items: gaps },
     newTabs: results.scenarios.flatMap(s => (s.newTabs ?? []).map(t => ({ scenario: s.id, ...t }))),
     passed: { checks: Object.values(passedClasses).reduce((a, b) => a + b, 0), byClass: passedClasses },
+    ...(existsSync(join(dir, 'headlines.json')) ? { headlines: read<Headlines>(join(dir, 'headlines.json')) } : {}),
   };
+}
+
+/** 발견 묶기: 원래 시나리오 하나가 한 발견이다(같은 종류 다른 페이지 복제 포함). 심각한 순서. 보고서 본문과 AI 제목이 같은 묶음을 쓴다 */
+export const findingKey = (x: ReportItem) => x.variantOf ?? x.scenario;
+export function findingGroups(rep: Pick<Report, 'bugs' | 'visual'>): ReportItem[][] {
+  const bySeverity = (a: ReportItem, b: ReportItem) => SEVERITY.indexOf(a.level) - SEVERITY.indexOf(b.level);
+  const groups = new Map<string, ReportItem[]>();
+  for (const x of [...rep.bugs, ...rep.visual]) groups.set(findingKey(x), [...groups.get(findingKey(x)) ?? [], x]);
+  return [...groups.values()].map(items => items.sort(bySeverity)).sort((a, b) => bySeverity(a[0], b[0]));
+}
+
+const clip = (s: string, n: number) => s.length > n ? `${s.slice(0, n - 1)}…` : s;
+/** 검사 기록만으로 만든 "실제" 한 줄(모델 없음). 발견 제목이 기대 동작이라 무엇이 틀렸는지 보이게 한다 */
+export function actualLine(x: ReportItem): string {
+  const c = x.check;
+  if (x.visual) { const unmet = x.visual.criteria.filter(k => k.status === 'unmet').length; return `화면 조건 ${x.visual.criteria.length}개 중 ${unmet}개 위반`; }
+  if (!c) return clip(x.reason, 80);
+  const target = c.target ?? '현재 주소';
+  if (c.actual === undefined) return `${target}의 ${READ_TEXT[c.read] ?? c.read}을 읽지 못함`;
+  if (/contain|equal/.test(c.op) && c.read === 'items') return `${target}에 "${clip(c.expected ?? '', 40)}" ${c.op.startsWith('any') ? '항목 없음' : '아닌 항목 있음'}`;
+  return `${target}의 ${READ_TEXT[c.read] ?? c.read} ${clip(c.actual, 40)} (기대 ${c.op === 'not_equals' ? '≠ ' : ''}${clip(c.expected ?? '', 40)})`;
 }
 
 /**
@@ -377,15 +409,14 @@ export function renderHtml(rep: Report, dir: string): string {
   const pageList = (pages: string[], max = 6) => `${pages.slice(0, max).map(p => esc(host(p))).join(', ')}${pages.length > max ? ` 외 ${pages.length - max}곳` : ''}`;
   const r = rep.run;
 
-  // 발견 묶기: 원래 시나리오 하나가 한 발견이다(같은 종류 다른 페이지 복제 포함). 그 안에서 실패한 검사를 차례로 보인다.
-  const scenarioKey = (x: ReportItem) => x.variantOf ?? x.scenario;
+  // 발견 하나 = 원래 시나리오 하나. 그 안에서 실패한 검사를 차례로 보인다.
+  const scenarioKey = findingKey;
   const checkKey = (x: ReportItem) => x.id.slice(x.scenario.length);
-  const bySeverity = (a: ReportItem, b: ReportItem) => SEVERITY.indexOf(a.level) - SEVERITY.indexOf(b.level);
-  const groups = new Map<string, ReportItem[]>();
-  for (const x of [...rep.bugs, ...rep.visual]) groups.set(scenarioKey(x), [...groups.get(scenarioKey(x)) ?? [], x]);
-  const findings = [...groups.values()].map(items => items.sort(bySeverity)).sort((a, b) => bySeverity(a[0], b[0]));
+  const findings = findingGroups(rep);
   const pagesOf = (items: ReportItem[]) => [...new Set(items.map(x => x.page))];
   const plainTitle = (t: string) => t.replace(' (같은 템플릿 다른 페이지)', '');
+  // 발견 제목: AI가 쓴 문제 한 줄(사실 대조를 통과한 것)이 있으면 그것, 없으면 기대 동작 + 코드가 만든 실제 한 줄.
+  const headlineOf = (g: ReportItem[]) => rep.headlines?.[findingKey(g[0])]?.text;
 
   const why = (x: ReportItem) => {
     if (!x.check) return '';
@@ -430,7 +461,8 @@ export function renderHtml(rep: Report, dir: string): string {
     const steps = items.reduce((a, y) => y.steps.length > a.steps.length ? y : a, x).steps;
     return `<section class="finding" id="f${n}"><div class="head">
     <p class="kicker">발견 ${n} · ${esc(x.basis === 'requirement' ? '요구사항 검사' : '자율 검사')}</p>
-    <h3>${badge(x.level)} ${esc(plainTitle(x.title))}</h3>
+    <h3>${badge(x.level)} ${esc(headlineOf(items) ?? plainTitle(x.title))}</h3>
+    <p class="sub">${headlineOf(items) ? `기대 동작: ${esc(plainTitle(x.title))}` : `실제: ${esc(actualLine(x))}`}</p>
     <table class="kv"><tr><th>영향 페이지</th><td>${pages.length}곳 — ${pageList(pages, 13)}</td></tr>
       ${x.preconditions.length ? `<tr><th>시작 조건</th><td>${x.preconditions.map(esc).join('<br>')}</td></tr>` : ''}</table></div>
     <h4>재현 방법</h4>
@@ -474,7 +506,7 @@ export function renderHtml(rep: Report, dir: string): string {
       g.set(k, [...g.get(k) ?? [], x]);
     }
     return [...g].sort((a, b) => b[1].length - a[1].length).map(([k, xs]) => `<p class="gtitle">${esc(k)} (${xs.length})</p>
-      <table class="small"><tr><th>항목</th><th>검사·페이지</th><th>원래 결과</th><th>판정 사유·분류 근거</th><th>증거</th></tr>${xs.map(x => `<tr><td>${esc(x.id)}</td><td>${esc(plainTitle(x.title))}<br><span class="muted">${esc(host(x.page))}</span></td><td>${esc(x.observed)}${x.check && x.check.read !== 'visual' && (x.check.expected !== undefined || x.check.actual !== undefined) ? `<br>기대 ${esc(x.check.expected ?? '')} / 실제 ${esc(x.check.actual ?? '(읽지 못함)')}` : ''}</td><td>${esc(x.reason)}${x.classification.reason ? `<br>${esc(x.classification.reason)}` : ''}${x.classification.error ? `<br>${esc(x.classification.error)}` : ''}${x.captureErrors ? `<br>수집 실패: ${x.captureErrors.map(esc).join('; ')}` : ''}</td><td>${x.evidence.map(esc).join('<br>') || '없음'}</td></tr>`).join('')}</table>`).join('');
+      <table class="small fixed"><col style="width:9%"><col style="width:19%"><col style="width:34%"><col style="width:26%"><col style="width:12%"><tr><th>항목</th><th>검사·페이지</th><th>원래 결과</th><th>판정 사유·분류 근거</th><th>증거</th></tr>${xs.map(x => `<tr><td>${esc(x.id)}</td><td>${esc(plainTitle(x.title))}<br><span class="muted">${esc(host(x.page))}</span></td><td>${esc(x.observed)}${x.check && x.check.read !== 'visual' && (x.check.expected !== undefined || x.check.actual !== undefined) ? `<br>기대 ${esc(x.check.expected ?? '')} / 실제 ${esc(x.check.actual ?? '(읽지 못함)')}` : ''}</td><td>${esc(x.reason)}${x.classification.reason ? `<br>${esc(x.classification.reason)}` : ''}${x.classification.error ? `<br>${esc(x.classification.error)}` : ''}${x.captureErrors ? `<br>수집 실패: ${x.captureErrors.map(esc).join('; ')}` : ''}</td><td>${x.evidence.map(esc).join('<br>') || '없음'}</td></tr>`).join('')}</table>`).join('');
   };
   const obsByPage = () => {
     const g = new Map<string, string[]>();
@@ -509,7 +541,7 @@ export function renderHtml(rep: Report, dir: string): string {
     h2 { font-size: 16px; font-weight: 400; color: var(--accent); margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); break-after: avoid; }
     .appendix > h2:first-of-type { margin-top: 0; }
     h2 .no { font-variant-numeric: tabular-nums; margin-right: 8px; color: var(--muted); }
-    h3 { font-size: 15px; font-weight: 500; margin: 2px 0 10px; line-height: 1.4; }
+    h3 { font-size: 15px; font-weight: 500; margin: 2px 0 2px; line-height: 1.4; } .sub { margin: 0 0 10px; color: var(--muted); }
     h4 { font-size: 11px; color: var(--accent); margin: 14px 0 4px; font-weight: 600; break-after: avoid; }
     .kicker { font-size: 9px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin: 0; }
     .note, .muted { color: var(--muted); } .note { font-size: 9.5px; } .empty { color: var(--muted); } .quote { color: var(--muted); }
@@ -520,6 +552,8 @@ export function renderHtml(rep: Report, dir: string): string {
     tr { break-inside: avoid; }
     table.kv th { width: 92px; background: none; color: var(--muted); }
     table.small td, table.small th { padding: 4px 6px; font-size: 9px; }
+    /* 긴 원래 결과(목록 JSON 등)가 자동 너비를 차지해 나머지 열이 한 글자 폭으로 눌리지 않게 열 너비를 고정한다. */
+    table.fixed { table-layout: fixed; } table.fixed td { overflow-wrap: anywhere; }
     td.nw, th.nw, table.list td:first-child { white-space: nowrap; }
     .tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 14px 0 6px; }
     .tile { border: 1px solid var(--line); border-top: 3px solid var(--accent); padding: 8px 10px; }
@@ -553,7 +587,7 @@ export function renderHtml(rep: Report, dir: string): string {
     </div>
     <p class="note">버그·UI 결함 수는 페이지마다 센 판정 수다. 아래 주요 발견은 같은 검사를 하나로 묶은 것이다.</p>
     <h2><span class="no">01</span>주요 발견 (${findings.length})</h2>
-    ${findings.length ? `<table class="list"><tr><th>발견</th><th>판정</th><th>내용</th><th>영향</th></tr>${findings.map((g, i) => `<tr><td><a href="#f${i + 1}">발견 ${i + 1}</a></td><td>${badge(g[0].level)}</td><td>${esc(plainTitle(g[0].title))}${new Set(g.map(checkKey)).size > 1 ? ` <span class="muted">(검사 ${new Set(g.map(checkKey)).size}개 실패)</span>` : ''}</td><td class="nw">${pagesOf(g).length}곳</td></tr>`).join('')}</table>` : '<p class="empty">버그·화면 결함으로 판정한 발견이 없다.</p>'}
+    ${findings.length ? `<table class="list"><tr><th>발견</th><th>판정</th><th>내용</th><th>영향</th></tr>${findings.map((g, i) => `<tr><td><a href="#f${i + 1}">발견 ${i + 1}</a></td><td>${badge(g[0].level)}</td><td>${esc(headlineOf(g) ?? plainTitle(g[0].title))}<br><span class="muted">${headlineOf(g) ? `기대 동작: ${esc(plainTitle(g[0].title))}` : `실제: ${esc(actualLine(g[0]))}`}</span>${new Set(g.map(checkKey)).size > 1 ? ` <span class="muted">(검사 ${new Set(g.map(checkKey)).size}개 실패)</span>` : ''}</td><td class="nw">${pagesOf(g).length}곳</td></tr>`).join('')}</table>` : '<p class="empty">버그·화면 결함으로 판정한 발견이 없다.</p>'}
     ${rep.uiDefects.length || rep.improvements.length ? `<p class="note">이 밖에 브라우저가 계산한 품질 점검에서 UI 결함 ${rep.uiDefects.length}건·개선 제안 ${rep.improvements.length}건이 나왔다(05).</p>` : ''}
     <p class="note">판정은 시스템 판정이다. 통과한 검사는 사이트 전체가 정상이라는 뜻이 아니며, 최종 결함 여부는 사람이 확인한다.</p>
   </section>

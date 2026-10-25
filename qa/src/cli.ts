@@ -12,6 +12,7 @@ import { explore } from './explore.ts';
 import { runPlan } from './run.ts';
 import { judge } from './triage.ts';
 import { writeReport } from './report.ts';
+import { writeHeadlines } from './headline.ts';
 import { login, readAppConfig, type StorageState } from './login.ts';
 import { resetApp, type ResetResult } from './reset.ts';
 import { Budget, type Send } from './agent.ts';
@@ -125,6 +126,8 @@ try {
     models: { plan: a['plan-model'], triage: a['triage-model'] }, calls: calls.length });
   // 판정까지 끝났으면 저장된 결과로 report.json·PDF를 만든다. 실패해도 실행 결과는 그대로 남고, node src/report.ts <폴더>로 다시 만들 수 있다.
   if (existsSync(join(out, 'run', 'verdicts.json'))) {
+    // 발견 제목(AI): 판정은 바꾸지 않는다. 실패하면 보고서는 기대 동작 + 실제 한 줄로 만든다.
+    try { await writeHeadlines({ dir: out, send, model: a['triage-model']!, budget }); } catch (e) { console.error(`발견 제목을 만들지 못함: ${(e as Error).message}`); }
     try {
       const r = await writeReport(out, browser);
       console.log(`보고서: report.json · report.html${r.pdf ? ' · report.pdf' : ` (PDF 실패: ${r.pdfError})`}`);

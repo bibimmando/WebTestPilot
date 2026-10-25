@@ -95,9 +95,38 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   assert.ok(onlyImprovement.includes('<p class="num">1</p><p class="tlabel">UI 결함</p>'), '점검 UI 결함 1건만 센다');
   const { targetText } = await import('../src/report.ts');
   assert.equal(targetText({ role: 'link', name: '^Shop$', href: '/shop', nth: 1, of: 2 }), '"Shop" 링크 (주소 /shop) (2개 중 2번째)', '주소로 구별한 링크는 주소도 적는다');
+  assert.equal(targetText({ text: String.raw`^(?!\s*Quantity\s*$)\s*\S.{0,39}$`, anchor: '^Quantity$' }), '"Quantity" 영역의 요소','읽는 말로 못 옮기는 정규식은 보이지 않는다');
+  assert.equal(targetText({ role: 'paragraph', name: String.raw`^\d+ pieces? saved$` }), '문단', '선택 문법이 남으면 이름을 빼고 역할만');
+  assert.equal(targetText({ role: 'paragraph', name: String.raw`^\d+ pieces saved \(total\)$` }), '"… pieces saved (total)" 문단', '숫자 자리는 …, 이스케이프한 괄호는 글자로');
   assert.ok(!html.includes('<script>alert(1)</script>') && html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), '페이지에서 온 글자는 HTML로 해석하지 않는다');
   assert.ok(!html.includes('<b>배지</b>'));
   assert.ok(html.includes('data:image/png;base64,'), '버그 항목에는 실패 시점 화면을 넣는다');
+
+  // 발견 제목: AI가 없으면 기대 동작 + 검사 기록으로 만든 실제 한 줄
+  assert.ok(html.includes('실제: &quot;담은 상품&quot; 목록 안의 목록 항목의 개수 0 (기대 1)'), html.match(/실제: [^<]*/)?.[0] ?? '실제 줄 없음');
+
+  // AI 제목: 기록에 없는 숫자는 돌려보내고, 고친 제목만 남긴다. 판정은 그대로다.
+  const { writeHeadlines, checkHeadline } = await import('../src/headline.ts');
+  const { Budget } = await import('../src/agent.ts');
+  const titles = ['담기 뒤 목록 항목이 3개로 보임', '담기 버튼을 눌러도 목록 항목이 0개(기대 1개)'];
+  const seen: string[] = [];
+  const h = await writeHeadlines({ dir, model: 'claude-sonnet-5-5', budget: new Budget(1), send: async req => {
+    const last = req.messages.at(-1)!;
+    if (Array.isArray(last.content) && last.content[0].type === 'tool_result') seen.push(String((last.content[0] as { content: unknown }).content));
+    const text = titles.shift()!;
+    return { id: 'm', type: 'message', role: 'assistant', model: req.model, stop_reason: 'tool_use', stop_sequence: null,
+      content: [{ type: 'tool_use', id: `t${titles.length}`, name: 'headline', input: { text } }],
+      usage: { input_tokens: 10, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } as never;
+  } });
+  assert.match(seen[0], /숫자 3은 기록에 없습니다/);
+  assert.deepEqual(Object.values(h).map(x => x.text), ['담기 버튼을 눌러도 목록 항목이 0개(기대 1개)']);
+  const titled = buildReport(dir);
+  assert.deepEqual(titled.bugs.map(b => b.level), r.bugs.map(b => b.level), '제목은 판정을 바꾸지 않는다');
+  const titledHtml = renderHtml(titled, dir);
+  assert.ok(titledHtml.includes('담기 버튼을 눌러도 목록 항목이 0개(기대 1개)') && titledHtml.includes('기대 동작: '), '제목 아래에 기대 동작을 남긴다');
+  assert.deepEqual(checkHeadline('"Orb Lamp" 버튼', 'x "Orb Lamp" 영역'), []);
+  assert.deepEqual(checkHeadline('"Orb Lampe" 버튼', 'x "Orb Lamp" 영역'), ['인용 "Orb Lampe"은 기록에 그대로 없습니다']);
+  assert.match(checkHeadline('가'.repeat(61), '')[0], /60자 이내/);
 
   // 저장된 결과로 보고서만 다시 만든다. 다시 만들어도 같은 report.json이다.
   const first = await writeReport(dir, browser);
