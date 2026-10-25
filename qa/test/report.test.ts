@@ -98,6 +98,7 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   assert.equal(targetText({ text: String.raw`^(?!\s*Quantity\s*$)\s*\S.{0,39}$`, anchor: '^Quantity$' }), '"Quantity" 영역의 요소','읽는 말로 못 옮기는 정규식은 보이지 않는다');
   assert.equal(targetText({ role: 'paragraph', name: String.raw`^\d+ pieces? saved$` }), '문단', '선택 문법이 남으면 이름을 빼고 역할만');
   assert.equal(targetText({ role: 'paragraph', name: String.raw`^\d+ pieces saved \(total\)$` }), '"… pieces saved (total)" 문단', '숫자 자리는 …, 이스케이프한 괄호는 글자로');
+  assert.equal(targetText({ role: 'paragraph', name: '^.*? (?:pieces|piece) saved$' }), '"… pieces saved" 문단', '단·복수 짝은 처음 본 형태로');
   assert.ok(!html.includes('<script>alert(1)</script>') && html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), '페이지에서 온 글자는 HTML로 해석하지 않는다');
   assert.ok(!html.includes('<b>배지</b>'));
   assert.ok(html.includes('data:image/png;base64,'), '버그 항목에는 실패 시점 화면을 넣는다');
@@ -135,16 +136,32 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   const saved = JSON.parse(readFileSync(join(dir, 'headlines.json'), 'utf8'));
   const key = Object.keys(saved)[0];
   writeFileSync(join(dir, 'headlines.json'), JSON.stringify({ [key]: { ...saved[key], facts: 'stale' } }));
-  assert.equal(buildReport(dir).headlines?.[key], undefined, '예전 사실로 만든 제목');
+  const stale = buildReport(dir);
+  assert.deepEqual([stale.headlines?.[key], stale.headlinesRejected], [undefined, 1], '예전 사실로 만든 제목은 버리고 버린 수를 남긴다');
+  assert.ok(renderHtml(stale, dir).includes('0개 사용, 1개 버림'));
   writeFileSync(join(dir, 'headlines.json'), JSON.stringify({ [key]: { ...saved[key], text: '목록 항목이 7개로 보임' } }));
   assert.equal(buildReport(dir).headlines?.[key], undefined, '대조를 통과하지 못한 제목');
   writeFileSync(join(dir, 'headlines.json'), JSON.stringify(saved));
+  assert.equal(buildReport(dir).headlinesRejected, 0);
+  // 지문은 판정 데이터를 담는다: 필드 하나만 바뀌어도 지문이 바뀐다(보고서 문구는 지문에 들어가지 않는다).
+  const { factsHash } = await import('../src/report.ts');
+  const b0 = titled.bugs[0];
+  const changed = [
+    { ...b0, page: 'http://app.test/other' }, { ...b0, steps: [...b0.steps, '하나 더'] }, { ...b0, level: 'bug_high' as const },
+    { ...b0, check: { ...b0.check!, actual: '9' } }, { ...b0, classification: { ...b0.classification, reason: '다른 근거' } },
+    { ...b0, visual: { criteria: [{ text: '조건', status: 'unmet', evidence: '다른 화면' }] } },
+  ];
+  for (const c of changed) assert.notEqual(factsHash([c]), factsHash([b0]), JSON.stringify(c).slice(0, 80));
+  assert.equal(factsHash([structuredClone(b0)]), factsHash([b0]));
+  assert.match(factsHash([b0]), /^d1:/, '지문 형식 표시');
   // 비교 방식마다 실패의 뜻을 바꾸지 않고 쓴다.
   const item = (op: string, read: string, expected: string, actual: string) => actualLine({ ...r.bugs[0], check: { ...r.bugs[0].check!, op, read, expected, actual, target: '카드' } });
   assert.equal(item('not_equals', 'items', '["a"]', '["a"]'), '카드: 달라야 할 목록과 같음');
   assert.equal(item('sorted_asc', 'items', 'number', '["3","1"]'), '카드: 오름차순이 아님');
   assert.equal(item('all_contain', 'items', 'Lamp', '["Lamp","Vase"]'), '카드: "Lamp" 미포함 항목 있음');
   assert.equal(item('less', 'text', '10', '12'), '카드의 글자 12 (기대: 10보다 작음)');
+  assert.equal(actualLine({ ...r.bugs[0], visual: { criteria: [{ text: '제목이 헤더에 가려지지 않는다', status: 'met' }, { text: '버튼이 보인다', status: 'unmet', evidence: '헤더가 버튼 위를 덮음' }] } }),
+    '화면 조건 2개 중 1개 위반 — 헤더가 버튼 위를 덮음', '시각 판정은 첫 위반 조건의 근거를 붙인다');
   assert.equal(item('same_number', 'count', '2 pieces saved', '1'), '카드의 개수 1 (기대: "2 pieces saved"의 숫자와 같음)');
 
   // 저장된 결과로 보고서만 다시 만든다. 다시 만들어도 같은 report.json이다.

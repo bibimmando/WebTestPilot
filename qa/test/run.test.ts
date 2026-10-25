@@ -342,6 +342,24 @@ test('선택 상자 값은 화면과 select 동작이 쓰는 옵션 라벨로 �
   assert.deepEqual(r.scenarios[0].checks.slice(0, 2).map(c => c.actual), ['최신순', '조회수 높은순']);
 });
 
+test('대상 없이 누른 브라우저 이동 단축키(Alt+ArrowLeft·Right)는 실제로 뒤로·앞으로 간다', async () => {
+  const url = `${origin}/save.html`;
+  const p: Plan = {
+    version: 1, observations: [], features: [{ id: 'F1', name: '다음 페이지', page: url }], questions: [], requirements: [], unplanned: [],
+    targets: { T1: { target: { role: 'link', name: '^다음$' }, group: false, url } },
+    scenarios: [{ id: 'S1', title: '뒤로 갔다 앞으로', covers: ['F1'], start: { url },
+      steps: [{ id: 'S1.A1', op: 'click', target: 'T1' }, { id: 'S1.A2', op: 'press', value: 'Alt+ArrowLeft' }, { id: 'S1.A3', op: 'press', value: 'Alt+ArrowRight' }],
+      checks: [
+        { id: 'S1.C1', after: 'start', read: 'url', op: 'equals', expected: url, source: { kind: 'observed' }, precondition: true },
+        { id: 'S1.C2', after: 'S1.A2', read: 'url', op: 'equals', expected_from: 'S1.C1', source: { kind: 'inferred', rule: 'state-persists', quote: '뒤로 가면 처음 페이지로 돌아온다' } },
+        { id: 'S1.C3', after: 'S1.A3', read: 'url', op: 'not_equals', expected_from: 'S1.C1', source: { kind: 'inferred', rule: 'action-has-effect', quote: '앞으로 가면 다음 페이지로 간다' } },
+      ] }],
+  };
+  const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir('history-keys'), timeoutMs: 2000 });
+  assert.deepEqual(r.problems, [], readFileSync(`${r.runDir}/playwright.log`, 'utf8'));
+  assert.deepEqual(r.scenarios[0].checks.map(c => [c.status, c.actual]), [['passed', url], ['passed', url], ['passed', `${origin}/save-other.html`]]);
+});
+
 test('네이티브 select가 아닌 ARIA 콤보박스의 값은 snapshot에 보이는 값으로 읽는다(정상·결함 쌍)', async () => {
   const run = async (hash: string) => {
     const url = `${origin}/sortbox.html${hash}`;

@@ -31,7 +31,7 @@ export async function writeHeadlines(o: { dir: string; send: Send; model: string
     };
     const r = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools: [tool], user: facts.text, budget: o.budget, maxTurns: 3, maxTokens: 2000, effort: 'low', nudge: true });
     const key = findingKey(items[0]);
-    if (accepted) out[key] = { text: accepted, model: o.model, facts: factsHash(facts.text) };
+    if (accepted) out[key] = { text: accepted, model: o.model, facts: factsHash(items) };
     log.push({ key, stop: accepted ? 'done' : r.stop, ...(r.detail ? { detail: r.detail } : {}), ...(accepted ? { text: accepted } : {}), cost: r.turns.reduce((a, t) => a + (t.cost ?? 0), 0) });
     if (r.stop === 'budget') break;
   }

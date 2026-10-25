@@ -3,7 +3,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test as base, expect, type ElementHandle, type Page, type Locator } from '@playwright/test';
-import { areaOf, ariaText, whyNot, ariaTextV1, deniedLink, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, type AriaNode, type Policy, type Signal } from './browser.ts';
+import { areaOf, ariaText, pressKey, whyNot, ariaTextV1, deniedLink, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, type AriaNode, type Policy, type Signal } from './browser.ts';
 import { compareValues, expectedFrom, sortKeys, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
@@ -168,7 +168,7 @@ export async function act(page: Page, stepId: string): Promise<void> {
     if (st.op === 'click') await loc!.click({ timeout: TIMEOUT });
     else if (st.op === 'fill') await loc!.fill(st.value!, { timeout: TIMEOUT });
     else if (st.op === 'select') await loc!.selectOption({ label: st.value! }, { timeout: TIMEOUT });
-    else await (loc ? loc.press(st.value!, { timeout: TIMEOUT }) : page.keyboard.press(st.value!));
+    else await (loc ? loc.press(st.value!, { timeout: TIMEOUT }) : pressKey(page, st.value!, TIMEOUT));
   } catch (e) {
     throw await stop('uncertain_execution', { error: whyNot(e), urlBefore, pressed, before: before.evidence }, (before.captureErrors ?? []).map(x => `직전 ${x}`));
   }

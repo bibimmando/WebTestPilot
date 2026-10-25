@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import type { Browser, Page } from 'playwright';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { StorageState } from './login.ts';
-import { deniedLink, openContext, snapshot, resolveRef, resolveGroup, resolveText, resolvePosition, settle, stableOnReload, DESKTOP, MOBILE, VIEWPORTS, type Policy, type Viewport } from './browser.ts';
+import { deniedLink, openContext, pressKey, snapshot, resolveRef, resolveGroup, resolveText, resolvePosition, settle, stableOnReload, DESKTOP, MOBILE, VIEWPORTS, type Policy, type Viewport } from './browser.ts';
 import { validate, freeze, mergePlans, cloneScenarios, startTargetsElsewhere, READS, COMPARES, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
 import { rulesText } from './rules.ts';
 import { crawl, pathOf, type SiteMap, type Template } from './sitemap.ts';
@@ -325,10 +325,10 @@ function browserTools(page: Page, policy: Policy, pinned: Map<string, Pinned>, v
         await page.getByRef(ref).selectOption({ label: value }, { timeout: ACTION_TIMEOUT });
         return after(`${ref}에서 선택함`, before);
       }),
-    tool('press', '키를 누른다 (예: Enter, Escape, Tab).', { key: { type: 'string' } }, ['key'], async ({ key }) => {
+    tool('press', '키를 누른다 (예: Enter, Escape, Tab). 브라우저 뒤로·앞으로 가기는 대상 없이 Alt+ArrowLeft·Alt+ArrowRight.', { key: { type: 'string' } }, ['key'], async ({ key }) => {
       acted = true;
       const before = await state();
-      await page.keyboard.press(key);
+      await pressKey(page, key, ACTION_TIMEOUT);
       return after(`${key} 누름`, before);
     }),
     // 접근성 트리로는 겹침·잘림이 보이지 않는다. 시각 검사(read visual)를 계획할 근거를 보려고 지금 보이는 영역만 찍는다.

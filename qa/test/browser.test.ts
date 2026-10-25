@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
-import { areaOf, auditPage, goneFromArea, MOBILE, openContext, stableOnReload, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
+import { areaOf, auditPage, pressKey, goneFromArea, MOBILE, openContext, stableOnReload, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
 
 let browser: Browser | undefined;
 let server: Server | undefined;
@@ -216,6 +216,18 @@ test('valuePattern은 숫자만 임의 값으로 바꾸고 숫자뿐이면 null'
   assert.equal(valuePattern('합계 1,000원'), '합계 .*?원');
   assert.equal(valuePattern('장바구니 (3)'), '장바구니 \\(.*?\\)');
   assert.equal(valuePattern('12'), null);
+  // 숫자 뒤 단어는 개수에 따라 단·복수가 바뀐다. 어느 쪽을 먼저 봐도 둘 다 맞는다.
+  for (const seen of ['2 pieces saved', '1 piece saved']) {
+    const re = new RegExp(`^${valuePattern(seen)}$`);
+    assert.deepEqual(['1 piece saved', '2 pieces saved', '2 pieces savedx', '2 cards saved'].map(t => re.test(t)), [true, true, false, false], seen);
+  }
+  // 실제 짝 하나만 허용하고 없는 철자는 만들지 않는다.
+  const forms = (seen: string, tries: string[]) => { const re = new RegExp(`^${valuePattern(seen)}$`); return tries.map(t => re.test(t)); };
+  assert.deepEqual(forms('1 piece saved', ['1 piecees saved']), [false]);
+  assert.deepEqual(forms('1 box', ['2 boxes', '2 boxs']), [true, false]);
+  assert.deepEqual(forms('3 boxes', ['1 box', '1 boxe']), [true, false]);
+  assert.deepEqual(forms('1 status saved', ['2 statuses saved', '2 statues saved', '2 statu saved']), [true, false, false]);
+  assert.deepEqual(forms('2 classes', ['1 class', '1 classe']), [true, false]);
   assert.equal(valuePattern('3,000 ₩'), null);
 });
 
@@ -372,4 +384,12 @@ test('품질·사용성 점검: ARIA 없는 모달의 보이는 배경 덮개 �
   assert.ok((await covered(base + '<div style="position:fixed;top:30%;left:20%;width:60%;padding:20px;background:#fff;z-index:1"><p>안내</p><button>창 닫기</button></div><div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2"><p style="position:absolute;top:0;left:0;margin:0;background:#fff">공지</p></div>')).includes('button "창 닫기"'), '모달 창의 버튼은 덮개 아래에 깔려도 결함이다');
   // 창이 덮개 안에 있는 모양도 모달이다.
   assert.deepEqual(await covered(base + '<div style="position:fixed;inset:0;background:rgba(0,0,0,.5)"><div style="margin:20% auto;width:50%;background:#fff"><p>공지</p><button>확인</button></div></div>'), [], '덮개 안의 창: 뒤의 버튼은 가림이 아니다');
+});
+
+test('pressKey: 이동 단축키만 goBack·goForward로, 상속 속성 이름·일반 키는 키 입력으로 보낸다', async () => {
+  const log: string[] = [];
+  const page = { keyboard: { press: async (k: string) => { log.push(`key ${k}`); } },
+    goBack: async () => { log.push('back'); return null; }, goForward: async () => { log.push('forward'); return null; } } as never;
+  for (const k of ['Alt+ArrowLeft', 'Meta+]', 'Enter', 'constructor', 'toString', '__proto__']) await pressKey(page, k, 1000);
+  assert.deepEqual(log, ['back', 'forward', 'key Enter', 'key constructor', 'key toString', 'key __proto__']);
 });

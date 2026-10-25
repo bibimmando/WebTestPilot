@@ -85,6 +85,8 @@ export type Report = {
   /** 품질·사용성 점검(일반 규칙 ③). 조작을 막으면 UI 결함, 아니면 개선 제안. 버그 집계와 따로 센다 */
   /** 발견 제목(AI). 없으면 보고서는 기대 동작과 코드가 만든 실제 한 줄을 보인다. 판정·등급에는 쓰지 않는다 */
   headlines?: Headlines;
+  /** 저장돼 있었지만 쓰지 않은 제목 수(판정 데이터가 바뀜·지문 형식이 다름·사실 대조 실패) */
+  headlinesRejected?: number;
   uiDefects: AuditItem[];
   improvements: AuditItem[];
   /** 다시 나오지 않았거나 화면이 안정되지 않아 확인하지 못한 점검 발견(관찰). 결함 건수에 넣지 않는다 */
@@ -133,7 +135,8 @@ const ROLE_TEXT: Record<string, string> = { link: '링크', button: '버튼', te
   slider: '슬라이더', table: '표', row: '표 행', cell: '표 칸', status: '상태 표시', alert: '알림', form: '입력 양식', group: '묶음', complementary: '보조 영역', search: '검색 영역' };
 /** 대상 패턴(정규식)을 읽는 글자로: 아무 글자·숫자 자리는 "…", 이스케이프는 원래 글자, 너무 길면 줄인다. 그 밖의 정규식 문법(그룹·글자 묶음·반복)이 남으면 읽는 말로 못 옮기므로 undefined. */
 const shownText = (p: string) => {
-  const t = p.replace(/^\^|\$$/g, '').replace(/\\d(?:[+*]|\{[\d,]+\})?|\.[*+]\??/g, '…').trim();
+  // 숫자 뒤 단·복수 짝(valuePattern의 "(?:pieces|piece)")은 처음 본 형태로 읽는다.
+  const t = p.replace(/^\^|\$$/g, '').replace(/\\d(?:[+*]|\{[\d,]+\})?|\.[*+]\??/g, '…').replace(/\(\?:([A-Za-z]+)\|[A-Za-z]+\)/g, '$1').trim();
   if (/\\[a-zA-Z]|(?<!\\)[()[\]{}|+*?]/.test(t)) return undefined;
   const u = t.replace(/\\(.)/g, '$1');
   return u.length > 40 ? `${u.slice(0, 38)}…` : u;
@@ -288,7 +291,11 @@ export function buildReport(dir: string): Report {
     evidenceGaps: { total: gaps.length, items: gaps },
     newTabs: results.scenarios.flatMap(s => (s.newTabs ?? []).map(t => ({ scenario: s.id, ...t }))),
     passed: { checks: Object.values(passedClasses).reduce((a, b) => a + b, 0), byClass: passedClasses },
-    ...(existsSync(join(dir, 'headlines.json')) ? { headlines: validHeadlines(read<Headlines>(join(dir, 'headlines.json')), { bugs, visual: of('ui_defect', 'improvement') }) } : {}),
+    ...(existsSync(join(dir, 'headlines.json')) ? (() => {
+      const saved = read<Headlines>(join(dir, 'headlines.json'));
+      const headlines = validHeadlines(saved, { bugs, visual: of('ui_defect', 'improvement') });
+      return { headlines, headlinesRejected: Object.keys(saved).length - Object.keys(headlines).length };
+    })() : {}),
   };
 }
 
@@ -312,7 +319,8 @@ const EXPECTED_AS: Record<string, (e: string) => string> = {
 /** 검사 기록만으로 만든 "실제" 한 줄(모델 없음). 발견 제목이 기대 동작이라 무엇이 틀렸는지 보이게 한다 */
 export function actualLine(x: ReportItem): string {
   const c = x.check;
-  if (x.visual) { const unmet = x.visual.criteria.filter(k => k.status === 'unmet').length; return `화면 조건 ${x.visual.criteria.length}개 중 ${unmet}개 위반`; }
+  // 시각 판정은 위반한 첫 조건의 근거(판정 AI가 화면에서 본 것)를 붙인다. 판정 자체가 그 근거에 기대므로 새 주장이 아니다.
+  if (x.visual) { const unmet = x.visual.criteria.filter(k => k.status === 'unmet'); return `화면 조건 ${x.visual.criteria.length}개 중 ${unmet.length}개 위반${unmet[0]?.evidence ? ` — ${clip(unmet[0].evidence, 70)}` : ''}`; }
   if (!c) return clip(x.reason, 80);
   const target = c.target ?? '현재 주소';
   if (c.actual === undefined) return `${target}의 ${READ_TEXT[c.read] ?? c.read}을 읽지 못함`;
@@ -369,8 +377,10 @@ export function checkHeadline(text: string, verifiable: string): string[] {
   for (const m of t.matchAll(/["“'‘]([^"”'’]+)["”'’]/g)) if (!verifiable.includes(m[1])) errors.push(`인용 "${m[1]}"은 검사 기록에 그대로 없습니다`);
   return errors;
 }
-/** 제목을 만든 입력 사실의 지문. 재판정·재실행으로 사실이 바뀌면 예전 제목을 쓰지 않는다 */
-export const factsHash = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 16);
+/** 제목을 만든 판정 데이터의 지문. 재판정·재실행으로 사실이 바뀌면 예전 제목을 쓰지 않는다. 보고서 문구가 바뀌어도 지문은 같다 */
+// 앞의 "d1:"은 지문 형식이다. 형식이 다른 예전 지문은 맞지 않아 버려지고, 버린 수는 보고서 실행 정보에 남는다.
+export const factsHash = (items: ReportItem[]) => `d1:${createHash('sha256')
+  .update(JSON.stringify(items.map(y => [y.id, y.page, y.level, y.title, y.steps, y.check ?? null, y.visual ?? null, y.classification.reason ?? null]))).digest('hex').slice(0, 16)}`;
 
 /** 저장된 제목 중 지금 사실과 지문이 같고 대조를 다시 통과한 것만 쓴다(손으로 고친 파일·예전 판정의 제목을 막는다) */
 function validHeadlines(saved: Headlines, rep: Pick<Report, 'bugs' | 'visual'>): Headlines {
@@ -379,7 +389,7 @@ function validHeadlines(saved: Headlines, rep: Pick<Report, 'bugs' | 'visual'>):
     const h = saved[findingKey(g[0])];
     if (!h) continue;
     const f = headlineFacts(g);
-    if (h.facts === factsHash(f.text) && !checkHeadline(h.text, f.verifiable).length) out[findingKey(g[0])] = h;
+    if (h.facts === factsHash(g) && !checkHeadline(h.text, f.verifiable).length) out[findingKey(g[0])] = h;
   }
   return out;
 }
@@ -721,6 +731,7 @@ export function renderHtml(rep: Report, dir: string): string {
     ${r.spentUsd !== undefined ? row('비용(추정)', `$${r.spentUsd.toFixed(2)}${r.budgetUsd ? ` / 한도 $${r.budgetUsd}` : ''} — 토큰 사용량 기준 추정`) : ''}
     ${row('판정 파일', `${esc(r.verdicts.file)} (${r.verdicts.stage === 'done' ? '판정 완료' : `판정 미완료: ${esc(r.verdicts.stage)} 단계 — 임시 결과`})${r.verdicts.later.length ? `. 이후 재판정: ${r.verdicts.later.map(l => `${esc(l.file)} ${esc(l.stage)}`).join(', ')}` : ''}`)}
     ${row('판정 집계', `요구사항 ${count(rep.system.requirement)} · 자율 ${count(rep.system.autonomous)} · 다른 페이지 실행 ${count(rep.system.variant)} · 준비 확인 ${count(rep.system.preparation)}`)}
+    ${rep.headlines ? row('AI 발견 제목', `${Object.keys(rep.headlines).length}개 사용${rep.headlinesRejected ? `, ${rep.headlinesRejected}개 버림(판정 데이터가 바뀌었거나 지문 형식이 다르거나 사실 대조 실패)` : ''}`) : ''}
     ${row('통과 내역', `${rep.passed.checks}개 (${Object.entries(rep.passed.byClass).map(([k, n]) => `${esc(CLASS_TEXT[k] ?? k)} ${n}`).join(', ')})`)}
     ${rep.newTabs.length ? row('새로 열린 탭', `${rep.newTabs.map(t => `${esc(t.scenario)} ${esc(t.after)} → ${esc(t.url)}`).join('<br>')}`) : ''}
     ${rep.coverage.failedUrls.length ? row('열지 못한 URL', rep.coverage.failedUrls.map(esc).join(', ')) : ''}

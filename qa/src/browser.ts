@@ -82,6 +82,17 @@ export function snapshot(page: Page, ref?: string, depth?: number): Promise<stri
   return (ref ? page.getByRef(ref) : page.locator('body')).ariaSnapshot({ mode: 'ai', ...(depth ? { depth } : {}) });
 }
 
+// 브라우저 이동 단축키는 페이지가 아니라 브라우저 화면 틀이 처리한다. Playwright 키 입력은 페이지에만 전달돼 실제로 이동하지 않는다(Maison 실측: Alt+ArrowLeft 뒤 URL 그대로).
+const HISTORY_KEYS: Record<string, 'back' | 'forward'> = { 'Alt+ArrowLeft': 'back', 'Alt+ArrowRight': 'forward', 'Meta+[': 'back', 'Meta+]': 'forward',
+  'Meta+ArrowLeft': 'back', 'Meta+ArrowRight': 'forward', BrowserBack: 'back', BrowserForward: 'forward' };
+/** 대상 없이 누르는 키. 브라우저 이동 단축키는 같은 뜻의 이동(goBack·goForward)으로 실행한다. 돌아갈 기록이 없으면 실제 브라우저처럼 아무 일도 없다 */
+export async function pressKey(page: Page, key: string, timeout: number): Promise<void> {
+  // 계획의 키는 임의 문자열이다. 상속 속성(constructor 등)을 이동 키로 읽지 않는다.
+  const h = Object.hasOwn(HISTORY_KEYS, key) ? HISTORY_KEYS[key] : undefined;
+  if (!h) return page.keyboard.press(key);
+  await (h === 'back' ? page.goBack({ timeout }) : page.goForward({ timeout }));
+}
+
 /**
  * 화면이 그려질 때까지 기다린다: 네트워크가 잠잠해지고 접근성 snapshot이 연속 두 번 같으면 준비된 것으로 본다.
  * 기한 안에 멈추지 않으면 false (계속 바뀌는 화면). 결과를 기록해 시작 증거가 준비 전 화면인지 구분하게 한다.
@@ -372,11 +383,25 @@ function describe(n: Node): Target | Reason {
   return n.name !== undefined ? { role: n.role, name: anchored } : { role: n.role, text: anchored };
 }
 
-/** 숫자 구간을 임의 값으로 바꾼 정규식 source. 숫자 외의 글자가 없으면 신원이 없으므로 null. */
+/**
+ * 숫자 구간을 임의 값으로 바꾼 정규식 source. 숫자 외의 글자가 없으면 신원이 없으므로 null.
+ * 숫자 바로 뒤 단어는 개수에 따라 단·복수가 바뀌므로("1 piece saved"·"2 pieces saved") 본 형태와 그 짝 하나만 허용한다.
+ * shortcut: 끝에 s·es를 붙이는 영어 규칙형만 다룬다. 불규칙 복수(child→children)·-y→-ies·다른 언어의 굴절은 그대로 실패한다.
+ */
 export function valuePattern(label: string): string | null {
   const parts = label.trim().split(/\d[\d,.]*/);
   if (!parts.join('').replace(/[\s\p{P}\p{S}]/gu, '')) return null;
-  return parts.map(escapeRegExp).join('.*?');
+  return parts.map((p, i) => i === 0 ? escapeRegExp(p)
+    : escapeRegExp(p).replace(/^(\s+)([A-Za-z]{3,})\b/, (_, sp: string, w: string) => `${sp}(?:${numberForms(w).join('|')})`)).join('.*?');
+}
+
+/** 본 단어와 그 단·복수 짝 하나(규칙형만). 없는 철자(piecees·boxs)는 만들지 않는다 */
+export function numberForms(w: string): string[] {
+  const sibilant = /(s|x|z|ch|sh)$/i;
+  // -ss·-us·-is로 끝나면 단수로 본다(class·status·analysis).
+  const plural = /s$/i.test(w) && !/(ss|us|is)$/i.test(w);
+  const other = plural ? (/es$/i.test(w) && sibilant.test(w.slice(0, -2)) ? w.slice(0, -2) : w.slice(0, -1)) : `${w}${sibilant.test(w) ? 'es' : 's'}`;
+  return [w, other];
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
