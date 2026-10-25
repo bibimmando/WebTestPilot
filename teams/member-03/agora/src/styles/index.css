@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 디자인 토큰. 색은 여기서만 정하고 컴포넌트는 이름으로 쓴다.
+   RGB 숫자로 적어야 Tailwind 의 투명도 표기(text-muted/70)를 쓸 수 있다. */
+:root {
+  --bg: 243 244 247;
+  --surface: 255 255 255;
+  --line: 226 229 236;
+  --ink: 21 23 28;
+  --muted: 95 102 117;
+  --accent: 79 70 229;
+  --accent-strong: 55 48 163;
+  --accent-soft: 238 240 255;
+  --up: 5 150 105;
+  --down: 225 29 72;
+  --on-accent: 255 255 255;
+  color-scheme: light;
+}
+
+/* 어두운 테마. 강조색은 어두운 바탕에서 읽히도록 밝게, 그 위 글자(on-accent)는 어둡게 바꾼다. */
+:root.dark {
+  --bg: 14 15 19;
+  --surface: 26 28 35;
+  --line: 48 52 64;
+  --ink: 232 234 240;
+  --muted: 152 159 174;
+  --accent: 129 140 248;
+  --accent-strong: 165 180 252;
+  --accent-soft: 39 41 77;
+  --up: 52 211 153;
+  --down: 244 63 94;
+  --on-accent: 15 17 22;
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: rgb(var(--bg));
+    color: rgb(var(--ink));
+    @apply font-sans antialiased;
+  }
+  /* Edge 가 비밀번호 칸에 자체 보기 버튼을 덧붙여 우리 버튼과 두 개가 된다. 우리 것만 남긴다. */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-line bg-surface;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-on-accent hover:bg-accent-strong;
+  }
+  .btn-outline {
+    @apply btn border border-line bg-surface text-ink hover:bg-bg;
+  }
+  .btn-ghost {
+    @apply btn px-3 text-muted hover:bg-bg hover:text-ink;
+  }
+  .btn-danger {
+    @apply btn bg-down text-white hover:opacity-90;
+  }
+  .input {
+    @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-muted/70 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20;
+  }
+  .field-error {
+    @apply mt-1 text-xs font-medium text-down;
+  }
+  .chip {
+    @apply inline-flex items-center rounded-full bg-accent-soft px-2 py-0.5 text-xs font-semibold text-accent-strong;
+  }
+}

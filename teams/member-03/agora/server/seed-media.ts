@@ -1,0 +1,91 @@
+/**
+ * 시드 이미지 목록. public/media/seed/ 의 파일과 크기.
+ * 사진은 Unsplash 작가들의 사진을 Picsum(picsum.photos)으로 받았다. 출처는 public/media/seed/CREDITS.md
+ */
+export const MEDIA = {
+  c_dev_icon: { src: "/media/seed/c-dev-icon.jpg", width: 256, height: 256 },
+  c_dev_banner: { src: "/media/seed/c-dev-banner.jpg", width: 1600, height: 400 },
+  c_games_icon: { src: "/media/seed/c-games-icon.jpg", width: 256, height: 256 },
+  c_games_banner: { src: "/media/seed/c-games-banner.jpg", width: 1600, height: 400 },
+  c_food_icon: { src: "/media/seed/c-food-icon.jpg", width: 256, height: 256 },
+  c_food_banner: { src: "/media/seed/c-food-banner.jpg", width: 1600, height: 400 },
+  c_travel_icon: { src: "/media/seed/c-travel-icon.jpg", width: 256, height: 256 },
+  c_travel_banner: { src: "/media/seed/c-travel-banner.jpg", width: 1600, height: 400 },
+  c_ask_icon: { src: "/media/seed/c-ask-icon.jpg", width: 256, height: 256 },
+  c_ask_banner: { src: "/media/seed/c-ask-banner.jpg", width: 1600, height: 400 },
+  c_notice_icon: { src: "/media/seed/c-notice-icon.jpg", width: 256, height: 256 },
+  c_notice_banner: { src: "/media/seed/c-notice-banner.jpg", width: 1600, height: 400 },
+  c_stocks_icon: { src: "/media/seed/c-stocks-icon.jpg", width: 256, height: 256 },
+  c_stocks_banner: { src: "/media/seed/c-stocks-banner.jpg", width: 1600, height: 400 },
+  c_movies_icon: { src: "/media/seed/c-movies-icon.jpg", width: 256, height: 256 },
+  c_movies_banner: { src: "/media/seed/c-movies-banner.jpg", width: 1600, height: 400 },
+  c_music_icon: { src: "/media/seed/c-music-icon.jpg", width: 256, height: 256 },
+  c_music_banner: { src: "/media/seed/c-music-banner.jpg", width: 1600, height: 400 },
+  c_sports_icon: { src: "/media/seed/c-sports-icon.jpg", width: 256, height: 256 },
+  c_sports_banner: { src: "/media/seed/c-sports-banner.jpg", width: 1600, height: 400 },
+  c_fitness_icon: { src: "/media/seed/c-fitness-icon.jpg", width: 256, height: 256 },
+  c_fitness_banner: { src: "/media/seed/c-fitness-banner.jpg", width: 1600, height: 400 },
+  c_pets_icon: { src: "/media/seed/c-pets-icon.jpg", width: 256, height: 256 },
+  c_pets_banner: { src: "/media/seed/c-pets-banner.jpg", width: 1600, height: 400 },
+  c_memes_icon: { src: "/media/seed/c-memes-icon.jpg", width: 256, height: 256 },
+  c_memes_banner: { src: "/media/seed/c-memes-banner.jpg", width: 1600, height: 400 },
+  c_gadgets_icon: { src: "/media/seed/c-gadgets-icon.jpg", width: 256, height: 256 },
+  c_gadgets_banner: { src: "/media/seed/c-gadgets-banner.jpg", width: 1600, height: 400 },
+  c_career_icon: { src: "/media/seed/c-career-icon.jpg", width: 256, height: 256 },
+  c_career_banner: { src: "/media/seed/c-career-banner.jpg", width: 1600, height: 400 },
+  c_photo_icon: { src: "/media/seed/c-photo-icon.jpg", width: 256, height: 256 },
+  c_photo_banner: { src: "/media/seed/c-photo-banner.jpg", width: 1600, height: 400 },
+  c_life_icon: { src: "/media/seed/c-life-icon.jpg", width: 256, height: 256 },
+  c_life_banner: { src: "/media/seed/c-life-banner.jpg", width: 1600, height: 400 },
+  c_books_icon: { src: "/media/seed/c-books-icon.jpg", width: 256, height: 256 },
+  c_books_banner: { src: "/media/seed/c-books-banner.jpg", width: 1600, height: 400 },
+  u_alice: { src: "/media/seed/u-alice.jpg", width: 256, height: 256 },
+  u_bob: { src: "/media/seed/u-bob.jpg", width: 256, height: 256 },
+  u_carol: { src: "/media/seed/u-carol.jpg", width: 256, height: 256 },
+  p96: { src: "/media/seed/p-96.jpg", width: 1600, height: 1067 },
+  p158: { src: "/media/seed/p-158.jpg", width: 1600, height: 1067 },
+  p635: { src: "/media/seed/p-635.jpg", width: 1600, height: 1067 },
+  p437: { src: "/media/seed/p-437.jpg", width: 1600, height: 1053 },
+  p999: { src: "/media/seed/p-999.jpg", width: 1600, height: 1067 },
+  p292: { src: "/media/seed/p-292.jpg", width: 1600, height: 1062 },
+  p428: { src: "/media/seed/p-428.jpg", width: 1600, height: 1000 },
+  p1057: { src: "/media/seed/p-1057.jpg", width: 1600, height: 1068 },
+  p603: { src: "/media/seed/p-603.jpg", width: 1600, height: 1200 },
+  p702: { src: "/media/seed/p-702.jpg", width: 1600, height: 1067 },
+  p645: { src: "/media/seed/p-645.jpg", width: 1600, height: 1067 },
+  p419: { src: "/media/seed/p-419.jpg", width: 1600, height: 1067 },
+  p369: { src: "/media/seed/p-369.jpg", width: 1600, height: 1067 },
+  p1065: { src: "/media/seed/p-1065.jpg", width: 1600, height: 2400 },
+  p322: { src: "/media/seed/p-322.jpg", width: 1600, height: 1067 },
+  p870: { src: "/media/seed/p-870.jpg", width: 1600, height: 2391 },
+  p521: { src: "/media/seed/p-521.jpg", width: 1600, height: 1067 },
+  p3: { src: "/media/seed/p-3.jpg", width: 1600, height: 1067 },
+  p532: { src: "/media/seed/p-532.jpg", width: 1600, height: 1157 },
+  p529: { src: "/media/seed/p-529.jpg", width: 1600, height: 1200 },
+  p1080: { src: "/media/seed/p-1080.jpg", width: 1600, height: 1067 },
+  p705: { src: "/media/seed/p-705.jpg", width: 1600, height: 1067 },
+  p42: { src: "/media/seed/p-42.jpg", width: 1600, height: 1067 },
+  p237: { src: "/media/seed/p-237.jpg", width: 1600, height: 958 },
+  p40: { src: "/media/seed/p-40.jpg", width: 1600, height: 1093 },
+  p901: { src: "/media/seed/p-901.jpg", width: 1600, height: 1600 },
+  p903: { src: "/media/seed/p-903.jpg", width: 1600, height: 1067 },
+  p770: { src: "/media/seed/p-770.jpg", width: 1600, height: 1067 },
+  p433: { src: "/media/seed/p-433.jpg", width: 1600, height: 1067 },
+  p1082: { src: "/media/seed/p-1082.jpg", width: 1600, height: 1067 },
+  p1035: { src: "/media/seed/p-1035.jpg", width: 1600, height: 1067 },
+  app_budget: { src: "/media/seed/app-budget.jpg", width: 1350, height: 1200 },
+} as const;
+
+export type MediaKey = keyof typeof MEDIA;
+
+/**
+ * 시드 동영상. 이 프로젝트에서 캔버스 애니메이션을 녹화해 직접 만든 것이라 외부 저작물이 아니다 (CREDITS.md).
+ * 소리는 없다. duration 은 파일에 적힌 길이(초).
+ */
+export const VIDEOS = {
+  v_loading_99: { src: "/media/seed/v-loading-99.webm", width: 640, height: 360, duration: 7 },
+  v_night_sky: { src: "/media/seed/v-night-sky.webm", width: 640, height: 360, duration: 8 },
+  v_equalizer: { src: "/media/seed/v-equalizer.webm", width: 640, height: 360, duration: 6 },
+} as const;
+
+export type VideoKey = keyof typeof VIDEOS;
