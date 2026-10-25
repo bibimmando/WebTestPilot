@@ -4,13 +4,35 @@ import type { Browser, BrowserContext, BrowserContextOptions, ElementHandle, Pag
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const LOCAL_SCHEMES = new Set(['data:', 'about:', 'blob:']);
+// 다른 origin이어도 화면을 그리는 정적 자원(이미지·글꼴·스타일시트 GET)은 허용한다(2026-10-25 사용자 결정). 막으면 이미지가 깨지고 대체 글꼴로
+// 줄바꿈이 달라져 시각 판정이 우리 환경의 결함을 앱 결함으로 본다(Maison 10/25: 외부 이미지·웹 글꼴 718건 차단). 스크립트·fetch·이동·쓰기는 그대로 막는다.
+// 이것은 네트워크 권한 확장이다: 앱의 스크립트가 이미지 요청으로 아무 외부 주소에 GET(쿼리 포함)을 보낼 수 있다. 쿠키·SameSite·CORS·리다이렉트는 브라우저가 직접 처리한다(프록시하지 않음).
+// shortcut: 외부 origin 허용 목록(assetOrigins)은 없다. 평가 대상이 외부 GET에 부작용을 두는 앱이면 목록 방식으로 좁힌다.
+const STATIC_TYPES = new Set(['image', 'font', 'stylesheet']);
+const isStatic = (req: { method(): string; resourceType(): string; isNavigationRequest(): boolean }) =>
+  req.method() === 'GET' && STATIC_TYPES.has(req.resourceType()) && !req.isNavigationRequest();
+
+/**
+ * 정책이 막은 다른 origin 요청을 origin별 건수로 요약한다(경로·쿼리 없음: 모델 입력으로 간다). 금지 주소·WebSocket·허용 origin 안 쓰기는 따로 기록되므로 뺀다.
+ * 분류·시각 판정에 넣어, 막힌 스크립트·요청 때문에 덜 그려진 화면을 앱 결함으로 보지 않게 한다.
+ */
+export function blockedSummary(blocked: string[] | undefined, origins: string[]): string | undefined {
+  const n = new Map<string, number>();
+  for (const b of blocked ?? []) {
+    const [method, url] = b.split(' ');
+    if (method === 'DENY' || method === 'WS' || !url) continue;
+    let o: string; try { o = new URL(url).origin; } catch { continue; }
+    if (!origins.includes(o)) n.set(o, (n.get(o) ?? 0) + 1);
+  }
+  return n.size ? [...n].map(([o, k]) => `${o} ${k}건`).join(', ') : undefined;
+}
 
 /** deny: 요청하지 않을 주소(부분 문자열). 로그아웃처럼 로그인 상태를 끊는 주소를 앱 설정에서 받는다 */
 export type Policy = { origins: string[]; allowWrites?: boolean; deny?: string[] };
 export type Guarded = { context: BrowserContext; blocked: string[]; violations: string[] };
 
 /**
- * 정책을 강제하는 브라우저 컨텍스트를 연다. 허용 origin 밖 요청과 권한 없는 쓰기 요청은 막고(blocked),
+ * 정책을 강제하는 브라우저 컨텍스트를 연다. 허용 origin 밖 요청(읽기 전용 정적 자원 제외)과 권한 없는 쓰기 요청은 막고(blocked),
  * 막을 수 없는 우회(외부로의 리다이렉트)는 violations에 남긴다. violations가 있으면 그 실행은 신뢰하지 않는다.
  */
 /**
@@ -46,7 +68,7 @@ export async function guardContext(context: BrowserContext, policy: Policy, viol
     const req = route.request();
     const denied = isDenied(req.url());
     // 금지 주소는 안전장치로 막는다(서버 세션을 지킨다). 링크 클릭은 그 전에 행동 단계가 거절한다(deniedLink): 이동을 막으면 오류 페이지가 남는다.
-    const permitted = !denied && allowed(req.url()) && (policy.allowWrites || SAFE_METHODS.has(req.method()));
+    const permitted = !denied && ((allowed(req.url()) && (policy.allowWrites || SAFE_METHODS.has(req.method()))) || isStatic(req));
     // 라우트는 리다이렉트의 다음 요청을 보지 못한다. 금지 주소가 있으면 페이지 이동은 리다이렉트를 따라가지 않고 받아 와서
     // 목적지가 금지 주소·허용 밖이면 막는다(허용된 /go가 /logout으로 보내 세션을 끊는 경우).
     if (permitted && policy.deny?.length && req.isNavigationRequest()) {
@@ -64,9 +86,13 @@ export async function guardContext(context: BrowserContext, policy: Policy, viol
     if (allowed(req.url()) && !SAFE_METHODS.has(req.method())) { const u = new URL(req.url()); onWrite?.(`${req.method()} ${u.origin}${u.pathname}`); }
     return route.abort('blockedbyclient');
   });
-  // route 핸들러는 리다이렉트의 다음 요청을 보지 못하므로 사후에 감지한다.
+  // route 핸들러는 리다이렉트의 다음 요청을 보지 못하므로 사후에 감지한다(막지 못한다. 위반이 있으면 그 실행은 신뢰하지 않는다).
+  // shortcut: 이동이 아닌 요청(이미지·fetch GET)의 리다이렉트가 금지 주소로 가면 막지 못하고 위반으로만 남긴다. 실측에서 보이면 해당 자원을 프록시로 막는다.
   context.on('request', req => {
-    if (req.redirectedFrom() && !allowed(req.url())) violations.push(`redirect ${req.url()}`);
+    if (!req.redirectedFrom()) return;
+    if (isDenied(req.url())) violations.push(`redirect to denied ${req.url()}`);
+    // 정적 자원(이미지 CDN 등)의 외부 리다이렉트는 허용 범위다. 이동·스크립트 요청의 외부 리다이렉트만 위반이다.
+    else if (!allowed(req.url()) && !isStatic(req)) violations.push(`redirect ${req.url()}`);
   });
   // WebSocket 메시지는 읽기·쓰기를 구분할 수 없으므로 쓰기 권한이 있을 때만 허용 origin에 연결한다.
   await context.routeWebSocket('**', ws => {

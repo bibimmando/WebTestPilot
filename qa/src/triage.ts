@@ -2,7 +2,7 @@
 // 분류는 판정이 아니라 후보 상태다. 결함 후보는 최초 실행에 고정된 입력으로 한 번 재실행해 재현 여부를 별도로 남긴다.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import type { Policy, Signal } from './browser.ts';
+import { blockedSummary, type Policy, type Signal } from './browser.ts';
 import type { Plan } from './plan.ts';
 import { ruleOf } from './rules.ts';
 import { sequence } from './generate.ts';
@@ -335,6 +335,8 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
     })(),
     // 우리가 막은 쓰기 요청. 실패가 그 요청의 결과(저장·전송)에 기대면 앱이 아니라 차단 때문일 수 있다.
     ...(r.writeBlocked?.length ? [`이 시나리오에서 테스트 정책이 막은 앱의 쓰기 요청 (after = 요청이 나간 단계): ${JSON.stringify(r.writeBlocked.slice(0, 10))}`] : []),
+    // 우리가 막은 다른 서버 요청(스크립트·fetch 등). 화면이 덜 그려지거나 기능이 비면 앱이 아니라 차단 때문일 수 있다.
+    ...(blockedSummary(r.blocked, [new URL(s.start.url).origin]) ? [`이 시나리오에서 테스트 정책이 막은 다른 서버 요청(origin별 건수): ${blockedSummary(r.blocked, [new URL(s.start.url).origin])}`] : []),
     ...(r.newTabs?.length ? [`이 시나리오에서 새 탭이 열림(검사는 원래 탭을 읽음): ${JSON.stringify(r.newTabs)}`] : []),
     // 기대값 없이 잡힌 신호. 행동 직후의 스크립트 예외·서버 오류는 "앱이 반응하지 않았다"를 뒷받침할 수 있다.
     ...(r.signals?.length ? [`이 시나리오의 콘솔·요청 오류 (after = 그 신호가 난 단계${r.signals.length > 20 || r.signalsDropped ? `, 일부만 보임: 전체 ${r.signals.length + (r.signalsDropped ?? 0)}개 중 앞 20개` : ''}): ${JSON.stringify(r.signals.slice(0, 20))}`] : []),

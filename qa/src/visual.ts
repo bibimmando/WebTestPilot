@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
 import { criteriaOf, type Plan } from './plan.ts';
 import { ruleOf } from './rules.ts';
+import { blockedSummary } from './browser.ts';
 import type { RunResult } from './run.ts';
 import type { VisualShot } from './reconcile.ts';
 import { runAgent, type Budget, type Send, type Tool } from './agent.ts';
@@ -82,7 +83,9 @@ export async function judgeVisual(o: { plan: Plan; run: RunResult; verdicts: Ver
   async function one(v: Verdict) {
     const c = checkOf(o.plan, v.id);
     const s = o.plan.scenarios.find(x => x.id === v.scenario)!;
-    const shot = o.run.scenarios.find(x => x.id === v.scenario)?.checks.find(x => x.id === v.id)?.visual;
+    const sr = o.run.scenarios.find(x => x.id === v.scenario);
+    const shot = sr?.checks.find(x => x.id === v.id)?.visual;
+    const blockedNote = sr && blockedSummary(sr.blocked, [new URL(s.start.url).origin]);
     const criteria = criteriaOf(c.expected ?? '') ?? [];
     // 계획 검증을 거치지 않은 조건 없는 검사는 빈 조건으로 "모두 충족"이 되므로 판정하지 않는다.
     if (!criteria.length) { v.class = 'uncertain'; v.triage = { error: '시각 검사의 조건을 읽을 수 없음' }; return; }
@@ -114,6 +117,8 @@ export async function judgeVisual(o: { plan: Plan; run: RunResult; verdicts: Ver
       ...(rule ? [`일반 규칙 ${rule.id}: ${rule.rule}. 정상 예외: ${rule.exceptions ?? '없음'}`] : []),
       `화면 크기 ${JSON.stringify(shot.viewport)}, 스크롤 ${JSON.stringify(shot.scroll)}${shot.box ? `, 검사 대상 위치(화면 기준 px) ${JSON.stringify(shot.box)}` : ', 대상 없음(화면 전체)'}`,
       '이미지는 그 시점의 보이는 영역 스크린샷입니다.',
+      // 정책이 막은 다른 서버 요청(스크립트 등)이 있으면 알린다. 그 때문에 비거나 깨진 부분은 앱 결함의 근거가 아니다.
+      ...(blockedNote ? [`테스트 정책이 이 시나리오에서 다른 서버 요청을 막았습니다(${blockedNote}). 그 때문일 수 있는 빈 영역·깨진 요소는 위반 근거로 삼지 말고 unknown으로 두세요.`] : []),
     ].join('\n') }, image(join(o.run.runDir, shot.image))];
     const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools: [tool], user, budget: o.budget, maxTurns: 3, maxTokens: 4000, nudge: true });
     v.triageLog = log(o.run.runDir, o.logDir, v.id, result);

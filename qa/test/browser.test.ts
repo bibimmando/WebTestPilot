@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
-import { areaOf, auditPage, pressKey, goneFromArea, MOBILE, openContext, stableOnReload, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
+import { areaOf, auditPage, blockedSummary, pressKey, goneFromArea, MOBILE, openContext, stableOnReload, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
 
 let browser: Browser | undefined;
 let server: Server | undefined;
@@ -193,6 +193,52 @@ test('쓰기 요청·허용 밖 origin·WebSocket을 막고 서버에 도달하�
   assert.ok(blocked.some(b => b.startsWith('POST') && b.endsWith('/w')));
   assert.ok(blocked.some(b => b.startsWith('WS ')));
   await context.close();
+});
+
+test('다른 origin의 이미지·글꼴·스타일시트 GET은 브라우저가 직접 받아 쓰고, 스크립트·fetch·이동·금지 주소는 막는다', async t => {
+  // 다른 origin(다른 포트)의 서버. 유효한 1×1 PNG와 CSS를 준다.
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const got: string[] = [];
+  const cdn = createServer((req, res) => {
+    got.push(`${req.method} ${req.url}`);
+    if (req.url === '/redirect') { res.writeHead(302, { location: '/moved.png' }); return res.end(); }
+    if (req.url === '/to-denied') { res.writeHead(302, { location: '/denied/logout' }); return res.end(); }
+    if (req.url!.endsWith('.png')) { res.writeHead(200, { 'content-type': 'image/png' }); return res.end(PNG); }
+    if (req.url === '/s.css') { res.writeHead(200, { 'content-type': 'text/css' }); return res.end('#probe { color: rgb(1, 2, 3); }'); }
+    res.end('');
+  });
+  await new Promise<void>(r => cdn.listen(0, '127.0.0.1', r));
+  const other = `http://127.0.0.1:${(cdn.address() as { port: number }).port}`;
+  // 받아 넘긴(fulfill) 문서에서 로컬 주소(127.0.0.1)로 가는 요청은 크롬의 사설망 접근 보호가 막는다. 공용 사이트에는 없는 테스트 환경의 제약이라 끈다.
+  const b = await chromium.launch({ args: ['--disable-features=BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults,LocalNetworkAccessChecks'] });
+  t.after(async () => { await b.close(); cdn.closeAllConnections(); cdn.close(); });
+  const { context, blocked, violations } = await openContext(b, { origins: [origin], deny: ['/denied'] });
+  const p = await context.newPage();
+  await p.goto(origin);
+  await p.evaluate(o => {
+    document.body.insertAdjacentHTML('beforeend', `<p id="probe">x</p><img id="a" src="${o}/a.png"><link rel="stylesheet" href="${o}/s.css"><img src="${o}/denied.png"><img id="r" src="${o}/redirect"><img src="${o}/to-denied">`);
+    new FontFace('X', `url(${o}/f.woff2)`).load().catch(() => {});
+    const s = document.createElement('script'); s.src = `${o}/x.js`; document.body.append(s);
+  }, other);
+  // 자원이 실제로 쓰였다: 이미지가 그려지고(리다이렉트한 이미지 포함) 스타일이 적용된다.
+  await p.waitForFunction(() => (document.getElementById('a') as HTMLImageElement).naturalWidth === 1 && (document.getElementById('r') as HTMLImageElement).naturalWidth === 1
+    && getComputedStyle(document.getElementById('probe')!).color === 'rgb(1, 2, 3)', null, { timeout: 5000 });
+  assert.equal(await p.evaluate(o => fetch(`${o}/api`).then(() => 'ok', () => 'blocked'), other), 'blocked');
+  assert.ok(['GET /a.png', 'GET /s.css', 'GET /f.woff2', 'GET /redirect', 'GET /moved.png'].every(x => got.includes(x)), got.join('\n'));
+  assert.ok(['/x.js', '/api', '/denied.png'].every(path => blocked.some(x => x.endsWith(path))), blocked.join('\n'));
+  // 이동이 아닌 요청의 리다이렉트는 막지 못한다. 금지 주소로 갔으면 위반으로 남겨 실행을 믿지 않게 한다. 다른 정적 자원 리다이렉트는 위반이 아니다.
+  await p.waitForTimeout(300);
+  assert.deepEqual(violations.map(v => v.replace(other, '')), ['redirect to denied /denied/logout']);
+  // 다른 origin으로의 페이지 이동은 그대로 막는다.
+  await p.goto(`${other}/page`).catch(() => {});
+  assert.ok(!got.includes('GET /page'));
+  await context.close();
+});
+
+test('blockedSummary: 막힌 다른 서버 요청을 origin별 건수로(경로·쿼리·금지 주소·WebSocket·허용 origin 제외)', () => {
+  assert.equal(blockedSummary(['GET https://cdn.x/a.js?token=1', 'GET https://cdn.x/b.js', 'POST https://api.y/z', 'DENY GET https://app/logout', 'WS ws://app/s', 'POST https://app/save'], ['https://app']),
+    'https://cdn.x 2건, https://api.y 1건');
+  assert.equal(blockedSummary([], ['https://app']), undefined);
 });
 
 test('외부로의 리다이렉트는 위반으로 남긴다', async () => {
