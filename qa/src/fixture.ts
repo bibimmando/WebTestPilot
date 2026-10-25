@@ -296,9 +296,14 @@ async function read(page: Page, loc: Locator | undefined, c: Check, expected: st
   // 선택 상자는 화면(snapshot)과 select 동작이 쓰는 옵션 라벨로 읽는다. 내부 value는 모델이 볼 수 없다.
   if (c.read === 'value') {
     // 다중 선택은 라벨 배열(JSON)로 남겨 "A, B" 같은 라벨끼리 섞이지 않게 한다.
-    const label = await loc.evaluate(e => !(e instanceof HTMLSelectElement) ? null
-      : e.multiple ? JSON.stringify([...e.selectedOptions].map(o => o.label)) : e.selectedOptions[0]?.label ?? '');
-    return done(label ?? await loc.inputValue(), count);
+    const label = await loc.evaluate(e => e instanceof HTMLSelectElement ? (e.multiple ? JSON.stringify([...e.selectedOptions].map(o => o.label)) : e.selectedOptions[0]?.label ?? '')
+      : e instanceof HTMLInputElement || e instanceof HTMLTextAreaElement ? e.value : null);
+    if (label !== null) return done(label, count);
+    // 폼 요소가 아닌 콤보박스(role=combobox인 div·button)는 inputValue가 오류다. snapshot이 이름 뒤에 보여 주는 값(모델이 본 것)으로 읽는다.
+    // shortcut: 콤보박스만 읽는다. listbox(선택 항목)·slider·spinbutton(aria-valuenow)은 읽는 규칙이 없어 값을 못 읽음으로 둔다. 실측에서 필요해지면 역할별로 추가.
+    const [n] = await loc.ariaSnapshotJSON({ mode: 'ai' }) as AriaNode[];
+    if (typeof n === 'object' && n.role === 'combobox' && n.text !== undefined) return done(n.text, count);
+    return { status: 'unresolved', count, reason: `값을 읽는 규칙이 없는 요소(${typeof n === 'object' ? n.role : '글자'})이거나 보이는 값이 없음` };
   }
   if (c.read === 'checked') return done(String(await loc.isChecked()), count);
   return done(String(await loc.isVisible()), count);

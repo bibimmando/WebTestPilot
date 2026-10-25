@@ -128,7 +128,7 @@ test('분류·재현: 재현되는 불일치, AI가 인용으로 분류한 사�
   assert.equal(v['S2.A1'].observed, 'not_executed:target_changed:0');
   assert.equal(v['S2.A1'].class, 'app_defect_candidate');
   assert.deepEqual(v['S2.A1'].triage, { reason: '시작 화면에 계획한 버튼이 없다', quotes: [{ file: 'evidence/S2.A1.aria.txt', text: 'button "쿠폰 적용"' }] });
-  assert.equal(send.calls, 4, 'S1.C2 1번 + S2.A1 2번(첫 답 거부) + S3.C1 1번');
+  assert.equal(send.calls, 5, 'S1.C2 2번(글로만 답해 한 번 다시 요청) + S2.A1 2번(첫 답 거부) + S3.C1 1번');
   assert.ok(existsSync(`${run.runDir}/triage/S2.A1.json`), 'AI 분류 대화 기록을 남긴다');
   assert.equal(v['S2.A1'].reproduction, 'reproduced');
   assert.deepEqual([v['S2.C1'].class, v['S2.C1'].cause], ['not_run', 'S2.A1']);
@@ -346,7 +346,8 @@ test('누르지 못한 행동은 Playwright가 남긴 사유(가로챈 요소)�
   const msg = send.firstMessages.find(m => m.includes('실패한 항목 S1.A1'))!;
   assert.match(msg, /오류 원문: [\s\S]*intercepts pointer events/);
   assert.match(msg, /첨부 이미지: evidence\/S1\.A1\.png/);
-  assert.deepEqual(images, ['base64']);
+  // 가짜 모델이 글로만 답해 한 번 다시 요청한다. 두 요청 모두 같은 첫 메시지(이미지 한 장)를 보낸다.
+  assert.deepEqual(images, ['base64', 'base64']);
 });
 
 test('쓰기를 막은 실행: 같은 화면의 저장 요청을 막은 뒤의 실패는 "쓰기 차단", 쓰기 없는 결함·이동 결함은 그대로', async () => {

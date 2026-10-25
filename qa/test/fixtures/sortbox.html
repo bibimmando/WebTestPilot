@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>정렬 상자</title></head>
+<body>
+<main>
+  <h1>상품</h1>
+  <!-- 네이티브 select가 아닌 ARIA 콤보박스(버튼 + 목록 상자). #bug이면 목록은 정렬되지만 상자에 보이는 값이 바뀌지 않는다. -->
+  <span id="lbl">정렬</span>
+  <button id="box" role="combobox" aria-labelledby="lbl" aria-haspopup="listbox" aria-expanded="false" aria-controls="opts">최신순</button>
+  <ul id="opts" role="listbox" aria-label="정렬 기준" hidden>
+    <li role="option" aria-selected="true">최신순</li>
+    <li role="option" aria-selected="false">가격 낮은순</li>
+  </ul>
+  <ul id="list" aria-label="상품 목록"></ul>
+  <!-- 값을 aria-valuenow로만 갖는 컨트롤: 읽는 규칙이 없어 "못 읽음"이어야 한다(빈 값을 실제 값으로 쓰지 않는다). -->
+  <div role="slider" aria-label="가격 상한" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100" tabindex="0"></div>
+</main>
+<script>
+  const items = [['Orb Lamp', 30], ['Oak Stool', 10], ['Clay Bowl', 20]];
+  const box = document.getElementById('box'), opts = document.getElementById('opts');
+  const show = byPrice => {
+    const shown = byPrice ? [...items].sort((a, b) => a[1] - b[1]) : items;
+    document.getElementById('list').innerHTML = shown.map(([n, p]) => `<li>${n} · ${p}원</li>`).join('');
+  };
+  box.onclick = () => { opts.hidden = !opts.hidden; box.setAttribute('aria-expanded', String(!opts.hidden)); };
+  opts.querySelectorAll('[role=option]').forEach(o => o.onclick = () => {
+    opts.querySelectorAll('[role=option]').forEach(x => x.setAttribute('aria-selected', String(x === o)));
+    if (location.hash !== '#bug') box.textContent = o.textContent;
+    opts.hidden = true; box.setAttribute('aria-expanded', 'false');
+    show(o.textContent === '가격 낮은순');
+  });
+  show(false);
+</script>
+</body>
+</html>

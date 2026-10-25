@@ -105,10 +105,13 @@ export type AgentResult = {
 export async function runAgent(o: {
   send: Send; model: string; system: string; tools: Tool[]; user: string | Anthropic.ContentBlockParam[];
   budget: Budget; maxTurns: number; maxTokens?: number; effort?: 'low' | 'medium' | 'high';
+  /** 글로만 답했거나 글이 잘렸을 때 한 번 제출을 다시 요청한다(제출 도구 하나뿐인 대화용) */
+  nudge?: boolean;
 }): Promise<AgentResult> {
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: o.user }];
   const turns: AgentResult['turns'] = [];
   const byName = new Map(o.tools.map(t => [t.def.name, t]));
+  let nudged = false;
   const end = (stop: AgentResult['stop'], extra: Partial<AgentResult> = {}): AgentResult => ({ stop, messages, turns, ...extra });
 
   for (let i = 0; i < o.maxTurns; i++) {
@@ -140,6 +143,21 @@ export async function runAgent(o: {
     messages.push({ role: 'assistant', content: response.content });
 
     if (response.stop_reason === 'pause_turn') continue;
+    // 제출 도구만 쓰는 짧은 대화: 판단을 글로만 쓰고 끝내거나(end_turn) 글이 출력 한도에서 잘리면(max_tokens) 한 번만 도구로 제출하라고 다시 요청한다.
+    // 분류 실측(10/21·22)의 분류 실패가 모두 이 모양이었다. end_turn은 완결된 응답이라 thinking 블록이 있어도 그대로 두고 다시 요청한다.
+    // max_tokens는 잘린 thinking·도구 블록을 다시 보내지 않도록 글만 있는 응답일 때만 다시 요청한다.
+    const retryable = response.stop_reason === 'end_turn' ? response.content.every(b => b.type !== 'tool_use')
+      : response.stop_reason === 'max_tokens' && response.content.every(b => b.type === 'text');
+    if (o.nudge && !nudged && i + 1 < o.maxTurns && retryable) {
+      nudged = true;
+      // 잘린 글은 실측에서 모두 도구 호출 형식을 글로 흉내 내며 같은 줄을 수백 번 되풀이한 것이었다. 다시 보내면 비용이 들고 같은 패턴을 이어 가므로 앞부분만 남긴다.
+      if (response.stop_reason === 'max_tokens') {
+        const text = response.content.map(b => b.type === 'text' ? b.text : '').join('');
+        messages[messages.length - 1] = { role: 'assistant', content: [{ type: 'text', text: `${text.slice(0, 2000)}\n…(출력 한도에서 잘림)` }] };
+      }
+      messages.push({ role: 'user', content: response.stop_reason === 'max_tokens' ? '답이 출력 한도에서 잘렸습니다. 설명을 짧게 줄여 지금 도구로 제출하세요.' : '결과를 도구로 제출하지 않았습니다. 위 판단을 도구로 제출하세요.' });
+      continue;
+    }
     if (response.stop_reason === 'refusal' || response.stop_reason === 'max_tokens') return end(response.stop_reason);
     if (response.stop_reason === 'end_turn') return end('no_submit');
     if (response.stop_reason !== 'tool_use') return end('error', { detail: `stop_reason ${response.stop_reason}` });

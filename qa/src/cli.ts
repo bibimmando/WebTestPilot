@@ -121,13 +121,18 @@ try {
     verdicts: j.verdicts.map(v => ({ id: v.id, observed: v.observed, class: v.class, reproduction: v.reproduction, system: v.system })), requirements: j.requirements,
     system: j.system, features: j.features, questions: j.pendingQuestions, observations: e.plan.observations };
 } finally {
-  save('calls.json', calls);
-  save('summary.json', { startUrl: a.url, login: loginStatus, reset: { registered: !!app.reset, used: !!reset, calls: resetLog }, ...summary, timingMs: { ...timing, total: Date.now() - t0 }, spentUsd: budget.spent, budgetUsd: budget.limitUsd,
-    models: { plan: a['plan-model'], triage: a['triage-model'] }, calls: calls.length });
+  const persist = () => {
+    save('calls.json', calls);
+    save('summary.json', { startUrl: a.url, login: loginStatus, reset: { registered: !!app.reset, used: !!reset, calls: resetLog }, ...summary, timingMs: { ...timing, total: Date.now() - t0 }, spentUsd: budget.spent, budgetUsd: budget.limitUsd,
+      models: { plan: a['plan-model'], triage: a['triage-model'] }, calls: calls.length });
+  };
+  persist();
   // 판정까지 끝났으면 저장된 결과로 report.json·PDF를 만든다. 실패해도 실행 결과는 그대로 남고, node src/report.ts <폴더>로 다시 만들 수 있다.
   if (existsSync(join(out, 'run', 'verdicts.json'))) {
     // 발견 제목(AI): 판정은 바꾸지 않는다. 실패하면 보고서는 기대 동작 + 실제 한 줄로 만든다.
     try { await writeHeadlines({ dir: out, send, model: a['triage-model']!, budget }); } catch (e) { console.error(`발견 제목을 만들지 못함: ${(e as Error).message}`); }
+    // 제목 호출까지 비용·호출 기록에 넣는다(보고서의 비용이 콘솔 비용과 같게).
+    persist();
     try {
       const r = await writeReport(out, browser);
       console.log(`보고서: report.json · report.html${r.pdf ? ' · report.pdf' : ` (PDF 실패: ${r.pdfError})`}`);

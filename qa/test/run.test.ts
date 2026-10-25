@@ -342,6 +342,34 @@ test('선택 상자 값은 화면과 select 동작이 쓰는 옵션 라벨로 �
   assert.deepEqual(r.scenarios[0].checks.slice(0, 2).map(c => c.actual), ['최신순', '조회수 높은순']);
 });
 
+test('네이티브 select가 아닌 ARIA 콤보박스의 값은 snapshot에 보이는 값으로 읽는다(정상·결함 쌍)', async () => {
+  const run = async (hash: string) => {
+    const url = `${origin}/sortbox.html${hash}`;
+    const p: Plan = {
+      version: 1, observations: [], features: [{ id: 'F1', name: '정렬', page: url }], questions: [], requirements: [], unplanned: [],
+      targets: {
+        T1: { target: { role: 'combobox', name: '^정렬$' }, group: false, url },
+        T2: { target: { role: 'option', name: '^가격 낮은순$' }, group: false, url },
+        T3: { target: { role: 'slider', name: '^가격 상한$' }, group: false, url },
+      },
+      scenarios: [{ id: 'S1', title: '가격순 정렬', covers: ['F1'], start: { url },
+        steps: [{ id: 'S1.A1', op: 'click', target: 'T1' }, { id: 'S1.A2', op: 'click', target: 'T2' }],
+        checks: [
+          { id: 'S1.C1', after: 'start', target: 'T1', read: 'value', op: 'equals', expected: '최신순', source: { kind: 'observed' }, precondition: true },
+          { id: 'S1.C2', after: 'S1.A2', target: 'T1', read: 'value', op: 'not_equals', expected_from: 'S1.C1', source: { kind: 'inferred', rule: 'action-has-effect', quote: '다른 정렬 기준을 고르면 상자 값이 바뀐다' } },
+          { id: 'S1.C3', after: 'start', target: 'T3', read: 'value', op: 'equals', expected: '50', source: { kind: 'observed' } },
+        ] }],
+    };
+    const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir(`sortbox${hash ? '-bug' : ''}`), timeoutMs: 2000 });
+    assert.deepEqual(r.problems, [], readFileSync(`${r.runDir}/playwright.log`, 'utf8'));
+    return r.scenarios[0].checks.map(c => [c.status, c.actual]);
+  };
+  // slider는 값을 읽는 규칙이 없어 못 읽음(unresolved)이다. 빈 값으로 불일치를 만들지 않는다.
+  assert.deepEqual(await run(''), [['passed', '최신순'], ['passed', '가격 낮은순'], ['unresolved', undefined]]);
+  // 결함 버전: 오류(읽지 못함)가 아니라 값을 읽어 불일치로 남는다.
+  assert.deepEqual(await run('#bug'), [['passed', '최신순'], ['mismatch', '최신순'], ['unresolved', undefined]]);
+});
+
 test('오류 신호: 콘솔 오류·스크립트 예외·400 이상 응답을 난 단계에 붙이고, 정상 거절은 표시하고, 정책 차단·favicon은 빼고, 시나리오끼리 묶는다', async () => {
   const url = `${origin}/signals.html`;
   const rule = { kind: 'inferred' as const, rule: 'no-error-page', quote: '불러오기 뒤 페이지가 오류 없이 상태를 보여 준다' };

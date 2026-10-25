@@ -115,7 +115,7 @@ export async function judgeVisual(o: { plan: Plan; run: RunResult; verdicts: Ver
       `화면 크기 ${JSON.stringify(shot.viewport)}, 스크롤 ${JSON.stringify(shot.scroll)}${shot.box ? `, 검사 대상 위치(화면 기준 px) ${JSON.stringify(shot.box)}` : ', 대상 없음(화면 전체)'}`,
       '이미지는 그 시점의 보이는 영역 스크린샷입니다.',
     ].join('\n') }, image(join(o.run.runDir, shot.image))];
-    const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools: [tool], user, budget: o.budget, maxTurns: 3, maxTokens: 4000 });
+    const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools: [tool], user, budget: o.budget, maxTurns: 3, maxTokens: 4000, nudge: true });
     v.triageLog = log(o.run.runDir, o.logDir, v.id, result);
     if (!accepted) {
       v.class = 'uncertain';
@@ -162,7 +162,7 @@ export async function replayVisual(o: { plan: Plan; first: RunResult; again: Run
       ...unmet.map(c => `${c.n}. ${v.visual!.criteria[c.n - 1]} — ${c.evidence}`),
       '위반 조건마다 재현 화면에도 같은 위반이 보이는지 답하세요. 표시된 내용(이름·숫자)이 달라도 같은 위반이면 yes입니다.',
     ].join('\n') }, image(join(o.first.runDir, first.image)), image(join(o.again.runDir, second.visual.image))];
-    const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools: [tool], user, budget: o.budget, maxTurns: 3, maxTokens: 2000 });
+    const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools: [tool], user, budget: o.budget, maxTurns: 3, maxTokens: 2000, nudge: true });
     v.visual.replay.log = log(o.first.runDir, o.logDir, `${v.id}.replay`, result);
     if (!answer) { inconclusive(`재현 비교 미완료: ${result.stop}`); continue; }
     v.visual.replay.criteria = answer.criteria;

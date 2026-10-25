@@ -107,3 +107,39 @@ test('도구가 이미지를 돌려주면 다음 요청의 도구 결과에 이�
   const result = (seen[1].messages.at(-1)!.content as Anthropic.ToolResultBlockParam[])[0];
   assert.deepEqual(result.content, [{ type: 'text', text: '화면' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGVsbG8=' } }]);
 });
+
+test('제출 도구 대화: 글로만 답하거나 글이 잘리면 한 번만 제출을 다시 요청한다', async () => {
+  const text = (t: string) => ({ type: 'text', text: t });
+  const submit = { type: 'tool_use', id: 't_s', name: 'submit', input: {} };
+  const tool: Tool = { def: { name: 'submit', input_schema: { type: 'object' } }, run: async () => ({ text: 'ok', done: 1 }) };
+  const go = async (replies: Anthropic.Message[], nudge = true) => {
+    const seen: Anthropic.MessageCreateParamsNonStreaming[] = [];
+    const r = await runAgent({ send: async req => { seen.push(req); return replies.shift()!; }, model: 'claude-sonnet-5-5', system: 's', tools: [tool], user: 'u', budget: new Budget(1), maxTurns: 3, nudge });
+    return { r, seen };
+  };
+  // 글로만 답함 → 다시 요청 → 제출
+  let { r, seen } = await go([reply([text('판단: 앱 결함')], 'end_turn'), reply([submit])]);
+  assert.equal(r.stop, 'done');
+  assert.match(JSON.stringify(seen[1].messages.at(-1)), /도구로 제출하지 않았습니다/);
+  // 글이 출력 한도에서 잘림 → 짧게 제출하라고 요청
+  ({ r, seen } = await go([reply([text('판단: 앱 결함\n' + '</invoke>\n'.repeat(1000))], 'max_tokens'), reply([submit])]));
+  assert.equal(r.stop, 'done');
+  assert.match(JSON.stringify(seen[1].messages.at(-1)), /출력 한도에서 잘렸습니다/);
+  // 되풀이된 잘린 글은 앞부분만 다시 보낸다
+  const resent = JSON.stringify(seen[1].messages.at(-2));
+  assert.ok(resent.includes('판단: 앱 결함') && resent.length < 2600, String(resent.length));
+  // thinking과 글로 판단만 쓰고 끝난 완결 응답도 다시 요청한다. thinking 블록은 그대로 되돌린다.
+  const thinking = { type: 'thinking', thinking: '…', signature: 'sig' };
+  ({ r, seen } = await go([reply([thinking, text('판단: 앱 결함')], 'end_turn'), reply([submit])]));
+  assert.equal(r.stop, 'done');
+  assert.match(JSON.stringify(seen[1].messages.at(-2)), /"signature":"sig"/);
+  // 출력 한도에서 잘린 thinking은 다시 보내지 않고 끝낸다
+  ({ r, seen } = await go([reply([thinking], 'max_tokens')]));
+  assert.deepEqual([r.stop, seen.length], ['max_tokens', 1]);
+  // 다시 요청은 한 번뿐이다
+  ({ r, seen } = await go([reply([text('a')], 'end_turn'), reply([text('b')], 'end_turn'), reply([submit])]));
+  assert.deepEqual([r.stop, seen.length], ['no_submit', 2]);
+  // 켜지 않은 대화(탐색)는 전처럼 바로 끝난다
+  ({ r, seen } = await go([reply([text('a')], 'end_turn')], false));
+  assert.deepEqual([r.stop, seen.length], ['no_submit', 1]);
+});

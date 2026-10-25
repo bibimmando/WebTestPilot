@@ -223,7 +223,7 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
       user: image ? [{ type: 'text', text: `${triageMessage(o.plan, s, v, files, r)}
 첨부 이미지: ${image} (실패 시점 화면. 이미지에서 본 것은 reason에 적고, 인용은 텍스트 증거 파일에서만 한다)` },
         { type: 'image', source: { type: 'base64', media_type: 'image/png', data: readFileSync(join(o.run.runDir, image)).toString('base64') } }]
-        : triageMessage(o.plan, s, v, files, r), budget: o.budget, maxTurns: 3, maxTokens: 8000 });
+        : triageMessage(o.plan, s, v, files, r), budget: o.budget, maxTurns: 3, maxTokens: 8000, nudge: true });
     mkdirSync(join(o.run.runDir, logDir), { recursive: true });
     v.triageLog = `${logDir}/${v.id}.json`;
     writeFileSync(join(o.run.runDir, v.triageLog), JSON.stringify({ stop: result.stop, detail: result.detail, turns: result.turns }, null, 2));

@@ -7,42 +7,9 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { Budget, runAgent, type Send, type Tool } from './agent.ts';
-import { buildReport, findingGroups, findingKey, actualLine, type Headlines, type ReportItem } from './report.ts';
+import { buildReport, checkHeadline, factsHash, findingGroups, findingKey, headlineFacts, type Headlines } from './report.ts';
 
 const SYSTEM = readFileSync(new URL('../prompts/headline.md', import.meta.url), 'utf8');
-const MAX_LEN = 60;
-
-/** 모델에 주는 사실: 기대 동작, 재현 절차, 실패한 검사의 기대·실제·분류 근거·화면 조건. 증거 파일·이미지는 주지 않는다 */
-export function headlineFacts(items: ReportItem[]): string {
-  const x = items[0];
-  const steps = items.reduce((a, y) => y.steps.length > a.steps.length ? y : a, x).steps;
-  const byCheck = new Map<string, ReportItem>();
-  for (const y of items) if (!byCheck.has(y.id.slice(y.scenario.length))) byCheck.set(y.id.slice(y.scenario.length), y);
-  const cut = (s = '', n = 400) => s.length > n ? `${s.slice(0, n)}…` : s;
-  return [
-    `기대 동작(계획의 시나리오 제목): ${x.title.replace(' (같은 템플릿 다른 페이지)', '')}`,
-    `영향 페이지: ${new Set(items.map(y => y.page)).size}곳`,
-    `재현 절차:\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`,
-    `실패한 검사:\n${[...byCheck.values()].map(y => [
-      `- ${actualLine(y)}`,
-      y.check && y.check.read !== 'visual' ? `  대상: ${y.check.target ?? '현재 주소'} / 읽은 것: ${y.check.read} / 비교: ${y.check.op} / 기대: ${cut(y.check.expected)} / 실제: ${cut(y.check.actual ?? '(읽지 못함)')}` : '',
-      ...(y.visual?.criteria.map(c => `  화면 조건: ${c.text} — ${c.status === 'unmet' ? '위반' : c.status === 'met' ? '만족' : '판단 불가'}${c.evidence ? `: ${cut(c.evidence, 300)}` : ''}`) ?? []),
-      y.classification.reason ? `  분류 근거: ${cut(y.classification.reason)}` : '',
-    ].filter(Boolean).join('\n')).join('\n')}`,
-  ].join('\n');
-}
-
-/** 제목 대조: 한 줄·길이, 숫자와 따옴표 인용이 사실 글에 그대로 있어야 한다. 틀린 점 목록(비면 통과) */
-export function checkHeadline(text: string, facts: string): string[] {
-  const errors: string[] = [];
-  const t = text.trim();
-  if (!t || /\n/.test(t)) errors.push('한 줄로 쓰세요');
-  if (t.length > MAX_LEN) errors.push(`${MAX_LEN}자 이내로 줄이세요(지금 ${t.length}자)`);
-  const nums = new Set(facts.match(/\d+(?:[.,]\d+)*/g) ?? []);
-  for (const n of t.match(/\d+(?:[.,]\d+)*/g) ?? []) if (!nums.has(n)) errors.push(`숫자 ${n}은 기록에 없습니다`);
-  for (const m of t.matchAll(/["“'‘]([^"”'’]+)["”'’]/g)) if (!facts.includes(m[1])) errors.push(`인용 "${m[1]}"은 기록에 그대로 없습니다`);
-  return errors;
-}
 
 /** 발견마다 제목을 쓰고 headlines.json(통과한 것)과 headlines-log.json(모든 시도)을 남긴다. 실패해도 보고서는 만들어진다 */
 export async function writeHeadlines(o: { dir: string; send: Send; model: string; budget: Budget; maxItems?: number }): Promise<Headlines> {
@@ -56,15 +23,15 @@ export async function writeHeadlines(o: { dir: string; send: Send; model: string
       def: { name: 'headline', description: '발견 제목 한 줄을 제출한다.', strict: true, input_schema: {
         type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string' } } } },
       run: async (input: { text: string }) => {
-        const errors = checkHeadline(input.text, facts);
+        const errors = checkHeadline(input.text, facts.verifiable);
         if (errors.length) return { text: `고쳐서 다시 제출하세요:\n- ${errors.join('\n- ')}`, isError: true };
         accepted = input.text.trim();
         return { text: '받았습니다.', done: true };
       },
     };
-    const r = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools: [tool], user: facts, budget: o.budget, maxTurns: 3, maxTokens: 2000, effort: 'low' });
+    const r = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools: [tool], user: facts.text, budget: o.budget, maxTurns: 3, maxTokens: 2000, effort: 'low', nudge: true });
     const key = findingKey(items[0]);
-    if (accepted) out[key] = { text: accepted, model: o.model };
+    if (accepted) out[key] = { text: accepted, model: o.model, facts: factsHash(facts.text) };
     log.push({ key, stop: accepted ? 'done' : r.stop, ...(r.detail ? { detail: r.detail } : {}), ...(accepted ? { text: accepted } : {}), cost: r.turns.reduce((a, t) => a + (t.cost ?? 0), 0) });
     if (r.stop === 'budget') break;
   }

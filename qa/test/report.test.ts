@@ -106,7 +106,8 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   assert.ok(html.includes('실제: &quot;담은 상품&quot; 목록 안의 목록 항목의 개수 0 (기대 1)'), html.match(/실제: [^<]*/)?.[0] ?? '실제 줄 없음');
 
   // AI 제목: 기록에 없는 숫자는 돌려보내고, 고친 제목만 남긴다. 판정은 그대로다.
-  const { writeHeadlines, checkHeadline } = await import('../src/headline.ts');
+  const { writeHeadlines } = await import('../src/headline.ts');
+  const { checkHeadline, actualLine, headlineFacts, findingGroups } = await import('../src/report.ts');
   const { Budget } = await import('../src/agent.ts');
   const titles = ['담기 뒤 목록 항목이 3개로 보임', '담기 버튼을 눌러도 목록 항목이 0개(기대 1개)'];
   const seen: string[] = [];
@@ -118,15 +119,33 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
       content: [{ type: 'tool_use', id: `t${titles.length}`, name: 'headline', input: { text } }],
       usage: { input_tokens: 10, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } as never;
   } });
-  assert.match(seen[0], /숫자 3은 기록에 없습니다/);
+  assert.match(seen[0], /숫자 3은 검사 기록/);
   assert.deepEqual(Object.values(h).map(x => x.text), ['담기 버튼을 눌러도 목록 항목이 0개(기대 1개)']);
   const titled = buildReport(dir);
   assert.deepEqual(titled.bugs.map(b => b.level), r.bugs.map(b => b.level), '제목은 판정을 바꾸지 않는다');
   const titledHtml = renderHtml(titled, dir);
   assert.ok(titledHtml.includes('담기 버튼을 눌러도 목록 항목이 0개(기대 1개)') && titledHtml.includes('기대 동작: '), '제목 아래에 기대 동작을 남긴다');
   assert.deepEqual(checkHeadline('"Orb Lamp" 버튼', 'x "Orb Lamp" 영역'), []);
-  assert.deepEqual(checkHeadline('"Orb Lampe" 버튼', 'x "Orb Lamp" 영역'), ['인용 "Orb Lampe"은 기록에 그대로 없습니다']);
+  assert.deepEqual(checkHeadline('"Orb Lampe" 버튼', 'x "Orb Lamp" 영역'), ['인용 "Orb Lampe"은 검사 기록에 그대로 없습니다']);
   assert.match(checkHeadline('가'.repeat(61), '')[0], /60자 이내/);
+  // 분류 근거(AI 판단)·영향 페이지 수에만 있는 숫자는 대조에 쓰지 않는다.
+  const facts = headlineFacts(findingGroups(titled)[0]);
+  assert.ok(facts.text.includes('분류 근거') && !facts.verifiable.includes('분류 근거'));
+  // 판정이 바뀌어 사실이 달라졌거나 손으로 고친 제목(대조 실패)은 쓰지 않는다.
+  const saved = JSON.parse(readFileSync(join(dir, 'headlines.json'), 'utf8'));
+  const key = Object.keys(saved)[0];
+  writeFileSync(join(dir, 'headlines.json'), JSON.stringify({ [key]: { ...saved[key], facts: 'stale' } }));
+  assert.equal(buildReport(dir).headlines?.[key], undefined, '예전 사실로 만든 제목');
+  writeFileSync(join(dir, 'headlines.json'), JSON.stringify({ [key]: { ...saved[key], text: '목록 항목이 7개로 보임' } }));
+  assert.equal(buildReport(dir).headlines?.[key], undefined, '대조를 통과하지 못한 제목');
+  writeFileSync(join(dir, 'headlines.json'), JSON.stringify(saved));
+  // 비교 방식마다 실패의 뜻을 바꾸지 않고 쓴다.
+  const item = (op: string, read: string, expected: string, actual: string) => actualLine({ ...r.bugs[0], check: { ...r.bugs[0].check!, op, read, expected, actual, target: '카드' } });
+  assert.equal(item('not_equals', 'items', '["a"]', '["a"]'), '카드: 달라야 할 목록과 같음');
+  assert.equal(item('sorted_asc', 'items', 'number', '["3","1"]'), '카드: 오름차순이 아님');
+  assert.equal(item('all_contain', 'items', 'Lamp', '["Lamp","Vase"]'), '카드: "Lamp" 미포함 항목 있음');
+  assert.equal(item('less', 'text', '10', '12'), '카드의 글자 12 (기대: 10보다 작음)');
+  assert.equal(item('same_number', 'count', '2 pieces saved', '1'), '카드의 개수 1 (기대: "2 pieces saved"의 숫자와 같음)');
 
   // 저장된 결과로 보고서만 다시 만든다. 다시 만들어도 같은 report.json이다.
   const first = await writeReport(dir, browser);

@@ -2,8 +2,9 @@
 // 같은 내용을 HTML로 그려 Playwright로 PDF를 만든다. 새 검사를 하지 않으므로 저장된 결과로 몇 번이든 다시 만들 수 있다(설계 OUT-4).
 // 설계: docs/design/V2_ARCHITECTURE.md 5장 8·9단계. 바꿀 때는 version을 올리고 PDF·웹 화면 담당과 맞춘다.
 //   node src/report.ts <실행 결과 폴더>
-// shortcut: 보고서 AI(요약 문장)는 없다. 모든 문장은 JSON 값을 그대로 옮긴 틀이다. 요약이 필요해지면 JSON 값을 바꾸지 않는 조건으로 붙인다.
+// shortcut: 보고서 AI는 발견 제목(headline.ts, 숫자·인용 대조)뿐이고 요약 문장은 없다. 나머지 문장은 JSON 값을 그대로 옮긴 틀이다. 요약이 필요해지면 JSON 값을 바꾸지 않는 조건으로 붙인다.
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { basename, join } from 'node:path';
 import type { Browser } from 'playwright';
 import type { Plan, Check } from './plan.ts';
@@ -45,8 +46,8 @@ export type ReportItem = {
 /** 사이트 지도에서 페이지마다 계산한 품질·사용성 점검(AI 없음). confirmed = 새로 열어 다시 점검해도 같음 */
 export type AuditItem = AuditFinding & { page: string; confirmed: boolean };
 
-/** 발견(findingKey)마다 AI가 쓴 문제 한 줄. 숫자·인용이 검사 기록에 있는지 코드가 대조해 통과한 것만 둔다(headline.ts) */
-export type Headlines = Record<string, { text: string; model: string }>;
+/** 발견(findingKey)마다 AI가 쓴 문제 한 줄. 숫자·인용이 검사 기록에 있는지 코드가 대조해 통과한 것만 둔다(headline.ts). facts: 입력 사실의 지문 */
+export type Headlines = Record<string, { text: string; model: string; facts: string }>;
 
 export type Report = {
   version: 'report/2';
@@ -287,7 +288,7 @@ export function buildReport(dir: string): Report {
     evidenceGaps: { total: gaps.length, items: gaps },
     newTabs: results.scenarios.flatMap(s => (s.newTabs ?? []).map(t => ({ scenario: s.id, ...t }))),
     passed: { checks: Object.values(passedClasses).reduce((a, b) => a + b, 0), byClass: passedClasses },
-    ...(existsSync(join(dir, 'headlines.json')) ? { headlines: read<Headlines>(join(dir, 'headlines.json')) } : {}),
+    ...(existsSync(join(dir, 'headlines.json')) ? { headlines: validHeadlines(read<Headlines>(join(dir, 'headlines.json')), { bugs, visual: of('ui_defect', 'improvement') }) } : {}),
   };
 }
 
@@ -301,6 +302,13 @@ export function findingGroups(rep: Pick<Report, 'bugs' | 'visual'>): ReportItem[
 }
 
 const clip = (s: string, n: number) => s.length > n ? `${s.slice(0, n - 1)}…` : s;
+// 목록 비교가 실패했을 때의 뜻(비교 방식마다 다르다). 값 비교는 실제 값 옆에 기대 조건을 쓴다.
+const ITEMS_FAILED: Record<string, (e: string) => string> = {
+  any_contain: e => `"${e}" 포함 항목 없음`, any_equal: e => `"${e}"와 같은 항목 없음`, all_contain: e => `"${e}" 미포함 항목 있음`, all_equal: e => `"${e}"와 다른 항목 있음`,
+  sorted_asc: () => '오름차순이 아님', sorted_desc: () => '내림차순이 아님', equals: () => '기대한 목록과 다름', not_equals: () => '달라야 할 목록과 같음' };
+const EXPECTED_AS: Record<string, (e: string) => string> = {
+  equals: e => `기대 ${e}`, not_equals: e => `기대: ${e}와 달라야 함`, contains: e => `기대: ${e} 포함`, less: e => `기대: ${e}보다 작음`,
+  greater: e => `기대: ${e}보다 큼`, same_number: e => `기대: "${e}"의 숫자와 같음` };
 /** 검사 기록만으로 만든 "실제" 한 줄(모델 없음). 발견 제목이 기대 동작이라 무엇이 틀렸는지 보이게 한다 */
 export function actualLine(x: ReportItem): string {
   const c = x.check;
@@ -308,8 +316,72 @@ export function actualLine(x: ReportItem): string {
   if (!c) return clip(x.reason, 80);
   const target = c.target ?? '현재 주소';
   if (c.actual === undefined) return `${target}의 ${READ_TEXT[c.read] ?? c.read}을 읽지 못함`;
-  if (/contain|equal/.test(c.op) && c.read === 'items') return `${target}에 "${clip(c.expected ?? '', 40)}" ${c.op.startsWith('any') ? '항목 없음' : '아닌 항목 있음'}`;
-  return `${target}의 ${READ_TEXT[c.read] ?? c.read} ${clip(c.actual, 40)} (기대 ${c.op === 'not_equals' ? '≠ ' : ''}${clip(c.expected ?? '', 40)})`;
+  const e = clip(c.expected ?? '', 40);
+  if (c.read === 'items') return `${target}: ${ITEMS_FAILED[c.op]?.(e) ?? `${OP_TEXT[c.op] ?? c.op} 아님 (기대 ${e})`}`;
+  return `${target}의 ${READ_TEXT[c.read] ?? c.read} ${clip(c.actual, 40)} (${EXPECTED_AS[c.op]?.(e) ?? `${OP_TEXT[c.op] ?? c.op} ${e}`})`;
+}
+
+/**
+ * AI 제목에 주는 사실. text는 모델 입력 전체, verifiable은 제목의 숫자·인용을 대조할 기록(재현 절차 글자, 검사 대상·기대·실제, 화면 조건과 그 근거).
+ * 분류 근거(AI 판단)·영향 페이지 수·절차 번호는 맥락으로만 주고 대조에 쓰지 않는다. 같은 검사의 페이지별 값이 다르면 조합마다 페이지 수를 준다.
+ */
+export function headlineFacts(items: ReportItem[]): { text: string; verifiable: string } {
+  const x = items[0];
+  const steps = items.reduce((a, y) => y.steps.length > a.steps.length ? y : a, x).steps;
+  const byCheck = new Map<string, ReportItem[]>();
+  for (const y of items) { const k = y.id.slice(y.scenario.length); byCheck.set(k, [...byCheck.get(k) ?? [], y]); }
+  const cut = (s = '', n = 400) => s.length > n ? `${s.slice(0, n)}…` : s;
+  const verifiable: string[] = [...steps];
+  const checks = [...byCheck.values()].map(ys => {
+    const y = ys[0];
+    const lines = [`- ${actualLine(y)}`];
+    if (y.check && y.check.read !== 'visual') {
+      const pairs = new Map<string, number>();
+      for (const z of ys) { const k = JSON.stringify([z.check?.expected ?? '', z.check?.actual ?? '(읽지 못함)']); pairs.set(k, (pairs.get(k) ?? 0) + 1); }
+      lines.push(`  대상: ${y.check.target ?? '현재 주소'} / 읽은 것: ${y.check.read} / 비교: ${y.check.op}`);
+      for (const [k, n] of pairs) { const [exp, act] = JSON.parse(k) as string[]; lines.push(`  ${n}곳: 기대 ${cut(exp)} / 실제 ${cut(act)}`); verifiable.push(exp, act); }
+      verifiable.push(y.check.target ?? '');
+    }
+    for (const c of y.visual?.criteria ?? []) {
+      lines.push(`  화면 조건: ${c.text} — ${c.status === 'unmet' ? '위반' : c.status === 'met' ? '만족' : '판단 불가'}${c.evidence ? `: ${cut(c.evidence, 300)}` : ''}`);
+      verifiable.push(c.text, c.evidence ?? '');
+    }
+    if (y.classification.reason) lines.push(`  분류 근거(AI 판단, 사실 대조 대상 아님): ${cut(y.classification.reason)}`);
+    return lines.join('\n');
+  });
+  return { text: [
+    `기대 동작(계획의 시나리오 제목): ${x.title.replace(' (같은 템플릿 다른 페이지)', '')}`,
+    `영향 페이지: ${new Set(items.map(y => y.page)).size}곳`,
+    `재현 절차:\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`,
+    `실패한 검사:\n${checks.join('\n')}`,
+  ].join('\n'), verifiable: verifiable.join('\n') };
+}
+
+const HEADLINE_MAX = 60;
+/** 제목 대조: 한 줄·길이, 숫자와 따옴표 인용이 대조용 기록(verifiable)에 그대로 있어야 한다. 틀린 점 목록(비면 통과) */
+export function checkHeadline(text: string, verifiable: string): string[] {
+  const errors: string[] = [];
+  const t = text.trim();
+  if (!t || /\n/.test(t)) errors.push('한 줄로 쓰세요');
+  if (t.length > HEADLINE_MAX) errors.push(`${HEADLINE_MAX}자 이내로 줄이세요(지금 ${t.length}자)`);
+  const nums = new Set(verifiable.match(/\d+(?:[.,]\d+)*/g) ?? []);
+  for (const n of t.match(/\d+(?:[.,]\d+)*/g) ?? []) if (!nums.has(n)) errors.push(`숫자 ${n}은 검사 기록(대상·기대·실제·화면 조건·절차)에 없습니다`);
+  for (const m of t.matchAll(/["“'‘]([^"”'’]+)["”'’]/g)) if (!verifiable.includes(m[1])) errors.push(`인용 "${m[1]}"은 검사 기록에 그대로 없습니다`);
+  return errors;
+}
+/** 제목을 만든 입력 사실의 지문. 재판정·재실행으로 사실이 바뀌면 예전 제목을 쓰지 않는다 */
+export const factsHash = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 16);
+
+/** 저장된 제목 중 지금 사실과 지문이 같고 대조를 다시 통과한 것만 쓴다(손으로 고친 파일·예전 판정의 제목을 막는다) */
+function validHeadlines(saved: Headlines, rep: Pick<Report, 'bugs' | 'visual'>): Headlines {
+  const out: Headlines = {};
+  for (const g of findingGroups(rep)) {
+    const h = saved[findingKey(g[0])];
+    if (!h) continue;
+    const f = headlineFacts(g);
+    if (h.facts === factsHash(f.text) && !checkHeadline(h.text, f.verifiable).length) out[findingKey(g[0])] = h;
+  }
+  return out;
 }
 
 /**
