@@ -15,24 +15,35 @@ export type SiteMap = { templates: Template[]; visited: string[]; unvisited: str
 /** 쿼리·hash를 뺀 경로. 같은 경로의 다른 쿼리(정렬·필터)는 같은 페이지 종류로 본다. */
 export const pathOf = (url: string) => { const u = new URL(url); return u.origin + (u.pathname.replace(/\/+$/, '') || '/'); };
 
+// 식별자처럼 보이는 경로 조각: 숫자를 담거나, 인코딩·비ASCII 글자(글 제목 slug)이거나, 아주 긴 조각.
+const idLike = (s: string) => /\d|%[0-9a-f]{2}|[^\x00-\x7f]/i.test(s) || s.length > 40;
+
 /**
- * URL을 템플릿으로 묶는다. 같은 상위 경로 아래 마지막 경로 조각만 다른 페이지가 둘 이상이면 한 템플릿(`/product/:x`)이다.
+ * URL을 템플릿으로 묶는다. 경로 조각 중 식별자처럼 보이는 것은 `:x`이고, 나머지가 같은데 한 위치만 다른 페이지가 둘 이상이면
+ * 그 위치도 `:x`다(`/product/:x`, `/c/:x/comments/:x/:x`, `/c/:x/submit`). 마지막 조각만 보던 규칙은 게시글처럼 깊은 경로를
+ * 글마다 다른 종류로 나눠 같은 화면에 탐색 대화를 여러 번 열었다(agora 10/26: 페이지 종류 75개, 대화 18개 중 9개가 게시글).
+ * 첫 조각(/products, /cart, /info)은 서로 다른 기능이므로 묶지 않는다.
  * shortcut: URL 모양만 본다. 같은 상위 경로의 서로 다른 안내 페이지(/info/faq, /info/returns)도 묶이고, 구조 지문 비교는 없다.
+ * 숫자·한글이 없는 짧은 영어 slug가 그 위치에 하나뿐이면 식별자로 못 알아봐 따로 남는다. 실측에서 보이면 화면 구조 비교를 더한다.
  */
 export function groupTemplates(urls: string[]): Template[] {
-  const byParent = new Map<string, Set<string>>();
-  for (const u of urls) {
-    const p = pathOf(u);
-    const parent = p.slice(0, p.lastIndexOf('/'));
-    if (!byParent.has(parent)) byParent.set(parent, new Set());
-    byParent.get(parent)!.add(p);
+  const shapes = new Map(urls.map(u => {
+    const { origin, pathname } = new URL(pathOf(u));
+    const segs = pathname.split('/').slice(1);
+    return [u, { origin, segs: segs.map((s, i) => i > 0 && idLike(s) ? ':x' : s) }] as const;
+  }));
+  const all = [...shapes.values()];
+  // 뒤에서부터 위치마다: 그 위치만 빼고 같은 경로들이 그 위치에서 둘 이상 다르면 :x로 묶는다(그 위치는 비교에서 빠지므로 바꿔도 다른 묶음에 영향 없음).
+  for (let i = Math.max(0, ...all.map(x => x.segs.length)) - 1; i >= 1; i--) {
+    const keyOf = (x: (typeof all)[number]) => `${x.origin}|${x.segs.length}|${x.segs.map((s, j) => j === i ? '' : s).join('/')}`;
+    const values = new Map<string, Set<string>>();
+    for (const x of all) if (x.segs.length > i) values.set(keyOf(x), (values.get(keyOf(x)) ?? new Set()).add(x.segs[i]));
+    for (const x of all) if (x.segs.length > i && values.get(keyOf(x))!.size > 1) x.segs[i] = ':x';
   }
   const templates = new Map<string, string[]>();
   for (const u of urls) {
-    const p = pathOf(u);
-    const parent = p.slice(0, p.lastIndexOf('/'));
-    // 최상위 경로(/products, /cart)는 서로 다른 기능이므로 묶지 않는다.
-    const key = byParent.get(parent)!.size > 1 && new URL(p).pathname.split('/').length > 2 ? `${parent}/:x` : p;
+    const { origin, segs } = shapes.get(u)!;
+    const key = `${origin}/${segs.join('/')}`;
     if (!templates.has(key)) templates.set(key, []);
     templates.get(key)!.push(u);
   }

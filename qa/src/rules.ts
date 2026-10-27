@@ -20,7 +20,7 @@ export type Rule = { id: string; group: 1 | 2 | 3; rule: string; applies: string
 
 export const RULES: Rule[] = [
   { id: 'link-target', group: 1, rule: '링크·카드에 적힌 대상과 눌렀을 때 열린 대상이 같다',
-    applies: '링크·카드의 텍스트가 대상의 이름을 나타낼 때 (클릭 전 이름을 읽어 expected_from으로 비교)', form: 'relation', ops: ['equals'], deterministic: true },
+    applies: '링크·카드의 텍스트가 대상의 이름을 나타낼 때 (클릭 전 이름을 read text로 읽고, 클릭 후 열린 페이지의 제목·이름을 read text로 읽어 expected_from으로 비교. 주소(url)는 이름이 아니므로 비교하지 않는다)', form: 'relation', ops: ['equals'], deterministic: true },
   { id: 'no-error-page', group: 1, rule: '이동·행동의 결과가 서버 오류(5xx)나 같은 origin의 없는 페이지(404)가 아니다',
     applies: '허용 범위 안의 링크·버튼', exceptions: '401·403 권한 거절, 422 검증 응답', form: 'any' },
   { id: 'action-has-effect', group: 1, rule: '활성 상태의 행동 버튼을 누르면 화면·URL·요청 중 하나가 바뀐다',

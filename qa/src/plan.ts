@@ -328,6 +328,10 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
       // 같은 요소를 다른 ID로 두 번 고정한 별칭도 같은 대상으로 본다.
       const sameTarget = ref?.target === c.target || (!!ref?.target && !!c.target && JSON.stringify(pinned.get(ref.target)?.target) === JSON.stringify(pinned.get(c.target)?.target));
       if (ref && ref.after === c.after && sameTarget && ref.read === c.read) errors.push(`${c.id}: expected_from re-reads the same value at the same point and always passes`);
+      // 종류가 다른 값끼리 비교하면 결과가 앱 동작과 무관하게 정해진다(Adminator 10/26: 링크 글자 "Calendar"를 열린 주소와 equals → 링크가 맞아도 늘 불일치).
+      // 주소는 주소끼리, 보임·선택 여부는 같은 종류끼리. 글자·값·개수·목록은 서로 비교할 수 있다(same_number, any_contain 등).
+      const kind = (r: Read) => r === 'url' || r === 'checked' || r === 'visible' ? r : 'value';
+      if (ref && kind(ref.read) !== kind(c.read)) errors.push(`${c.id}: expected_from reads ${ref.read} but this check reads ${c.read}; compare the same kind of value (a URL with a URL; a link or card name with the opened page's title or name text)`);
       // 관측 참조는 비교할 값의 출처일 뿐이다. 비교 규칙의 근거는 따로 있어야 한다.
       if (c.source.kind === 'observed') errors.push(`${c.id}: expected_from needs a rule basis (requirement, constraint or inferred), not observed`);
       return;

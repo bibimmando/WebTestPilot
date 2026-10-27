@@ -133,6 +133,11 @@ test('관측 참조는 같은 시나리오에서 먼저 실행되는 검사만 �
   assert.ok(errorsOf(d => { d.scenarios[0].checks.push(name, { ...rel, expected_from: 'S1.C2' }); }).some(e => e.includes('runs before it')));
   assert.ok(errorsOf(d => { d.scenarios[0].checks.push(name, { ...rel, source: { kind: 'observed' } }); }).some(e => e.includes('rule basis')));
   assert.ok(errorsOf(d => { d.scenarios[0].checks.push(name, { ...rel, expected: 'x' }); }).some(e => e.includes('exactly one')));
+  // 종류가 다른 값끼리는 비교하지 않는다: 링크 글자를 열린 주소와 비교하면 링크가 맞아도 늘 다르다.
+  const { target: _t, ...relNoTarget } = rel;
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push(name, { ...relNoTarget, read: 'url' }); }).some(e => e.includes('same kind of value')), '글자 → 주소');
+  assert.ok(errorsOf(d => { d.scenarios[0].checks.push(name, { ...rel, read: 'visible' }); }).some(e => e.includes('same kind of value')), '글자 → 보임 여부');
+  assert.ok(!errorsOf(d => { d.scenarios[0].checks.push(name, { ...rel, read: 'count', op: 'same_number', source: { ...rel.source, rule: 'count-matches-list' } }); }).some(e => e.includes('same kind of value')), '글자 → 개수(same_number)는 허용');
 });
 
 test('읽기 종류별로 대상·비교를 제한한다: url은 대상 없음, items는 그룹과 목록 조건만, less·greater는 숫자', () => {
@@ -249,6 +254,11 @@ test('템플릿 묶기: 같은 상위 경로의 여러 상세는 한 템플릿, 
   const o = 'http://x.test';
   const t = groupTemplates([`${o}/products`, `${o}/products?sort=1`, `${o}/product/a`, `${o}/product/b`, `${o}/cart`, `${o}/info/faq`]);
   assert.deepEqual(t.map(x => [x.key.replace(o, ''), x.pages.length]), [['/products', 2], ['/product/:x', 2], ['/cart', 1], ['/info/faq', 1]]);
+  // 깊은 경로: 글 번호·한글 제목(식별자)과 가운데 조각(게시판)이 바뀌어도 같은 화면은 한 종류. 서로 다른 첫 조각은 묶지 않는다.
+  const deep = groupTemplates([`${o}/c/dev/comments/1001/%ED%95%9C%EA%B8%80`, `${o}/c/dev/comments/100a/title_b`, `${o}/c/games/comments/101g/%EA%B2%8C%EC%9E%84`,
+    `${o}/c/dev/submit`, `${o}/c/games/submit`, `${o}/c/dev`, `${o}/c/games`, `${o}/u/kim`, `${o}/u/lee`, `${o}/policies/terms`, `${o}/policies/privacy`, `${o}/all`, `${o}/popular`]);
+  assert.deepEqual(deep.map(x => [x.key.replace(o, ''), x.pages.length]),
+    [['/c/:x/comments/:x/:x', 3], ['/c/:x/submit', 2], ['/c/:x', 2], ['/u/:x', 2], ['/policies/:x', 2], ['/all', 1], ['/popular', 1]]);
 });
 
 test('계획 합치기: 어느 대화도 다루지 않은 요구사항은 미계획으로 남기고, 다른 대화가 다룬 요구사항의 미계획은 지운다', () => {

@@ -156,7 +156,7 @@ async function exploreSite(o: Parameters<typeof explore>[0]): Promise<ExploreRes
  */
 export function otherPages(plan: Plan, map: SiteMap, total: number): Record<string, string[]> {
   const out: Record<string, string[]> = {};
-  for (const t of map.templates.filter(x => x.key.endsWith('/:x'))) {
+  for (const t of map.templates.filter(x => x.key.includes('/:x'))) {
     const scenarios = plan.scenarios.filter(s => !s.variantOf && t.pages.some(p => pathOf(p) === pathOf(s.start.url)));
     if (!scenarios.length) continue;
     const used = new Set(scenarios.map(s => pathOf(s.start.url)));
