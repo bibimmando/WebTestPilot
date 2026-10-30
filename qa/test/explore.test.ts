@@ -248,6 +248,95 @@ test('요구사항 없이: 일반 규칙 목록을 받고, 기능(F#) 계획과 
   assert.deepEqual(r.plan!.questions.map(q => q.overLimit ?? false), [false, false, false, false, false, true], '한도를 넘은 질문도 규칙 미확인으로 남긴다');
 });
 
+test('거부된 제출에서 오류 없는 시나리오는 받아 두고, 다음 제출은 고친 시나리오만 보내도 계획이 완성된다', async () => {
+  const s = (id: string, f: string, target: string) => ({ id, title: id, covers: [f], start: { url: origin + '/list.html' },
+    steps: [{ id: `${id}.A1`, op: 'click', target: 'T1' }],
+    checks: [
+      { id: `${id}.C1`, after: 'start', target, read: 'text', op: 'equals', expected: '장바구니 (0)', source: { kind: 'observed' }, precondition: true },
+      { id: `${id}.C2`, after: `${id}.A1`, target, read: 'text', op: 'equals', expected_from: `${id}.C1`, offset: 1,
+        source: { kind: 'inferred', rule: 'step-by-one', quote: '담기를 한 번 누르면 개수가 하나 는다' } },
+    ] });
+  let rejected = '';
+  const r = await run('/list.html', [], [
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [
+      { name: 'pin', input: { ref: ref(snap, 'button "담기"', 16), group: false } },
+      { name: 'pin', input: { ref: ref(snap, '- banner'), group: false, text: '장바구니 (0)' } },
+    ],
+    // S2는 pin하지 않은 대상(T9)을 써서 거부된다. 기능 F3은 아직 미계획 사유가 없다(전체 오류).
+    () => [{ name: 'submit_plan', input: {
+      features: [{ id: 'F1', name: '담기', page: origin + '/list.html' }, { id: 'F2', name: '다시 담기', page: origin + '/list.html' }, { id: 'F3', name: '결제', page: origin + '/list.html' }],
+      scenarios: [s('S1', 'F1', 'T2'), s('S2', 'F2', 'T9')], unplanned: [],
+      observations: [{ page: origin + '/list.html', note: '관찰 하나' }] } }],
+    // 고친 S2와 F3의 미계획 사유만 보낸다. S1·기능·관찰은 다시 보내지 않는다.
+    out => { rejected = out; return [{ name: 'submit_plan', input: { scenarios: [s('S2', 'F2', 'T2')], unplanned: [{ requirement: 'F3', reason: '결제는 쓰기가 필요함' }] } }]; },
+  ]);
+  assert.match(rejected, /받아 두었습니다: S1\./);
+  assert.match(rejected, /S2\.C1: target "T9" was not pinned/);
+  assert.match(rejected, /feature F3 is neither covered nor unplanned/);
+  assert.equal(r.stop, 'done', r.detail ?? '');
+  assert.deepEqual(r.plan!.scenarios.map(x => x.id), ['S1', 'S2']);
+  assert.equal(r.plan!.scenarios[1].checks[0].target, 'T2');
+  assert.deepEqual(r.plan!.features.map(f => f.id), ['F1', 'F2', 'F3']);
+  assert.deepEqual(r.plan!.unplanned, [{ requirement: 'F3', reason: '결제는 쓰기가 필요함' }]);
+  assert.equal(r.plan!.observations.length, 1);
+});
+
+test('부분 확정: 형식이 틀린 ID는 받아 두지 않고, withdraw로 받아 둔 시나리오를 뺄 수 있다', async () => {
+  const s = (id: string) => ({ id, title: id, covers: ['F1'], start: { url: origin + '/list.html' },
+    steps: [{ id: `${id}.A1`, op: 'click', target: 'T1' }],
+    checks: [
+      { id: `${id}.C1`, after: 'start', target: 'T2', read: 'text', op: 'equals', expected: '장바구니 (0)', source: { kind: 'observed' }, precondition: true },
+      { id: `${id}.C2`, after: `${id}.A1`, target: 'T2', read: 'text', op: 'equals', expected_from: `${id}.C1`, offset: 1,
+        source: { kind: 'inferred', rule: 'step-by-one', quote: '담기를 한 번 누르면 개수가 하나 는다' } },
+    ] });
+  const f = [{ id: 'F1', name: '담기', page: origin + '/list.html' }];
+  const outs: string[] = [];
+  const r = await run('/list.html', [], [
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [
+      { name: 'pin', input: { ref: ref(snap, 'button "담기"', 16), group: false } },
+      { name: 'pin', input: { ref: ref(snap, '- banner'), group: false, text: '장바구니 (0)' } },
+    ],
+    // "bad"는 ID 형식 오류라 오류가 어느 시나리오인지 가리키지 못한다. 정상인 S1·S2만 받아 둔다.
+    () => [{ name: 'submit_plan', input: { features: f, scenarios: [s('bad'), s('S1'), s('S2')], unplanned: [] } }],
+    out => { outs.push(out); return [{ name: 'submit_plan', input: { scenarios: [], unplanned: [], withdraw: ['S9'] } }]; },
+    out => { outs.push(out); return [{ name: 'submit_plan', input: { scenarios: [], unplanned: [], withdraw: ['S2'] } }]; },
+  ]);
+  assert.match(outs[0], /받아 두었습니다: S1, S2\./);
+  assert.doesNotMatch(outs[0], /받아 두었습니다:.*bad/);
+  assert.match(outs[1], /withdraw는 받아 둔 시나리오 ID만/);
+  assert.equal(r.stop, 'done', r.detail ?? '');
+  assert.deepEqual(r.plan!.scenarios.map(x => x.id), ['S1']);
+});
+
+test('부분 확정: 앞 제출에서 시작 URL을 새로 열어 확인한 대상은 다음 제출에서도 확인된 것으로 쓴다', async () => {
+  const sc = { id: 'S1', title: '담기', covers: ['F1'], start: { url: origin + '/list.html' },
+    steps: [{ id: 'S1.A1', op: 'click', target: 'T1' }],
+    checks: [
+      { id: 'S1.C1', after: 'start', target: 'T2', read: 'text', op: 'equals', expected: '장바구니 (0)', source: { kind: 'observed' }, precondition: true },
+      { id: 'S1.C2', after: 'S1.A1', target: 'T2', read: 'text', op: 'equals', expected_from: 'S1.C1', offset: 1,
+        source: { kind: 'inferred', rule: 'step-by-one', quote: '담기를 한 번 누르면 개수가 하나 는다' } },
+    ] };
+  const f1 = { id: 'F1', name: '담기', page: origin + '/list.html' };
+  let first = '';
+  const r = await run('/list.html?sort=1', [], [
+    // F9 질문을 남겼는데 features에 F9가 없어 첫 제출은 질문 오류로 거부된다(시작 페이지 확인은 끝난 뒤).
+    () => [{ name: 'ask_user', input: { question: '정렬 기준이 있나요?', options: ['예', '아니오'], feature: 'F9' } }, { name: 'snapshot', input: {} }],
+    (_, all) => [
+      { name: 'pin', input: { ref: ref(all.at(-1)!, 'button "담기"', 16), group: false } },
+      { name: 'pin', input: { ref: ref(all.at(-1)!, '- banner'), group: false, text: '장바구니 (0)' } },
+    ],
+    () => [{ name: 'submit_plan', input: { features: [f1], scenarios: [sc], unplanned: [] } }],
+    out => { first = out; return [{ name: 'submit_plan', input: { features: [f1, { id: 'F9', name: '정렬', page: origin + '/list.html' }], scenarios: [],
+      unplanned: [{ requirement: 'F9', reason: '업무 규칙 질문 대기' }] } }]; },
+  ]);
+  assert.match(first, /question Q1: feature F9 is not in features/);
+  assert.match(first, /받아 두었습니다: S1\./);
+  assert.equal(r.stop, 'done', r.detail ?? '');
+  assert.deepEqual(r.plan!.startVerified!.sort(), [`T1 ${origin}/list.html`, `T2 ${origin}/list.html`]);
+});
+
 test('다른 쿼리에서 pin한 시작 대상은 시작 URL을 새로 열어 확인하고, 그 확인은 계획에 남아 실행 검증도 통과한다', async () => {
   const r = await run('/list.html?sort=1', [], [
     () => [{ name: 'snapshot', input: {} }],

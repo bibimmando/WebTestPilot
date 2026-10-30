@@ -4,7 +4,7 @@ import type { Browser, Page } from 'playwright';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { StorageState } from './login.ts';
 import { deniedLink, openContext, pressKey, snapshot, resolveRef, resolveGroup, resolveText, resolvePosition, settle, stableOnReload, DESKTOP, MOBILE, VIEWPORTS, type Policy, type Viewport } from './browser.ts';
-import { validate, freeze, mergePlans, cloneScenarios, startTargetsElsewhere, READS, COMPARES, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
+import { validate, shapeErrors, combineDraft, scenariosWithErrors, freeze, mergePlans, cloneScenarios, startTargetsElsewhere, READS, COMPARES, type Draft, type Pinned, type Plan, type Question, type Requirement } from './plan.ts';
 import { rulesText } from './rules.ts';
 import { crawl, pathOf, type SiteMap, type Template } from './sitemap.ts';
 import { runAgent, type AgentResult, type Budget, type Send, type Tool, type ToolOutcome } from './agent.ts';
@@ -204,7 +204,11 @@ export function exploreTools(page: Page, o: Task, violations: string[], part?: P
   // 탐색 중 본 snapshot 텍스트. constraint(화면 안내) 인용이 실제로 화면에 있었는지 확인한다.
   const seen: string[] = [];
   const questions: Question[] = [];
-  const nextTarget = () => part ? `T${part.next.T++}` : `T${pinned.size + 1}`;
+  // 거부된 제출에서 받아 둔 부분 계획(오류 없는 시나리오와 기능·미계획·관찰).
+  let accepted: Draft | undefined;
+  // 시작 URL을 새로 열어 확인한 "대상ID 시작URL". 제출 사이에 유지한다.
+  const verified = new Set<string>();
+  const nextTarget =() => part ? `T${part.next.T++}` : `T${pinned.size + 1}`;
   return [...browserTools(page, o.policy, pinned, violations, seen, nextTarget, u => part?.urls.add(u)), {
     def: { name: 'ask_user', strict: true, description: '정답이 업무 규칙에 달려 있고 화면만으로 알 수 없을 때 사용자에게 질문을 남긴다. 답을 기다리지 말고 다른 기능을 계속 탐색한다.',
       input_schema: { type: 'object', additionalProperties: false, required: ['question', 'options'], properties: {
@@ -221,40 +225,58 @@ export function exploreTools(page: Page, o: Task, violations: string[], part?: P
       return { text: `${id}로 남겼습니다${overLimit ? ` (질문 한도 ${MAX_QUESTIONS}개를 넘어 사용자에게 묻지 않고 "규칙 미확인"으로 기록)` : ''}. 답은 이번 실행 중에 오지 않습니다. 이 규칙에 의존하는 기대값은 쓰지 말고 다른 기능을 계속 탐색하세요.` };
     },
   }, {
-    def: { name: 'submit_plan', description: '완성한 테스트 계획을 제출한다. 오류가 있으면 오류 목록이 돌아온다.', input_schema: DRAFT_SCHEMA },
-    run: async (draft: Draft) => {
+    def: { name: 'submit_plan', description: '완성한 테스트 계획을 제출한다. 오류가 있으면 오류 목록이 돌아온다. 오류 없는 시나리오는 받아 두므로, 다시 낼 때는 고친 시나리오와 unplanned 전체만 보내면 된다(features·observations는 바꿀 때만 전체).', input_schema: DRAFT_SCHEMA },
+    run: async ({ withdraw = [], ...submitted }: Draft & { withdraw?: string[] }) => {
       if (violations.length) return { text: `정책 위반이 있어 계획을 받을 수 없다: ${violations.join(', ')}`, isError: true };
       if (idRange) {
-        const out = [...(draft.scenarios ?? []).map(s => s.id), ...(draft.features ?? []).map(f => f.id)]
+        const out = [...(submitted.scenarios ?? []).map(s => s.id), ...(submitted.features ?? []).map(f => f.id)]
           .filter(id => { const n = Number(String(id).slice(1)); return !(n >= idRange[0] && n <= idRange[1]); });
         if (out.length) return { text: `ID는 S${idRange[0]}~S${idRange[1]}, F${idRange[0]}~F${idRange[1]} 안에서 쓰세요: ${out.join(', ')}`, isError: true };
       }
       // 복제 표식은 하네스만 붙인다.
-      if ((draft.scenarios ?? []).some(x => (x as { variantOf?: unknown }).variantOf !== undefined)) return { text: 'variantOf는 계획에 쓸 수 없다', isError: true };
+      if ((submitted.scenarios ?? []).some(x => (x as { variantOf?: unknown }).variantOf !== undefined)) return { text: 'variantOf는 계획에 쓸 수 없다', isError: true };
+      // 형식이 깨진 제출은 합치지 않는다(합친 뒤에는 어느 제출의 형식 오류인지 가를 수 없다).
+      const shape = shapeErrors(submitted);
+      if (shape.length) return { text: `계획을 고쳐서 다시 제출하세요:\n- ${shape.join('\n- ')}`, isError: true };
+      const unknown = withdraw.filter(id => !accepted?.scenarios.some(s => s.id === id));
+      if (unknown.length) return { text: `withdraw는 받아 둔 시나리오 ID만 쓸 수 있다: ${unknown.join(', ')}`, isError: true };
+      const draft = accepted ? combineDraft(accepted, submitted, withdraw) : submitted;
       let errors: string[];
-      const check = (onStart?: Set<string>) => validate(draft, o.requirements, pinned, o.policy.origins, seen.join('\n'), onStart, part);
-      try { errors = check(); } catch (e) {
+      // 앞선 제출에서 시작 URL을 새로 열어 확인한 대상도 쓴다(받아 둔 시나리오를 다시 열지 않는다).
+      const check = (onStart: Set<string>) => validate(draft, o.requirements, pinned, o.policy.origins, seen.join('\n'), onStart, part);
+      try { errors = check(verified); } catch (e) {
         return { text: `계획 형식 오류: ${(e as Error).message}`, isError: true };
       }
       // 다른 페이지에서 pin한 시작 상태 대상은 시작 URL을 새로 열어 실제로 있는지 확인한다(같은 템플릿의 다른 쿼리 등).
       // 다른 오류가 없을 때만 연다. 그룹은 다른 목록과 섞여도 "하나 이상"으로 통과하므로 제외해 시작 페이지 pin을 요구한다.
-      const onStart = new Set<string>();
       if (errors.length && errors.every(e => e.includes('not on the start page'))) {
         for (const { id, url } of startTargetsElsewhere(draft, pinned).slice(0, MAX_START_CHECKS)) {
           const p = pinned.get(id)!;
           const ok = !p.group && o.policy.origins.includes(new URL(url).origin)
             && await stableOnReload(page, p.target, false, SETTLE_TIMEOUT, url, VIEWPORTS[p.viewport ?? 'desktop']).catch(() => false);
           if (violations.length) return { text: `시작 페이지 확인 중 정책 위반: ${violations.join(', ')}`, isError: true };
-          if (ok) onStart.add(`${id} ${url}`);
+          if (ok) verified.add(`${id} ${url}`);
         }
-        errors = check(onStart);
+        errors = check(verified);
       }
       const declared = new Set((draft.features ?? []).map(f => f.id));
       for (const q of questions) if (q.feature && !declared.has(q.feature)) errors.push(`question ${q.id}: feature ${q.feature} is not in features`);
-      if (errors.length) return { text: `계획을 고쳐서 다시 제출하세요:\n- ${errors.join('\n- ')}`, isError: true };
+      if (errors.length) {
+        // 오류가 가리키지 않는 시나리오는 받아 둔다. 다음 제출은 고칠 부분만 보내면 되므로 계획 전체를 다시 쓰지 않는다(비용, 2026-10-28).
+        // 형식이 틀린 ID(S#가 아님)는 오류가 어느 시나리오인지 가리키지 못하므로 받지 않는다. 기능도 F# 형식만 받는다.
+        const bad = scenariosWithErrors(errors);
+        accepted = { ...draft, scenarios: draft.scenarios.filter(s => /^S\d+$/.test(s.id) && !bad.has(s.id)),
+          features: (draft.features ?? []).filter(f => /^F\d+$/.test(f.id)) };
+        const kept = accepted.scenarios.map(s => s.id);
+        return { text: [
+          ...(kept.length ? [`오류 없는 시나리오는 받아 두었습니다: ${kept.join(', ')}. 다시 보내지 않아도 됩니다(같은 ID로 보내면 새 내용으로 바뀌고, withdraw에 ID를 적으면 뺍니다).`,
+            '다음 제출에는 고친 시나리오와 unplanned 전체를 보내세요. features·observations는 바꿀 때만 전체를 보내고, 생략하면 이전 것을 씁니다.'] : []),
+          `계획을 고쳐서 다시 제출하세요:\n- ${errors.join('\n- ')}`].join('\n'), isError: true };
+      }
       // 템플릿별 대화면 이 계획의 ID를 다음 대화가 다시 쓰지 못하게 남긴다.
       for (const id of [...draft.scenarios.map(s => s.id), ...(draft.features ?? []).map(f => f.id)]) part?.taken.add(id);
-      return { text: '계획을 받았습니다.', done: freeze(draft, o.requirements, pinned, questions, [...onStart]) };
+      const used = new Set(startTargetsElsewhere(draft, pinned).map(x => `${x.id} ${x.url}`));
+      return { text: '계획을 받았습니다.', done: freeze(draft, o.requirements, pinned, questions, [...verified].filter(v => used.has(v))) };
     },
   }];
 }
@@ -413,5 +435,6 @@ const DRAFT_SCHEMA: Anthropic.Tool.InputSchema = {
     observations: { type: 'array', description: '탐색 중 본 이상하거나 요구사항과 어긋나 보이는 점 (계획에 담지 못한 것 포함)', items: {
       type: 'object', additionalProperties: false, required: ['page', 'note'],
       properties: { page: { type: 'string' }, note: { type: 'string' } } } },
+    withdraw: { type: 'array', items: { type: 'string' }, description: '앞선 제출에서 받아 둔 시나리오 중 뺄 ID (다시 제출할 때만)' },
   },
 };

@@ -1,7 +1,7 @@
 import { groupTemplates } from '../src/sitemap.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validate, freeze, mergePlans, compareValues, numberIn, expectedFrom, sortKeys, startTargetsElsewhere, type Draft, type Pinned, type Requirement } from '../src/plan.ts';
+import { validate, freeze, mergePlans, compareValues, numberIn, expectedFrom, sortKeys, startTargetsElsewhere, combineDraft, scenariosWithErrors, type Draft, type Pinned, type Requirement } from '../src/plan.ts';
 
 const origin = 'http://app.test';
 const reqs: Requirement[] = [
@@ -300,4 +300,25 @@ test('규칙별 허용 연산: 정렬 규칙에 목록 조건, 페이지 넘김�
   const before = { id: 'S1.C0', after: 'start', target: 'T3', read: 'items' as const, op: 'all_contain' as const, expected: '·', source: { kind: 'observed' as const } };
   const page = { id: 'S1.C3', after: 'S1.A1', target: 'T3', read: 'items' as const, expected_from: 'S1.C0', source: { kind: 'inferred' as const, rule: 'page-changes', quote: '다음 페이지로 넘기면 항목이 바뀐다' } };
   assert.ok(errorsOf(d => { d.scenarios[0].checks.push(before, { ...page, op: 'equals' as any }); }).some(e => e.includes('allows op not_equals')));
+});
+
+test('시나리오 단위 확정: 오류가 가리키는 시나리오만 고르고, 받아 둔 계획에 새 제출을 합친다', () => {
+  assert.deepEqual([...scenariosWithErrors([
+    'S2: needs at least one check', 'S3.C1: target "T9" was not pinned', 'scenario: duplicate id "S4"',
+    'feature F1 is neither covered nor unplanned', 'unplanned: unknown requirement or feature "F9"', 'requirement R1 is neither covered nor unplanned',
+  ])].sort(), ['S2', 'S3', 'S4']);
+  const sc = (id: string, covers: string[], title = id) => ({ id, title, covers, start: { url: 'http://x/' }, steps: [], checks: [] });
+  const accepted: Draft = { features: [{ id: 'F1', name: 'a', page: 'p' }, { id: 'F2', name: 'b', page: 'p' }],
+    scenarios: [sc('S1', ['F1']), sc('S2', ['F2']), sc('S3', ['F2'])], unplanned: [{ requirement: 'F3', reason: '나중에' }],
+    observations: [{ page: 'p', note: 'n' }] };
+  const out = combineDraft(accepted, { scenarios: [sc('S2', ['F2'], '새 S2'), sc('S4', ['F3'])], unplanned: [] });
+  assert.deepEqual(out.scenarios.map(s => [s.id, s.title]), [['S1', 'S1'], ['S2', '새 S2'], ['S3', 'S3'], ['S4', 'S4']], '같은 ID는 제자리에서 바꾸고 새 ID는 뒤에');
+  assert.deepEqual(out.features, accepted.features, 'features를 생략하면 받아 둔 목록');
+  assert.deepEqual(out.observations, accepted.observations, 'observations를 생략하면 받아 둔 목록');
+  assert.deepEqual(out.unplanned, [], 'unplanned는 늘 새 제출의 것');
+  // 보내면 통째로 바뀌므로 지울 수 있다. withdraw로 받아 둔 시나리오를 뺀다.
+  const cut = combineDraft(accepted, { features: [{ id: 'F1', name: 'a', page: 'p' }], scenarios: [], unplanned: [], observations: [] }, ['S2', 'S3']);
+  assert.deepEqual(cut.scenarios.map(s => s.id), ['S1']);
+  assert.deepEqual(cut.features!.map(f => f.id), ['F1']);
+  assert.deepEqual(cut.observations, []);
 });

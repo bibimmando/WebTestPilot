@@ -157,7 +157,7 @@ export function compareValues(op: Op, actual: string, expected: string): boolean
  * 모델 입력은 타입 표기를 믿을 수 없으므로 런타임에 모양을 먼저 검사한다.
  * MCP 경로는 API의 strict 검증을 거치지 않으므로 이 검사가 유일한 입구다.
  */
-function shapeErrors(d: any): string[] {
+export function shapeErrors(d: any): string[] {
   const e: string[] = [];
   const str = (v: unknown, where: string) => typeof v === 'string' || e.push(`${where} must be a string`);
   const optStr = (v: unknown, where: string) => v === undefined || str(v, where);
@@ -453,6 +453,25 @@ export function cloneScenarios(plan: Plan, pages: Record<string, string[]>): Pla
     variants.push({ from: s.id, url, to: id, dropped });
   }
   return { ...plan, scenarios: [...plan.scenarios, ...clones], variants: [...(plan.variants ?? []), ...variants] };
+}
+
+/** 오류가 가리키는 시나리오 ID. "S3: …", "S3.C2: …", 'id "S3"'처럼 시나리오나 그 안의 행동·검사를 가리킨 오류만 센다. 나머지(기능·미계획·요구사항 누락)는 계획 전체의 오류다. */
+export function scenariosWithErrors(errors: string[]): Set<string> {
+  return new Set(errors.flatMap(e => [e.match(/^(S\d+)[:.]/)?.[1], e.match(/id "(S\d+)"/)?.[1]].filter((x): x is string => !!x)));
+}
+
+/**
+ * 앞서 받아 둔 계획(accepted)에 새 제출을 합친다. 제출이 거부돼도 오류 없는 시나리오는 받아 두므로, 다음 제출에는 고칠 시나리오만 와도 된다.
+ * - 시나리오: 같은 ID는 새 제출이 제자리에서 바꾸고, 새 ID는 뒤에 붙인다. withdraw의 ID는 뺀다.
+ * - unplanned는 늘 새 제출의 것이다(필수 항목). features·observations는 보내면 새 목록, 생략하면 받아 둔 목록이다.
+ *   합치지 않고 통째로 바꾸므로 지우기도 되고, 남은 항목의 일관성은 같은 validate가 다시 본다.
+ */
+export function combineDraft(accepted: Draft, draft: Draft, withdraw: string[] = []): Draft {
+  const kept = accepted.scenarios.filter(s => !withdraw.includes(s.id));
+  const scenarios = [...kept.map(s => draft.scenarios.find(x => x.id === s.id) ?? s), ...draft.scenarios.filter(x => !kept.some(s => s.id === x.id))];
+  const features = draft.features ?? accepted.features;
+  const observations = draft.observations ?? accepted.observations;
+  return { ...(features ? { features } : {}), scenarios, unplanned: draft.unplanned, ...(observations ? { observations } : {}) };
 }
 
 /** 검증된 Draft를 실행 가능한 Plan으로 고정한다. 대화 기록과 객체를 공유하지 않도록 복사하고, 쓰이지 않은 pin은 버린다. */
