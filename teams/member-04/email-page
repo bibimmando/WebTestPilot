@@ -1,4 +1,6 @@
 https://github.com/shlee705/email_page/tree/bug-page
+[Total 결함 개수 12개]
+11월 4일 report에서 검출 항목 : 기능[1], ui[2], 라우팅[1]
 - [기능 결함 4개](functional.md)
 | [F1](functional.md#f1-email-page-내-inbox-유지) | 기능 | Email 내 inbox 표시 유지 | Email 화면 안에서 sent 페이지로 넘어갔을때 상단 경로 표시가 Inbox로 표시됨.
 | [F2](functional.md#f2-email-내-compose-송신-실패) | 기능 | Email 내 Compose 송신 실패 | Email 화면 안의 Compose 모달로 보내면 오류가 발생하고 수신자에게 배달되지 않는다. compose.html 전용 작성 페이지에서는 발송할 수 있다. |
