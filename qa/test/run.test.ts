@@ -469,6 +469,23 @@ test('실행: 라벨 영역에서 아예 사라진 대상은 보이지 않음으
   assert.ok(gone.evidence?.some(e => e.endsWith('.png')), '통과해도 그 시점 증거를 찍는다');
 });
 
+test('실행: 처음부터 닫혀 있는 메뉴는 라벨이 있고 같은 역할 요소가 없을 때 보이지 않음으로 읽고, 늦게 나타나면 통과시키지 않는다', async () => {
+  const mk = (q: string) => `${origin}/closedmenu.html${q}`;
+  const req = { kind: 'requirement' as const, id: 'R1', quote: '누르면 메뉴가 열린다' };
+  const p: Plan = { version: 1, textRead: 'name+content', features: [], questions: [], observations: [], unplanned: [],
+    requirements: [{ id: 'R1', text: '계정 버튼을 누르면 메뉴가 열린다' }],
+    targets: { T1: { target: { role: 'menu', anchor: '^Communications$', of: 1 }, group: false, url: mk('') }, T2: { target: { role: 'button', name: '^Account$' }, group: false, url: mk('') } },
+    startVerified: ['T1 ' + mk('?late'), 'T2 ' + mk('?late')],
+    scenarios: ['', '?late'].map((q, i) => ({ id: `S${i + 1}`, title: q || 'closed', covers: ['R1'], start: { url: mk(q) }, steps: [{ id: `S${i + 1}.A1`, op: 'click' as const, target: 'T2' }],
+      checks: [{ id: `S${i + 1}.C1`, after: 'start', target: 'T1', read: 'visible' as const, op: 'equals' as const, expected: 'false', source: { kind: 'observed' as const }, precondition: true },
+        { id: `S${i + 1}.C2`, after: `S${i + 1}.A1`, target: 'T1', read: 'visible' as const, op: 'equals' as const, expected: 'true', source: req }] })) };
+  const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir('closedmenu'), timeoutMs: 4000 });
+  const [closed, late] = r.scenarios.map(s => s.checks.find(c => c.id.endsWith('.C1'))!);
+  assert.deepEqual([closed.status, closed.actual], ['passed', 'false'], JSON.stringify(closed));
+  assert.match(closed.reason ?? '', /라벨은 있고/);
+  assert.notEqual(late.status, 'passed', `늦게 나타난 메뉴를 닫힘으로 통과시키면 안 된다: ${JSON.stringify(late)}`);
+});
+
 test('실행 폴더를 상대 경로로 줘도 실행한다', async () => {
   const p = plan();
   p.scenarios = [p.scenarios[0]];

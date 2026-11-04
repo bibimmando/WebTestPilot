@@ -6,7 +6,8 @@ export type Send = (req: Anthropic.MessageCreateParamsNonStreaming) => Promise<A
 /** stall: 탐색이 정체돼 대화를 끝낼 때 그 사유(완료가 아니라 미완료 사유로 남는다). */
 /** image: 도구 결과에 붙일 PNG(base64). 탐색의 screenshot 도구가 쓴다 */
 export type ToolOutcome = { text: string; isError?: boolean; done?: unknown; stall?: string; image?: string };
-export type Tool = { def: Anthropic.Tool; run: (input: any) => Promise<ToolOutcome> };
+/** turnsLeft: 이 응답 뒤에 남은 모델 턴 수 */
+export type Tool = { def: Anthropic.Tool; run: (input: any, ctx?: { turnsLeft: number; maxTurns: number }) => Promise<ToolOutcome> };
 
 type Rate = { input: number; output: number; cacheRead?: number };
 type Price = Rate & { over100k?: Rate };
@@ -166,7 +167,7 @@ export async function runAgent(o: {
     for (const block of response.content) {
       if (block.type !== 'tool_use') continue;
       // 브라우저 상태를 공유하므로 병렬 호출도 순서대로 실행한다.
-      const outcome = await runTool(byName.get(block.name), block.input);
+      const outcome = await runTool(byName.get(block.name), block.input, { turnsLeft: o.maxTurns - i - 1, maxTurns: o.maxTurns });
       results.push({ type: 'tool_result', tool_use_id: block.id, ...(outcome.isError ? { is_error: true } : {}),
         content: outcome.image ? [{ type: 'text', text: outcome.text }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: outcome.image } }] : outcome.text });
       // 제출이 통과하면 같은 응답의 나머지 도구는 실행하지 않는다 (제출 뒤 행동이 계획 상태를 바꾸지 않도록).
@@ -188,10 +189,10 @@ export async function runAgent(o: {
   return end('max_turns');
 }
 
-async function runTool(tool: Tool | undefined, input: unknown): Promise<ToolOutcome> {
+async function runTool(tool: Tool | undefined, input: unknown, ctx: { turnsLeft: number; maxTurns: number }): Promise<ToolOutcome> {
   if (!tool) return { text: '알 수 없는 도구', isError: true };
   try {
-    return await tool.run(input);
+    return await tool.run(input, ctx);
   } catch (e) {
     return { text: `도구 오류: ${(e as Error).message.split('\n')[0]}`, isError: true };
   }

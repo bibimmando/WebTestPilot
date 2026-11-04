@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
-import { areaOf, auditPage, blockedSummary, pressKey, goneFromArea, MOBILE, openContext, stableOnReload, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
+import { absentEverywhere, areaOf, auditPage, blockedSummary, pressKey, goneFromArea, MOBILE, openContext, stableOnReload, snapshot, resolveRef, resolveText, resolveGroup, toLocator, shapeChanged, valuePattern, parseSnapshot, ariaText, ariaTextV1, type AriaNode } from '../src/browser.ts';
 
 let browser: Browser | undefined;
 let server: Server | undefined;
@@ -94,6 +94,20 @@ test('사라짐 판단: 글자 모양으로 고정한 값은 내용이 바뀌어
   const area = await areaOf(p, t);
   await p.evaluate(() => { document.querySelector('span')!.textContent = '재고를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요 (오류 코드 503)'; });
   assert.equal(await goneFromArea(p, t, area), false);
+});
+
+test('없음 판단: 처음부터 닫혀 있는 메뉴는 라벨이 있고 같은 역할 요소가 페이지에 없을 때만 없다고 본다', async () => {
+  const p = await page('<header><h2>Communications</h2><button onclick="this.after(Object.assign(document.createElement(\'ul\'), { role: \'menu\', innerHTML: \'<li role=menuitem>Logout</li>\' }))">Account</button></header>');
+  const t = { role: 'menu', anchor: '^Communications$', of: 1 };
+  assert.equal(await absentEverywhere(p, t), true, '닫혀 있음');
+  await p.getByRole('button', { name: 'Account' }).click();
+  assert.equal(await absentEverywhere(p, t), false, '열림');
+  // 라벨이 없으면(아직 그려지지 않은 화면) 없다고 단정하지 않는다.
+  const blank = await page('<main></main>');
+  assert.equal(await absentEverywhere(blank, t), false);
+  // 같은 역할 요소가 다른 곳에 있으면 그것이 대상인지 모르므로 없다고 하지 않는다.
+  const other = await page('<header><h2>Communications</h2></header><nav><ul role="menu"><li role="menuitem">Help</li></ul></nav>');
+  assert.equal(await absentEverywhere(other, t), false);
 });
 
 test('구분할 수 없는 같은 요소는 순서로 고르지 않고 거부한다', async () => {

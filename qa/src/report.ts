@@ -87,6 +87,8 @@ export type Report = {
   headlines?: Headlines;
   /** 저장돼 있었지만 쓰지 않은 제목 수(판정 데이터가 바뀜·지문 형식이 다름·사실 대조 실패) */
   headlinesRejected?: number;
+  /** 실패 시점 화면 알림(status·alert)에 같은 글자가 보인 발견들. 같은 원인일 수 있다는 검토 단서이며 판정·등급은 바꾸지 않는다 */
+  commonNotices?: { text: string; findings: string[] }[];
   uiDefects: AuditItem[];
   improvements: AuditItem[];
   /** 다시 나오지 않았거나 화면이 안정되지 않아 확인하지 못한 점검 발견(관찰). 결함 건수에 넣지 않는다 */
@@ -253,6 +255,18 @@ export function buildReport(dir: string): Report {
     ...(s.startCaptureErrors ?? []).map(e => `${s.id}(시작): ${e}`),
     ...[...s.steps, ...s.checks].flatMap(x => (x.captureErrors ?? []).map(e => `${x.id}: ${e}`))]);
   actions.repeated = actions.repeated.map(r => ({ ...r, target: describe(r.target) ?? r.target }));
+  // 같은 앱 오류가 여러 시나리오의 실패로 따로 나오는 경우를 보이게 한다(Adminator 10/26: 오탐 6건 중 4건이 같은 화면 알림 뒤 실패).
+  const notices = new Map<string, Set<string>>();
+  for (const x of [...bugs, ...of('ui_defect', 'improvement')]) for (const e of x.evidence.filter(e => e.endsWith('.aria.txt'))) {
+    if (!existsSync(join(dir, e))) continue;
+    for (const t of noticesIn(readFileSync(join(dir, e), 'utf8'))) notices.set(t, (notices.get(t) ?? new Set()).add(findingKey(x)));
+  }
+  // 같은 오류 문구 뒤에 안내가 덧붙는 알림도 있어(“… is not a function Your unsaved input is retained.”), 다른 알림 글자를 그대로 품은 알림도 같은 단서로 센다.
+  // 짧은 글자("Saved")는 우연히 겹치므로 10자 이상만. 더 짧은 단서에 이미 포함되는 긴 글자는 따로 내지 않는다.
+  const MIN_NOTICE = 10;
+  const sharing = (t: string) => new Set([...notices].filter(([u]) => u.includes(t)).flatMap(([, k]) => [...k]));
+  const common = [...notices.keys()].filter(t => t.length >= MIN_NOTICE && sharing(t).size > 1);
+  const commonNotices = common.filter(t => !common.some(u => u !== t && t.includes(u))).map(text => ({ text, findings: [...sharing(text)] }));
 
   return {
     version: 'report/2',
@@ -284,6 +298,7 @@ export function buildReport(dir: string): Report {
     bugs, hold: of('hold'), visual: of('ui_defect', 'improvement'), questions: judgment.pendingQuestions ?? [], observations: plan.observations,
     errorSignals: signals, normalRejections: signals.filter(g => g.normal).length,
     signalsDropped: results.scenarios.reduce((n, s) => n + (s.signalsDropped ?? 0), 0),
+    ...(commonNotices.length ? { commonNotices } : {}),
     uiDefects: audit.filter(a => a.confirmed && a.level === 'ui_defect'), improvements: audit.filter(a => a.confirmed && a.level === 'improvement'),
     auditUnconfirmed: audit.filter(a => !a.confirmed), auditErrors: explore.sitemap?.auditErrors ?? [],
     incomplete: { total: incomplete.length, byReason, items: incomplete },
@@ -297,6 +312,14 @@ export function buildReport(dir: string): Report {
       return { headlines, headlinesRejected: Object.keys(saved).length - Object.keys(headlines).length };
     })() : {}),
   };
+}
+
+/**
+ * 화면 알림 영역(status·alert 역할)의 글자. 알림 영역은 앱이 결과·오류를 알리는 곳이라, 같은 글자가 여러 실패에 보이면 공통 원인 단서다.
+ * shortcut: "- status: 글자"처럼 한 줄에 붙은 글자만 읽는다. 자식 줄로 나뉜 알림은 놓친다, 실측에서 놓치면 넓힌다.
+ */
+export function noticesIn(aria: string): string[] {
+  return [...new Set([...aria.matchAll(/^\s*- (?:status|alert)(?: "[^"\n]*")?(?: \[[^\]\n]*\])*: (.+)$/gm)].map(m => m[1].trim()).filter(Boolean))];
 }
 
 /** 발견 묶기: 원래 시나리오 하나가 한 발견이다(같은 종류 다른 페이지 복제 포함). 심각한 순서. 보고서 본문과 AI 제목이 같은 묶음을 쓴다 */
@@ -670,6 +693,7 @@ export function renderHtml(rep: Report, dir: string): string {
     <p class="note">버그·UI 결함 수는 페이지마다 센 판정 수다. 아래 주요 발견은 같은 검사를 하나로 묶은 것이다.</p>
     <h2><span class="no">01</span>주요 발견 (${findings.length})</h2>
     ${findings.length ? `<table class="list"><tr><th>발견</th><th>판정</th><th>내용</th><th>영향</th></tr>${findings.map((g, i) => `<tr><td><a href="#f${i + 1}">발견 ${i + 1}</a></td><td>${badge(g[0].level)}</td><td>${esc(headlineOf(g) ?? plainTitle(g[0].title))}<br><span class="muted">${headlineOf(g) ? `기대 동작: ${esc(plainTitle(g[0].title))}` : `실제: ${esc(actualLine(g[0]))}`}</span>${new Set(g.map(checkKey)).size > 1 ? ` <span class="muted">(검사 ${new Set(g.map(checkKey)).size}개 실패)</span>` : ''}</td><td class="nw">${pagesOf(g).length}곳</td></tr>`).join('')}</table>` : '<p class="empty">버그·화면 결함으로 판정한 발견이 없다.</p>'}
+    ${(rep.commonNotices ?? []).map(c => `<p class="note"><b>같은 화면 알림</b> — 발견 ${c.findings.map(k => findings.findIndex(g => findingKey(g[0]) === k) + 1).filter(n => n > 0).sort((a, b) => a - b).join(', ')}의 실패 시점 화면 알림에 같은 글자가 보였다: “${esc(clip(c.text, 120))}”. 한 원인에서 나온 증상일 수도, 늘 떠 있는 알림일 수도 있으니 함께 확인한다(판정은 그대로).</p>`).join('')}
     ${rep.uiDefects.length || rep.improvements.length ? `<p class="note">이 밖에 브라우저가 계산한 품질 점검에서 UI 결함 ${rep.uiDefects.length}건·개선 제안 ${rep.improvements.length}건이 나왔다(05).</p>` : ''}
     <p class="note">판정은 시스템 판정이다. 통과한 검사는 사이트 전체가 정상이라는 뜻이 아니며, 최종 결함 여부는 사람이 확인한다.</p>
   </section>

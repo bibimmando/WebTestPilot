@@ -345,6 +345,17 @@ export async function goneFromArea(page: Page, t: Target, area: ElementHandle | 
   return await inArea(page.getByText(new RegExp(t.anchor))) && !(await inArea(shape(page, t)));
 }
 
+/**
+ * 라벨은 하나로 남아 있는데 대상 모양(역할·이름)의 요소가 페이지 어디에도 없으면 그 대상은 없다.
+ * 처음부터 닫혀 있던 메뉴·대화상자는 기억한 영역이 없어 goneFromArea로 판단할 수 없다(이메일 사이트 11/3: 시작 조건 "메뉴 닫힘" 3건이 못 읽음).
+ * 라벨을 요구해 아직 그려지지 않은 화면을 "없음"으로 읽지 않는다.
+ */
+export async function absentEverywhere(page: Page, t: Target): Promise<boolean> {
+  if (t.anchor === undefined || t.role === undefined) return false;
+  return (await page.getByText(new RegExp(t.anchor)).count()) === 1 && (await page.getByText(new RegExp(t.anchor)).filter({ visible: true }).count()) === 1
+    && (await shape(page, t).count()) === 0;
+}
+
 /** 순서로 고정한 대상의 영역 안 같은 모양 요소 수가 고정 때와 다르면 순서가 다른 요소를 가리킬 수 있다. */
 export async function shapeChanged(page: Page, t: Target): Promise<boolean> {
   // 라벨이 하나 더 생기면 .last()가 다른 영역을 고르므로, 실행 때도 라벨이 유일한지 본다.

@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
-import { buildReport, renderHtml, writeReport } from '../src/report.ts';
+import { buildReport, noticesIn, renderHtml, writeReport } from '../src/report.ts';
 import type { Plan } from '../src/plan.ts';
 
 const browser = await chromium.launch();
@@ -195,4 +195,33 @@ test('행동 실행 집계: 시도 기준 실패율, 시도하지 못한 행동�
   ]));
   assert.deepEqual(a, { planned: 6, attempted: 3, completed: 1, notExecuted: { target_changed: 1 }, uncertain: 1,
     notRun: { '앞 행동에서 멈춤': 1, '시작 실패': 1 }, invalid: 1, policyBlocked: 0, failureRate: 0.667, repeated: [{ target: 'T1', failures: 2, steps: ['S1.A1', 'S2.A1'] }] });
+});
+
+test('공통 원인 의심: 실패 시점 화면 알림(status·alert)에 같은 글자가 보인 발견을 묶어 보이고, 판정은 바꾸지 않는다', async () => {
+  // 실제 Playwright snapshot 형식(기본·ai 모드)에서 알림 글자만 읽는지 확인한다.
+  const page = await browser.newPage();
+  await page.setContent('<div role="status">crypto.randomUUID is not a function</div><div role="alert">저장 실패</div><p>보통 글</p><div role="status"></div>');
+  for (const aria of [await page.locator('body').ariaSnapshot(), await page.locator('body').ariaSnapshot({ mode: 'ai' })]) {
+    assert.deepEqual(noticesIn(aria), ['crypto.randomUUID is not a function', '저장 실패'], aria);
+  }
+  await page.close();
+
+  const dir = savedRun();
+  const v = JSON.parse(readFileSync(join(dir, 'run', 'verdicts.json'), 'utf8'));
+  // S2도 같은 앱 오류 뒤에 실패한 버그로 바꾼다.
+  v.verdicts[1] = { ...v.verdicts[0], id: 'S2.C1', scenario: 'S2' };
+  writeFileSync(join(dir, 'run', 'verdicts.json'), JSON.stringify(v));
+  const res = JSON.parse(readFileSync(join(dir, 'run', 'results.json'), 'utf8'));
+  for (const s of res.scenarios) s.checks[0] = { ...s.checks[0], status: 'mismatch', evidence: [`evidence/${s.id}.C1.aria.txt`] };
+  writeFileSync(join(dir, 'run', 'results.json'), JSON.stringify(res));
+  // S2의 알림은 같은 오류 문구 뒤에 안내가 붙는다. 짧은 "Saved"는 둘 다 보여도 우연일 수 있어 묶지 않는다.
+  writeFileSync(join(dir, 'run', 'evidence', 'S1.C1.aria.txt'), '- main:\n  - status: crypto.randomUUID is not a function\n  - alert: S1에만 있는 알림\n  - status: Saved\n');
+  writeFileSync(join(dir, 'run', 'evidence', 'S2.C1.aria.txt'), '- main:\n  - status: crypto.randomUUID is not a function Your unsaved input is retained.\n  - status: Saved\n');
+  const r = buildReport(dir);
+  assert.deepEqual(r.commonNotices, [{ text: 'crypto.randomUUID is not a function', findings: ['S1', 'S2'] }], '한 발견에만 보인 알림·짧은 알림은 묶지 않는다');
+  assert.deepEqual(r.bugs.map(x => x.level), ['bug_medium', 'bug_medium'], '판정은 그대로');
+  assert.match(renderHtml(r, dir), /같은 화면 알림<\/b> — 발견 1, 2/);
+  // 알림이 하나의 발견에만 있으면 칸이 없다.
+  writeFileSync(join(dir, 'run', 'evidence', 'S2.C1.aria.txt'), '- main:\n  - status: 다른 알림\n');
+  assert.equal(buildReport(dir).commonNotices, undefined);
 });

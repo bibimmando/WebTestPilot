@@ -10,6 +10,9 @@ import { crawl, pathOf, type SiteMap, type Template } from './sitemap.ts';
 import { runAgent, type AgentResult, type Budget, type Send, type Tool, type ToolOutcome } from './agent.ts';
 
 export const SYSTEM = readFileSync(new URL('../prompts/explore.md', import.meta.url), 'utf8');
+/** 기능 유형별 점검 안내(read_guide). "## 유형" 절마다 하나. 필요한 유형만 대화에 들어가게 시스템 프롬프트에 넣지 않는다 */
+export const GUIDES: Record<string, string> = Object.fromEntries(readFileSync(new URL('../prompts/guides.md', import.meta.url), 'utf8')
+  .split(/^## /m).slice(1).map(s => [s.slice(0, s.indexOf('\n')).trim(), s.slice(s.indexOf('\n') + 1).trim()]));
 const SNAPSHOT_CHARS = 24_000;
 const ACTION_TIMEOUT = 5_000;
 const SETTLE_TIMEOUT = 3_000;
@@ -29,7 +32,8 @@ export type ExploreResult = AgentResult & { plan?: Plan; blocked: string[]; viol
   conversations: { template: string; url: string; stop: AgentResult['stop'] | 'not_attempted'; detail?: string; turns: number; planned: boolean }[] };
 /** 템플릿별 대화가 함께 쓰는 번호·기록. 도구는 대화마다 새로 만들어 이전 대화의 대상·인용·행동 상태가 새지 않게 한다. */
 export type Part = { taken: Set<string>; next: { T: number; Q: number }; questions: Question[]; urls: Set<string> };
-type Task = { policy: Policy; startUrl: string; requirements: Requirement[] };
+/** reviewEarly: 턴의 절반도 쓰지 않고 통과한 계획에 한 번 "더 볼 것"을 묻는다(A/B로 효과를 확인하기 전까지 기본 끔) */
+type Task = { policy: Policy; startUrl: string; requirements: Requirement[]; reviewEarly?: boolean };
 /** 템플릿별 대화의 범위: 사이트 지도 요약, 이번 템플릿, 이어 쓸 ID 번호 */
 /** retry: 같은 템플릿의 앞선 대화가 턴 한도로 계획 없이 끝났을 때 그 대화의 턴 수 */
 export type Scope = { map: SiteMap; template: Template; url: string; nextScenario: number; nextFeature: number; retry?: number };
@@ -47,7 +51,9 @@ export async function explore(o: Task & { browser: Browser; send: Send; model: s
   /** 이 시각(epoch ms)이 지나면 새 대화를 시작하지 않는다. 진행 중인 대화는 끝까지 둔다 */
   deadline?: number;
   /** 로그인 상태(login.ts). 사이트 지도와 모든 탐색 대화가 이 상태로 시작한다 */
-  storageState?: StorageState }): Promise<ExploreResult> {
+  storageState?: StorageState;
+  /** 탐색·계획 대화의 effort(기본은 agent.ts의 medium) */
+  effort?: 'low' | 'medium' | 'high' }): Promise<ExploreResult> {
   assertStartAllowed(o);
   // 탐색하는 동안에는 분류·재현 몫을 예약 하한으로 걸어, 진행 중인 대화도 그 몫을 쓰지 못하게 한다.
   const floor = o.budget.floorUsd;
@@ -95,12 +101,18 @@ async function exploreSite(o: Parameters<typeof explore>[0]): Promise<ExploreRes
         // 구간을 넘는 ID는 제출에서 거부한다(완료 순서에 따라 어느 대화가 거부될지 달라지지 않게).
         const next = (prefix: string) => concurrency > 1 ? index * 100 + 1
           : Math.max(0, ...[...part.taken].filter(id => id.startsWith(prefix)).map(id => Number(id.slice(1)))) + 1;
-        const tools = exploreTools(page, o, violations, single ? undefined : part, concurrency > 1 ? [index * 100 + 1, index * 100 + 100] : undefined);
+        const held: { make?: () => Plan; ids?: string[] } = {};
+        const tools = exploreTools(page, o, violations, single ? undefined : part, concurrency > 1 ? [index * 100 + 1, index * 100 + 100] : undefined, held);
         const retry = job.retryOf === undefined ? undefined : done[job.retryOf].result.turns.length;
         const user = taskMessage(o, single ? undefined : { map, template, url, nextScenario: next('S'), nextFeature: next('F'), retry });
-        const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools, user, budget: o.budget,
+        const result = await runAgent({ send: o.send, model: o.model, system: SYSTEM, tools, user, budget: o.budget, ...(o.effort ? { effort: o.effort } : {}),
           maxTurns: single ? o.maxTurns : o.turnsPerTemplate ?? 25 });
         if (result.stop === 'budget') stopped = '예산 소진';
+        // "한 번 더 묻기" 뒤 다시 제출하지 않고 끝났으면 그때 통과한 계획을 쓴다(이메일 사이트 11/3: 통과한 계획이 버려짐).
+        if (!result.result && held.make) {
+          for (const id of held.ids ?? []) part.taken.add(id);
+          return { job, url, result: { ...result, result: held.make(), detail: `${result.stop}: 한 번 더 묻기 뒤 다시 제출하지 않아 앞서 통과한 계획을 씀` } };
+        }
         return { job, url, result };
       } finally {
         blocked.push(...guarded.blocked);
@@ -199,7 +211,11 @@ export function taskMessage(o: Task, scope?: Scope): string {
 
 /** 탐색 도구 전체. API 루프(explore)와 개발용 MCP 서버(mcp.ts)가 같은 도구를 쓴다. 계획이 통과하면 done에 Plan이 담긴다. */
 /** idRange: 동시 실행에서 이 대화가 쓸 S#·F# 번호 구간 [처음, 끝]. */
-export function exploreTools(page: Page, o: Task, violations: string[], part?: Part, idRange?: [number, number]): Tool[] {
+/**
+ * held: "한 번 더 묻기" 때 통과한 계획. 대화가 다시 제출하지 않고 끝나도 버리지 않는다(호출한 쪽이 make()로 확정).
+ * 끝날 때 만들어 그 사이 남긴 질문도 담는다. 이후 제출이 그 계획의 시나리오를 빼거나 바꾸면 모델의 뜻이 바뀐 것이므로 버린다.
+ */
+export function exploreTools(page: Page, o: Task, violations: string[], part?: Part, idRange?: [number, number], held: { make?: () => Plan; ids?: string[] } = {}): Tool[] {
   const pinned = new Map<string, Pinned>();
   // 탐색 중 본 snapshot 텍스트. constraint(화면 안내) 인용이 실제로 화면에 있었는지 확인한다.
   const seen: string[] = [];
@@ -208,8 +224,14 @@ export function exploreTools(page: Page, o: Task, violations: string[], part?: P
   let accepted: Draft | undefined;
   // 시작 URL을 새로 열어 확인한 "대상ID 시작URL". 제출 사이에 유지한다.
   const verified = new Set<string>();
+  // 일찍 통과한 계획에 "더 볼 것" 안내를 이미 했는지(대화당 한 번).
+  let reviewed = false;
   const nextTarget =() => part ? `T${part.next.T++}` : `T${pinned.size + 1}`;
   return [...browserTools(page, o.policy, pinned, violations, seen, nextTarget, u => part?.urls.add(u)), {
+    def: { name: 'read_guide', strict: true, description: `기능 유형별 점검 안내(무엇을 시도하고 어떤 규칙·형식으로 검사할지)를 읽는다. 그 유형의 기능을 처음 만났을 때 한 번 읽는다. form 입력 폼, list 목록·필터·정렬·페이지 넘김, navigation 이동·링크, dialog 메뉴·모달·탭, flow 여러 화면에 걸친 결과, screen 모바일·겹침·빈 상태`,
+      input_schema: { type: 'object', additionalProperties: false, required: ['kind'], properties: { kind: { enum: Object.keys(GUIDES) } } } },
+    run: async ({ kind }: { kind: string }) => GUIDES[kind] ? { text: GUIDES[kind] } : { text: `알 수 없는 유형: ${kind}`, isError: true },
+  }, {
     def: { name: 'ask_user', strict: true, description: '정답이 업무 규칙에 달려 있고 화면만으로 알 수 없을 때 사용자에게 질문을 남긴다. 답을 기다리지 말고 다른 기능을 계속 탐색한다.',
       input_schema: { type: 'object', additionalProperties: false, required: ['question', 'options'], properties: {
         question: { type: 'string' }, options: { type: 'array', items: { type: 'string' }, description: '선택지 2개 이상' },
@@ -226,7 +248,7 @@ export function exploreTools(page: Page, o: Task, violations: string[], part?: P
     },
   }, {
     def: { name: 'submit_plan', description: '완성한 테스트 계획을 제출한다. 오류가 있으면 오류 목록이 돌아온다. 오류 없는 시나리오는 받아 두므로, 다시 낼 때는 고친 시나리오와 unplanned 전체만 보내면 된다(features·observations는 바꿀 때만 전체).', input_schema: DRAFT_SCHEMA },
-    run: async ({ withdraw = [], ...submitted }: Draft & { withdraw?: string[] }) => {
+    run: async ({ withdraw = [], ...submitted }: Draft & { withdraw?: string[] }, ctx?: { turnsLeft: number; maxTurns: number }) => {
       if (violations.length) return { text: `정책 위반이 있어 계획을 받을 수 없다: ${violations.join(', ')}`, isError: true };
       if (idRange) {
         const out = [...(submitted.scenarios ?? []).map(s => s.id), ...(submitted.features ?? []).map(f => f.id)]
@@ -238,6 +260,7 @@ export function exploreTools(page: Page, o: Task, violations: string[], part?: P
       // 형식이 깨진 제출은 합치지 않는다(합친 뒤에는 어느 제출의 형식 오류인지 가를 수 없다).
       const shape = shapeErrors(submitted);
       if (shape.length) return { text: `계획을 고쳐서 다시 제출하세요:\n- ${shape.join('\n- ')}`, isError: true };
+      if (held.make && (withdraw.some(id => held.ids?.includes(id)) || (submitted.scenarios ?? []).some(s => held.ids?.includes(s.id)))) { held.make = undefined; held.ids = undefined; }
       const unknown = withdraw.filter(id => !accepted?.scenarios.some(s => s.id === id));
       if (unknown.length) return { text: `withdraw는 받아 둔 시나리오 ID만 쓸 수 있다: ${unknown.join(', ')}`, isError: true };
       const draft = accepted ? combineDraft(accepted, submitted, withdraw) : submitted;
@@ -272,6 +295,23 @@ export function exploreTools(page: Page, o: Task, violations: string[], part?: P
           ...(kept.length ? [`오류 없는 시나리오는 받아 두었습니다: ${kept.join(', ')}. 다시 보내지 않아도 됩니다(같은 ID로 보내면 새 내용으로 바뀌고, withdraw에 ID를 적으면 뺍니다).`,
             '다음 제출에는 고친 시나리오와 unplanned 전체를 보내세요. features·observations는 바꿀 때만 전체를 보내고, 생략하면 이전 것을 씁니다.'] : []),
           `계획을 고쳐서 다시 제출하세요:\n- ${errors.join('\n- ')}`].join('\n'), isError: true };
+      }
+      // 턴의 절반도 쓰지 않고 통과하면 한 번만 더 볼 것이 있는지 묻는다. 계획은 받아 두므로 그대로 다시 내면 확정된다.
+      // 일찍 끝내 계획이 작아지는 경우(Sonnet 10/30: 대화 8개 중 4개가 2~3턴에 제출, 시나리오 41→11)를 범위 축소 없이 줄이려는 안내다. 거부가 아니다.
+      if (o.reviewEarly && !reviewed && ctx && ctx.turnsLeft * 2 >= ctx.maxTurns) {
+        reviewed = true;
+        accepted = draft;
+        const used = new Set(startTargetsElsewhere(draft, pinned).map(x => `${x.id} ${x.url}`));
+        const passed = draft, startVerified = [...verified].filter(v => used.has(v));
+        held.make = () => {
+          // 통과한 뒤 남긴 질문도 담는다. 계획에 없는 기능을 가리키는 질문은 기능 연결만 뺀다.
+          const declared = new Set((passed.features ?? []).map(f => f.id));
+          return freeze(passed, o.requirements, pinned, questions.map(q => !q.feature || declared.has(q.feature) ? q : (({ feature: _, ...rest }) => rest)(q)), startVerified);
+        };
+        held.ids = [...draft.scenarios.map(s => s.id), ...(draft.features ?? []).map(f => f.id)];
+        return { text: [`계획이 검사를 통과해 받아 두었습니다(시나리오 ${draft.scenarios.map(s => s.id).join(', ')}). 아직 남은 턴이 ${ctx.turnsLeft}번 있습니다.`,
+          '이 페이지 종류에서 아직 써 보지 않은 기능이 있는지 확인하세요: 입력 폼(잘못된 입력 포함), 목록의 필터·정렬·페이지 넘김·개수, 메뉴·모달·탭, 다른 화면에 결과가 반영되는 흐름, 모바일 화면, 겹침·잘림 같은 화면 상태.',
+          '있으면 더 탐색해 새 시나리오와 바뀐 features·unplanned 전체를 제출하세요. 더 볼 것이 없으면 scenarios: []와 지금과 같은 unplanned로 다시 제출하면 그대로 확정됩니다.'].join('\n') };
       }
       // 템플릿별 대화면 이 계획의 ID를 다음 대화가 다시 쓰지 못하게 남긴다.
       for (const id of [...draft.scenarios.map(s => s.id), ...(draft.features ?? []).map(f => f.id)]) part?.taken.add(id);

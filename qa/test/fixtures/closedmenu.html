@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>닫힌 메뉴</title></head>
+<body>
+  <header><h2>Communications</h2><button id="acct">Account</button></header>
+  <main><p>메일 목록</p></main>
+  <script>
+    const open = () => { if (!document.querySelector('[role=menu]')) document.querySelector('header').insertAdjacentHTML('beforeend', '<ul role="menu"><li role="menuitem">Logout</li></ul>'); };
+    document.getElementById('acct').onclick = open;
+    // ?late: 메뉴가 화면이 다 그려진 뒤 늦게 나타난다(닫힘으로 잘못 읽으면 안 되는 경우).
+    if (location.search.includes('late')) setTimeout(open, 1500);
+  </script>
+</body></html>

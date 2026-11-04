@@ -9,6 +9,87 @@ Claude Code와 Codex CLI가 작업을 넘길 때 최신 항목을 맨 위에 추
 - 미검증 / 주의:
 -->
 
+## 2026-11-04 (44) · Claude · 이메일 A/B 결과로 고친 공통 원인 2가지
+
+- **처음부터 닫혀 있는 요소의 "보이지 않음"을 못 읽음** (A의 판정 못 함 8건 전부, 시나리오 S1~S3)
+  - 원인: 열린 상태에서 "라벨 영역 안 순서"로 고정한 메뉴·대화상자는 시작 화면에 아예 없다. `shapeChanged`가 참이 되고, 기억한 영역이 없어 `goneFromArea`도 판단하지 못해 `unresolved`("순서로 고정한 영역의 요소 수가 바뀜") → 시작 조건 실패 → 뒤 검사 미실행.
+  - 수정: `browser.ts absentEverywhere` — 라벨이 하나로 있고 같은 역할(이름) 요소가 페이지 어디에도 없으면 없음(보임 false). 라벨을 요구해 그려지기 전 화면을 없음으로 읽지 않는다. 같은 역할 요소가 다른 곳에 있으면 판단하지 않는다. `fixture.ts` 보임 읽기에 연결.
+  - 확인: 단위 테스트(닫힘·열림·라벨 없음·다른 곳의 같은 역할). A의 저장 계획을 지금 코드로 S1~S3만 다시 실행(모델 호출 없음, `runs/email-A-rerun-*`): 세 시나리오 모두 시작 조건 통과, 뒤 검사 7개 통과.
+- **닫기 결과를 고정값으로 쓰다 거부됨** (A S106, B S2·S101 등)
+  - 원인: 모델은 "취소·닫기 뒤 대화상자 안 보임"을 고정 기대값으로 쓰려 했는데, 맞는 규칙이 `action-has-effect`(expected_from 필수)뿐이었다.
+  - 수정: 규칙 `close-dismisses`(1묶음, form `hidden`: read visible, op equals, expected "false"만). 닫기는 앱과 무관한 대화상자·메뉴 패턴(WAI-ARIA)이고, 기대값이 규칙에서 정해져 관찰값 고정 우회가 없다. `plan.ts checkSource`에 형식 검사, `guides.md` dialog 안내 갱신.
+  - 확인: 형식 위반(true·text·expected_from) 거부 테스트. 실제 거부 감소는 유료 재실행 필요.
+- **Codex 리뷰 반영** ((41)~(44) 전체, P1 4·P2 3·P3 1 모두 반영. 정답표·.env·email_page의 docs/bugs·backend/tests는 열지 않게 함):
+  - P1 close-dismisses가 행동 없이 시작 시점에도 통과 → 행동 뒤 검사여야 하고, 앞선 시점에 같은 대상 visible "true" 검사가 있어야 한다(`checkSource`).
+  - P1 없음 판단이 첫 관측에서 바로 통과(늦게 그려지는 요소를 닫힘으로) → 요소 없음으로 읽은 보임 false는 1.5초(`ABSENT_MS`, 읽기 한도 이하) 계속 없을 때만 통과. 라벨은 보이는 것만 센다. 실행 테스트 `closedmenu.html`(?late: 1.5초 뒤 메뉴)로 대기를 빼면 실패함을 확인.
+  - P1 page-changes가 relation이라 text not_equals로도 통과 → `Rule.read: 'items'`(page-changes·effect-shown-elsewhere), 안내·검사가 같은 필드 사용.
+  - P1 held가 이후 withdraw·교체 뒤에도 되살아남 → 이후 제출이 통과 계획의 시나리오를 빼거나 바꾸면 버린다.
+  - P2 통과 뒤 질문이 사라짐 → held를 끝날 때 만들어(`make`) 질문을 담고, 없는 기능을 가리키면 기능 연결만 뺀다.
+  - P2 guides의 reset-restores·same-action-same-result 권유가 과함 → 명시적 초기화 컨트롤, 상태를 바꾸지 않는 동작으로 한정.
+  - P2 `--plan-effort` 값 검사(부작용 전 종료 2).
+  - P3 commonNotices 문구를 "같은 화면 알림"(원인일 수도, 늘 떠 있는 알림일 수도)으로 낮춤.
+- 테스트 154개 통과.
+
+## 2026-11-03 (43) · Claude · 규칙 형식 안내·점검 안내(skill)·한 번 더 묻기, 이메일 사이트 A/B
+
+- 배경: 저장 실행 분석(Opus 4회, 대화 45개). 탐색 비용 21%가 거부 뒤 다시 제출, 거부 오류 줄의 약 60%가 "규칙 X는 expected_from 필요/연산 Y만". Sonnet은 일찍 제출해 계획이 작았다(10/30).
+- 수정(커밋 전):
+  - ① `rules.ts ruleForm`·`rulesText`: 규칙마다 형식(expected_from·offset·op·read)을 계획 검사와 같은 필드로 표시. `explore.md` 끝에 "제출 전 확인" 5줄.
+  - ③ `explore.ts reviewEarly`(`--review-early`, 기본 끔): 턴의 절반도 쓰지 않고 통과하면 한 번 "더 볼 것"을 묻는다(거부 아님). 다시 제출하지 않고 끝나면 통과한 계획을 쓴다(`held`). `agent.ts` 도구 실행에 `turnsLeft`·`maxTurns` 전달.
+  - ② `prompts/guides.md` + `read_guide` 도구: 기능 유형 6개(form·list·navigation·dialog·flow·screen) 점검 안내. agent-browser dogfood Issue Taxonomy·Exploration Checklist, Playwright planner(둘 다 Apache-2.0)를 우리 규칙·형식에 맞게 다시 씀. 사이트별 내용 없음.
+  - `--plan-effort`(탐색 effort).
+  - 테스트 150개 통과(규칙 형식 표시, 안내 규칙 ID 유효성, 한 번 더 묻기·계획 보존).
+- 이메일 사이트 A/B (사용자 승인): `shlee705/email_page` `bug-page` 브랜치를 `C:\Users\lsc05\Documents\ChatGPT\test-apps\email_page`에서 로컬 실행(127.0.0.1:8000, README의 시험 계정, 앱 설정 `qa/runs/apps/email_page.json`, 쓰기 차단). 정답 문서(`docs/bugs/`)·버그 테스트 파일은 열지 않음. **이 앱은 이제 개발용이다(미사용 평가 앱 아님).**
+
+  | | A Opus medium | B Sonnet high + 한 번 더 묻기 |
+  |---|---|---|
+  | 비용·시간 | $1.02 · 5.6분 | $0.73 · 4.4분 |
+  | 대화(턴) | email 22, compose 22, NewMail 2 | email 25, compose 22, NewMail 11(계획 없음) |
+  | 시나리오 / 검사 / 기능 | 11 / 24 / 17 | 5 / 12 / 7 |
+  | 시각 검사 · 모바일 | 3 · 0 | 1 · 0 |
+  | 거부 뒤 다시 제출 | 1 | 4 |
+  | 발견 | 5 (중간 2, UI 결함 3) | 2 (중간 1, UI 결함 1) |
+  | 판정 못 함 / 통과 검사 | 8 / 11 | 1 / 9 |
+
+  - B의 NewMail 대화는 한 번 더 묻기 뒤 다시 제출하지 않아 통과한 계획이 버려졌다 → 위 `held`로 수정(이 실행 결과에는 반영 안 됨).
+  - Sonnet은 규칙 형식 안내가 있어도 action-has-effect 형식 오류를 반복했고, 거부된 시나리오를 고치지 않고 빈 제출로 넘긴 경우가 있었다.
+  - Opus는 이 사이트에서 거부 1번(대화 3개). 이전 코드와 같은 사이트 비교가 없어 ①의 효과로 단정할 수 없다.
+  - read_guide 사용: A form·dialog, B form 2·list.
+- 결론(예비, 각 1회·작은 사이트): Sonnet 묶음은 비용 28% 낮지만 범위 절반·발견 2/5. 지금은 Opus 유지가 맞다. 커밋 안 함.
+
+## 2026-10-30 (42) · Claude · Maison 전 단계 Sonnet 실행 (개발용, 쓰기 차단)
+
+- 조건: 사용자 승인. `--plan-model claude-sonnet-5-5 --triage-model claude-sonnet-5-5`, 나머지는 10/25 (37)과 같은 한도(`--max-pages 100 --max-templates 40 --explore-minutes 120 --concurrency 2`), 예산 상한 $10(10/25는 $50). 코드는 W1(645542d) + W2(커밋 전). 결과 `qa/runs/maison-sonnet-2026-10-30T09-33-38-702Z/`.
+- 10/25(Opus 탐색)와 비교. 모델·W1·W2·그 사이 수정이 한꺼번에 달라 원인을 가를 수 없다. Maison은 개발 사례다.
+
+  | | 10/25 Opus | 10/30 Sonnet |
+  |---|---|---|
+  | 비용 (탐색) | $5.42 ($4.76) | $1.65 ($1.32) |
+  | 시간 탐색·실행·판정 | 21.6분 (11.9·5.7·3.6) | 11.3분 (4.9·3.7·2.4) |
+  | 탐색 턴·대화(계획됨) | 179·8(8) | 101·8(8) |
+  | 원래 시나리오 / 검사 / 기능 | 41 / 109 / 42 | 11 / 32 / 14 |
+  | 시각 검사·모바일 시나리오 | 6·2 | 0·0 |
+  | 발견 | 9 (중간 8 시나리오, UI 결함 3) | 4 (높음 1·중간 3, UI 결함 0) |
+  | 판단 보류 / 판정 못 함 / 통과 검사 | 8 / 22 / 71 | 8 / 8 / 14 |
+
+- 읽은 것:
+  - Sonnet은 계획을 훨씬 작게 냈다(시나리오 약 1/4). 대화 /about·/product/:x는 4턴 만에 끝났다. 비용·시간이 준 것의 상당 부분은 계획이 작아서다.
+  - 기능 발견(위시리스트 개수, 장바구니 비어 있음, 수량 +)은 그대로 나왔고, 필터 해제·시각(UI) 발견은 계획 자체가 없어 나오지 않았다.
+  - W1 부분 수락이 6번 쓰였다(받아 둔 시나리오 S2·S302·S501·S602). 거부 응답 26번. W1 단독 효과는 같은 모델 비교가 아니라 알 수 없다.
+  - 공통 알림 묶음 없음(이 사이트는 알림 영역 오류 없음).
+- 다음 판단거리: Sonnet으로 비용을 줄이려면 계획 범위가 줄지 않게 해야 한다(대화당 최소 탐색, 시각·모바일 검사 유도 등). 같은 모델(Opus)로 W1 효과를 따로 재야 한다.
+
+## 2026-10-30 (41) · Claude · 같은 원인 의심 묶기 (발표 뒤 계획 W2)
+
+- 배경: Adminator 10/26 우리 오탐 6건 중 4건(S5·S107·S201·S1102)이 같은 앱 오류 뒤 실패였다. 콘솔·요청 오류 신호는 0건이었다(앱이 오류를 잡아 화면 알림으로만 보임). 실패 시점 aria에 `status: crypto.randomUUID is not a function`(S201은 같은 문구 + 안내 문장)이 있었다.
+- 일반 원인: 한 원인에서 나온 증상이 시나리오마다 따로 발견이 되고, 보고서는 이를 이어 주지 않는다. 사이트와 무관하다.
+- 수정(`report.ts`, 판정·등급 불변):
+  - `noticesIn`: aria snapshot에서 알림 영역(`status`·`alert` 역할)의 한 줄 글자만 읽는다. `shortcut:` 자식 줄로 나뉜 알림은 놓친다.
+  - `buildReport`: 버그·화면 결함 발견의 실패 시점 `.aria.txt` 증거에서 알림을 모아, 2개 이상의 발견에 보인 알림(10자 이상, 다른 알림 글자를 그대로 품은 것 포함)을 `commonNotices`로 낸다.
+  - HTML 01 주요 발견 아래 "공통 원인 의심 — 발견 N, M … 같은 글자가 보였다(판정은 그대로)".
+- 확인: 실제 Playwright snapshot(기본·ai 모드) 형식 단위 테스트, 저장 결과 테스트(포함 관계·짧은 알림 제외·한 발견만이면 없음). 무료 저장 결과 대조: Adminator 10/26 → S5·S107·S1102·S201 한 묶음, Maison 10/19·10/25·Agora 10/26 → 묶음 없음. 테스트 147개 통과.
+- 미검증 / 주의: 공통 알림이 원인이라는 판단은 하지 않는다(검토 단서). 모든 페이지에 늘 떠 있는 긴 알림이 있는 앱이면 무관한 발견이 묶일 수 있다. 커밋 안 함.
+
 ## 2026-10-28 (40) · Claude · 계획을 시나리오 단위로 받기 (발표 뒤 계획 W1)
 
 - 배경: 중간발표 실측(Maison·Adminator)에서 비용의 89~94%가 탐색·계획 단계였다. `submit_plan`은 초안에 오류가 하나라도 있으면 전체를 거부하고, 모델은 계획 전체를 다시 썼다. 계획 문서: `docs/design/POST_MIDTERM_PLAN_2026-10-28.md`.

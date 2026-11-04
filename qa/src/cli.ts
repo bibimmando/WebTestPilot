@@ -27,6 +27,10 @@ const { values: a } = parseArgs({ options: {
   app: { type: 'string' },
   'plan-model': { type: 'string', default: 'claude-opus-5-5' }, 'triage-model': { type: 'string', default: 'claude-sonnet-5-5' },
   'max-turns': { type: 'string', default: '40' }, 'allow-writes': { type: 'boolean', default: false },
+  // 일찍 통과한 계획에 한 번 더 볼 것을 묻기(explore.ts reviewEarly). A/B로 확인하기 전까지 기본 끔
+  'review-early': { type: 'boolean', default: false },
+  // 탐색·계획 effort(low·medium·high). 생략하면 medium
+  'plan-effort': { type: 'string' },
   // 여러 페이지 종류가 있는 사이트: 사이트 지도 방문 한도, 탐색할 페이지 종류 수, 종류마다 대화 턴 수
   'max-pages': { type: 'string', default: '30' }, 'max-templates': { type: 'string', default: '8' }, 'turns-per-template': { type: 'string', default: '25' },
   // 같은 템플릿에서 계획을 실행할 페이지 수(대표 포함, C4)
@@ -34,6 +38,10 @@ const { values: a } = parseArgs({ options: {
   // 동시에 여는 탐색·분류 대화 수와 동시에 실행할 시나리오 수. 순차와 판정이 같은지 확인하기 전까지 기본 1
   concurrency: { type: 'string', default: '1' }, workers: { type: 'string', default: '1' },
 } });
+if (a['plan-effort'] !== undefined && !['low', 'medium', 'high'].includes(a['plan-effort'])) {
+  console.error(`--plan-effort는 low·medium·high 중 하나: ${a['plan-effort']}`);
+  process.exit(2);
+}
 if (!a.url || !(Number(a.budget) > 0)) {
   console.error('사용법: node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] [--budget <USD, 기본 10>] [--name 이름]');
   process.exit(2);
@@ -98,7 +106,7 @@ if (app.login) {
   console.log(`로그인: ${r.ok ? '성공' : `실패 — ${r.reason}`}`);
 }
 try {
-  const e = await explore({ browser, policy, startUrl: a.url, requirements, send, model: a['plan-model']!, budget, maxTurns: Number(a['max-turns']),
+  const e = await explore({ browser, policy, startUrl: a.url, requirements, reviewEarly: a['review-early'], ...(a['plan-effort'] ? { effort: a['plan-effort'] as 'low' | 'medium' | 'high' } : {}), send, model: a['plan-model']!, budget, maxTurns: Number(a['max-turns']),
     maxPages: Number(a['max-pages']), maxTemplates: Number(a['max-templates']), turnsPerTemplate: Number(a['turns-per-template']), pagesPerTemplate: Number(a['pages-per-template']), concurrency: Number(a.concurrency),
     keepUsd: budget.limitUsd * 0.3, deadline: t0 + Number(a['explore-minutes']) * 60_000, storageState });
   timing.explore = Date.now() - t0;

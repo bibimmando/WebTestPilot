@@ -366,7 +366,16 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
       if (rule.form === 'relation' && c.expected_from === undefined) errors.push(`${c.id}: rule ${rule.id} compares with a value read earlier; use expected_from`);
       if (rule.offset && !c.offset) errors.push(`${c.id}: rule ${rule.id} needs offset (how many steps up or down from the value read earlier)`);
       if (rule.form === 'bound' && c.op !== 'less' && c.op !== 'greater') errors.push(`${c.id}: rule ${rule.id} is a bound; use op less or greater`);
-      if (rule.form === 'items' && c.read !== 'items') errors.push(`${c.id}: rule ${rule.id} checks every item; use read items`);
+      if ((rule.form === 'items' || rule.read === 'items') && c.read !== 'items') errors.push(`${c.id}: rule ${rule.id} checks every item; use read items`);
+      if (rule.form === 'hidden') {
+        if (!(c.read === 'visible' && c.expected === 'false')) errors.push(`${c.id}: rule ${rule.id} checks that the closed element is not visible; use read visible, op equals, expected "false"`);
+        // 닫기 행동 뒤이고, 같은 대상이 그보다 앞선 시점에 열려 있었음을 읽어 둔 검사가 있어야 한다. 처음부터 없던 요소를 "닫힘"으로 세지 않는다.
+        const at = (x: Check) => ['start', ...s.steps.map(st => st.id)].indexOf(x.after);
+        const same = (x: Check) => x.target === c.target || (!!x.target && !!c.target && JSON.stringify(pinned.get(x.target)?.target) === JSON.stringify(pinned.get(c.target)?.target));
+        if (c.after === 'start' || !s.checks.some(x => same(x) && x.read === 'visible' && x.expected === 'true' && at(x) < at(c))) {
+          errors.push(`${c.id}: rule ${rule.id} needs an earlier check of the same target with read visible, expected "true" (open before closing), and must run after an action`);
+        }
+      }
       if ((rule.form === 'visual') !== (c.read === 'visual')) errors.push(`${c.id}: ${rule.form === 'visual' ? `rule ${rule.id} is judged from a screenshot; use read visual` : `read visual needs a visual rule (${RULES.filter(r => r.form === 'visual').map(r => r.id).join(', ')})`}`);
       // 규칙마다 허용한 비교 연산만 쓴다. 다른 연산으로 바꿔 결함 상태를 통과시키는 우회를 막는다(예: 정렬 규칙에 any_equal).
       if (rule.ops && !rule.ops.includes(c.op)) errors.push(`${c.id}: rule ${rule.id} allows op ${rule.ops.join('|')}`);

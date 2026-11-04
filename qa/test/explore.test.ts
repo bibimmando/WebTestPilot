@@ -337,6 +337,85 @@ test('부분 확정: 앞 제출에서 시작 URL을 새로 열어 확인한 대�
   assert.deepEqual(r.plan!.startVerified!.sort(), [`T1 ${origin}/list.html`, `T2 ${origin}/list.html`]);
 });
 
+test('일찍 통과한 계획: reviewEarly면 한 번 더 볼 것을 묻고, 그대로 다시 내면 확정된다. 두 번째 통과는 묻지 않는다', async () => {
+  const sc = (id: string, f: string) => ({ id, title: id, covers: [f], start: { url: origin + '/list.html' },
+    steps: [{ id: `${id}.A1`, op: 'click', target: 'T1' }],
+    checks: [
+      { id: `${id}.C1`, after: 'start', target: 'T2', read: 'text', op: 'equals', expected: '장바구니 (0)', source: { kind: 'observed' }, precondition: true },
+      { id: `${id}.C2`, after: `${id}.A1`, target: 'T2', read: 'text', op: 'equals', expected_from: `${id}.C1`, offset: 1,
+        source: { kind: 'inferred', rule: 'step-by-one', quote: '담기를 한 번 누르면 개수가 하나 는다' } },
+    ] });
+  const outs: string[] = [];
+  const send = scripted([
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [
+      { name: 'pin', input: { ref: ref(snap, 'button "담기"', 16), group: false } },
+      { name: 'pin', input: { ref: ref(snap, '- banner'), group: false, text: '장바구니 (0)' } },
+    ],
+    () => [{ name: 'submit_plan', input: { features: [{ id: 'F1', name: '담기', page: origin + '/list.html' }], scenarios: [sc('S1', 'F1')], unplanned: [] } }],
+    // 더 볼 것이 있다고 보고 기능 하나를 추가해 낸다. 두 번째 통과는 확정된다.
+    out => { outs.push(out); return [{ name: 'submit_plan', input: { features: [{ id: 'F1', name: '담기', page: origin + '/list.html' }, { id: 'F2', name: '다시 담기', page: origin + '/list.html' }],
+      scenarios: [sc('S2', 'F2')], unplanned: [] } }]; },
+  ]);
+  const r = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/list.html', requirements: [], reviewEarly: true,
+    send, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20 });
+  assert.match(outs[0], /검사를 통과해 받아 두었습니다\(시나리오 S1\)\. 아직 남은 턴이 \d+번/);
+  assert.equal(r.stop, 'done', r.detail ?? '');
+  assert.deepEqual(r.plan!.scenarios.map(x => x.id), ['S1', 'S2']);
+  // 끄면(기본) 첫 통과에서 바로 확정된다.
+  const off = await run('/list.html', [], [
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [
+      { name: 'pin', input: { ref: ref(snap, 'button "담기"', 16), group: false } },
+      { name: 'pin', input: { ref: ref(snap, '- banner'), group: false, text: '장바구니 (0)' } },
+    ],
+    () => [{ name: 'submit_plan', input: { features: [{ id: 'F1', name: '담기', page: origin + '/list.html' }], scenarios: [sc('S1', 'F1')], unplanned: [] } }],
+  ]);
+  assert.equal(off.stop, 'done');
+  // 안내 뒤 다시 제출하지 않고 끝나도 통과한 계획은 버리지 않는다.
+  const quiet = scripted([
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [
+      { name: 'pin', input: { ref: ref(snap, 'button "담기"', 16), group: false } },
+      { name: 'pin', input: { ref: ref(snap, '- banner'), group: false, text: '장바구니 (0)' } },
+    ],
+    () => [{ name: 'submit_plan', input: { features: [{ id: 'F1', name: '담기', page: origin + '/list.html' }], scenarios: [sc('S1', 'F1')], unplanned: [] } }],
+    () => null,
+  ]);
+  const kept = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/list.html', requirements: [], reviewEarly: true,
+    send: quiet, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20 });
+  assert.equal(kept.stop, 'done', kept.detail ?? '');
+  assert.deepEqual(kept.plan!.scenarios.map(x => x.id), ['S1']);
+  // 통과 뒤 남긴 질문도 계획에 담는다(계획에 없는 기능을 가리키면 기능 연결만 뺀다).
+  const asked = scripted([
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [
+      { name: 'pin', input: { ref: ref(snap, 'button "담기"', 16), group: false } },
+      { name: 'pin', input: { ref: ref(snap, '- banner'), group: false, text: '장바구니 (0)' } },
+    ],
+    () => [{ name: 'submit_plan', input: { features: [{ id: 'F1', name: '담기', page: origin + '/list.html' }], scenarios: [sc('S1', 'F1')], unplanned: [] } }],
+    () => [{ name: 'ask_user', input: { question: '수량 상한이 있나요?', options: ['예', '아니오'], feature: 'F9' } }],
+    () => null,
+  ]);
+  const withQ = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/list.html', requirements: [], reviewEarly: true,
+    send: asked, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20 });
+  assert.deepEqual(withQ.plan!.questions.map(q => [q.question, q.feature]), [['수량 상한이 있나요?', undefined]]);
+  // 통과 뒤 그 시나리오를 빼는(withdraw) 제출이 거부되고 끝나면, 뺀 시나리오를 되살리지 않는다.
+  const changed = scripted([
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [
+      { name: 'pin', input: { ref: ref(snap, 'button "담기"', 16), group: false } },
+      { name: 'pin', input: { ref: ref(snap, '- banner'), group: false, text: '장바구니 (0)' } },
+    ],
+    () => [{ name: 'submit_plan', input: { features: [{ id: 'F1', name: '담기', page: origin + '/list.html' }], scenarios: [sc('S1', 'F1')], unplanned: [] } }],
+    () => [{ name: 'submit_plan', input: { scenarios: [sc('S2', 'F1')].map(s => ({ ...s, checks: [] })), unplanned: [], withdraw: ['S1'] } }],
+    () => null,
+  ]);
+  const dropped = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/list.html', requirements: [], reviewEarly: true,
+    send: changed, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20 });
+  assert.equal(dropped.plan, undefined, '모델이 뺀 시나리오를 확정하지 않는다');
+});
+
 test('다른 쿼리에서 pin한 시작 대상은 시작 URL을 새로 열어 확인하고, 그 확인은 계획에 남아 실행 검증도 통과한다', async () => {
   const r = await run('/list.html?sort=1', [], [
     () => [{ name: 'snapshot', input: {} }],

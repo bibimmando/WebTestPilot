@@ -3,7 +3,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test as base, expect, type ElementHandle, type Page, type Locator } from '@playwright/test';
-import { areaOf, ariaText, pressKey, whyNot, ariaTextV1, deniedLink, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, type AriaNode, type Policy, type Signal } from './browser.ts';
+import { absentEverywhere, areaOf, ariaText, pressKey, whyNot, ariaTextV1, deniedLink, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, type AriaNode, type Policy, type Signal } from './browser.ts';
 import { compareValues, expectedFrom, sortKeys, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
@@ -11,6 +11,8 @@ if (!dir) throw new Error('QA_RUN_DIR가 없다. spec은 run.ts로 실행한다.
 const plan: Plan = JSON.parse(readFileSync(join(dir, 'plan.json'), 'utf8'));
 const policy: Policy = JSON.parse(readFileSync(join(dir, 'policy.json'), 'utf8'));
 const TIMEOUT = Number(process.env.QA_TIMEOUT_MS ?? 5000);
+/** 요소가 없어서 보임 false로 읽은 것을 통과로 확정하기 전에 계속 없어야 하는 시간 */
+const ABSENT_MS = Math.min(1500, TIMEOUT);
 
 const steps = new Map(plan.scenarios.flatMap(s => s.steps.map(st => [st.id, st] as const)));
 const checks = new Map(plan.scenarios.flatMap(s => s.checks.map(c => [c.id, c] as const)));
@@ -195,6 +197,7 @@ export async function check(page: Page, checkId: string): Promise<void> {
   let first: Reading | undefined;
   let reads = 0;
   let started = Date.now();
+  let absentSince: number | undefined;
   if (c.read === 'visual') return visual(page, c);
   // 관측 참조: 참조한 검사가 값을 읽지 못했으면 비교할 기대값이 없다.
   const expected = c.expected_from !== undefined ? expectedFrom(c, actuals.get(c.expected_from)) : c.expected;
@@ -211,11 +214,15 @@ export async function check(page: Page, checkId: string): Promise<void> {
         if (loc && !changed && (await loc.count()) === 1) await remember(page, c.target!);
         r = changed
           ? c.read === 'visible' && await goneFromArea(page, t!, areaFor(page, c.target!)) ? { status: compareValues(c.op, 'false', expected) ? 'passed' : 'mismatch', actual: 'false', count: 0, reason: '처음 찾았을 때의 라벨 영역에 같은 모양 요소가 하나도 없음(사라짐)' }
+            : c.read === 'visible' && await absentEverywhere(page, t!) ? { status: compareValues(c.op, 'false', expected) ? 'passed' : 'mismatch', actual: 'false', count: 0, reason: '라벨은 있고 같은 모양 요소가 페이지에 하나도 없음' }
             : { status: 'unresolved', reason: '순서로 고정한 영역의 요소 수가 바뀜' }
           : await read(page, loc, c, expected);
         first ??= r;
         reads++;
-        if (r.status === 'passed' || Date.now() >= deadline) break;
+        // "없음"으로 읽은 보임 false는 한 번 보고 끝내지 않는다. 늦게 그려지는 요소를 "닫힘"으로 통과시키지 않도록 일정 시간 계속 없을 때만 통과로 둔다.
+        const absent = r.status === 'passed' && r.actual === 'false' && r.count === 0;
+        absentSince = absent ? absentSince ?? Date.now() : undefined;
+        if ((r.status === 'passed' && (!absent || Date.now() - absentSince! >= ABSENT_MS)) || Date.now() >= deadline) break;
         await page.waitForTimeout(100);
       }
     }

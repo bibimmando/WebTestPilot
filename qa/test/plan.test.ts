@@ -322,3 +322,52 @@ test('시나리오 단위 확정: 오류가 가리키는 시나리오만 고르�
   assert.deepEqual(cut.features!.map(f => f.id), ['F1']);
   assert.deepEqual(cut.observations, []);
 });
+
+test('규칙 안내: 탐색에 보이는 규칙 목록에 계획 검사가 요구하는 형식(expected_from·offset·연산·read)이 그대로 적힌다', async () => {
+  const { RULES, ruleForm, rulesText } = await import('../src/rules.ts');
+  const text = rulesText();
+  for (const r of RULES) {
+    const f = ruleForm(r);
+    assert.ok(text.includes(`${r.id} (`) && (!f || text.includes(`형식: ${f}`)), r.id);
+    if (r.form === 'relation') assert.match(f, /expected_from/, r.id);
+    if (r.offset) assert.match(f, /offset/, r.id);
+    if (r.form === 'bound') assert.match(f, /less 또는 greater/, r.id);
+    if (r.form === 'items') assert.match(f, /read items/, r.id);
+    for (const op of r.form === 'bound' ? [] : r.ops ?? []) assert.ok(f.includes(op), `${r.id} ${op}`);
+  }
+  assert.match(text, /link-target .*형식: 기대값은 expected_from.*op equals/);
+});
+
+test('점검 안내: 기능 유형 6개로 나뉘고, 인용한 규칙 ID는 모두 규칙 목록에 있다', async () => {
+  const { GUIDES } = await import('../src/explore.ts');
+  const { RULE_IDS } = await import('../src/rules.ts');
+  assert.deepEqual(Object.keys(GUIDES), ['form', 'list', 'navigation', 'dialog', 'flow', 'screen']);
+  for (const [k, text] of Object.entries(GUIDES)) {
+    assert.ok(text.length > 100, k);
+    for (const m of text.matchAll(/\(([a-z]+(?:-[a-z]+)+)/g)) assert.ok(RULE_IDS.has(m[1]), `${k}: ${m[1]}`);
+  }
+});
+
+test('close-dismisses: 행동 뒤 read visible, expected "false"로만 검사하고, 앞선 시점에 열려 있음(visible true)을 읽어 둬야 한다', () => {
+  const opened = { id: 'S1.C0', after: 'start', target: 'T2', read: 'visible', op: 'equals', expected: 'true', source: { kind: 'observed' }, precondition: true };
+  const close = (c: Record<string, unknown>, before: Record<string, unknown>[] = [opened]) => errorsOf(d => {
+    d.scenarios[0].checks.push(...before as never[], { id: 'S1.C2', after: 'S1.A1', target: 'T2', read: 'visible', op: 'equals', expected: 'false',
+      source: { kind: 'inferred', rule: 'close-dismisses', quote: '닫기 버튼을 누르면 대화상자가 닫힌다' }, ...c } as never);
+  }).filter(e => e.startsWith('S1.C2'));
+  assert.deepEqual(close({}), []);
+  assert.match(close({ expected: 'true' }).join('\n'), /close-dismisses checks that the closed element is not visible/);
+  assert.match(close({ read: 'text', expected: '' }).join('\n'), /close-dismisses/);
+  assert.match(close({ expected: undefined, expected_from: 'S1.C0' }).join('\n'), /close-dismisses/);
+  // 행동 없이 시작 시점에 "안 보임"만 확인하거나, 열려 있었다는 검사가 없으면 거부한다.
+  assert.match(close({ after: 'start' }, []).join('\n'), /needs an earlier check of the same target/);
+  assert.match(close({}, []).join('\n'), /needs an earlier check of the same target/);
+});
+
+test('목록을 비교하는 관계 규칙(page-changes·effect-shown-elsewhere)은 read items를 요구한다', () => {
+  const err = errorsOf(d => {
+    d.scenarios[0].checks.push({ id: 'S1.C0', after: 'start', target: 'T2', read: 'text', op: 'equals', expected: '1', source: { kind: 'observed' }, precondition: true } as never,
+      { id: 'S1.C2', after: 'S1.A1', target: 'T2', read: 'text', op: 'not_equals', expected_from: 'S1.C0', source: { kind: 'inferred', rule: 'page-changes', quote: '다음 페이지로 넘기면 항목이 바뀐다' } } as never);
+  }).filter(e => e.startsWith('S1.C2'));
+  assert.match(err.join('\n'), /page-changes checks every item; use read items/);
+});
+
