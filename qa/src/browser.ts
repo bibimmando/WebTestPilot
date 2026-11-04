@@ -456,8 +456,9 @@ function tree(page: Page): Promise<AriaNode[]> {
  * - unnamed-control: 접근 가능한 이름이 없는 조작 요소(개선 제안)
  * - covered-control: 화면 안 조작 요소의 가운데를 누르면 다른 요소가 눌림(조작을 막으므로 UI 결함)
  * - horizontal-overflow: 페이지가 화면 폭보다 넓어 가로로 넘침(개선 제안)
+ * - low-contrast-text: 글자와 배경의 대비가 2:1 미만이라 사실상 읽을 수 없음(UI 결함). WCAG 대비 계산식을 쓰되 기준은 AA(4.5:1)보다 훨씬 낮게 둔다
  */
-export type AuditFinding = { kind: 'unnamed-control' | 'covered-control' | 'horizontal-overflow'; viewport: 'desktop' | 'mobile';
+export type AuditFinding = { kind: 'unnamed-control' | 'covered-control' | 'horizontal-overflow' | 'low-contrast-text'; viewport: 'desktop' | 'mobile';
   level: 'ui_defect' | 'improvement';
   /** 재점검 때 같은 문제인지 가르는 대상 식별(역할·요소). 개수·폭 같은 측정값은 넣지 않는다 */
   target: string;
@@ -510,7 +511,7 @@ export async function auditPage(page: Page, viewport: AuditFinding['viewport'], 
     // 고정 위치 창 안의 조작 요소(모달 자신의 버튼)는 덮개 아래에 깔려도 결함이다(z-index 오류).
     const inFixedWindow = (e: Element) => fixed.some(w => !backdrops.includes(w) && w.contains(e));
     const covered: { target: string; detail: string }[] = [];
-    for (const e of (modal ?? document).querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea, [role=button], [role=link], [role=tab], [role=checkbox]')) {
+    for (const e of (modal ?? document).querySelectorAll('a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=link], [role=tab], [role=checkbox], [role=radio], [role=switch], [role=menuitem], [role=menuitemcheckbox], [role=menuitemradio], [role=option]')) {
       const r = e.getBoundingClientRect();
       const s = getComputedStyle(e);
       // 투명한 요소(꾸민 체크박스 뒤의 실제 input 등)는 사람이 누르는 대상이 아니라 뺀다.
@@ -531,6 +532,13 @@ export async function auditPage(page: Page, viewport: AuditFinding['viewport'], 
       if (!hit || e.contains(hit) || hit.contains(e)) continue;
       // 자기 라벨이 눌리면 같은 조작이다(라벨 클릭은 그 입력을 조작한다).
       if ([...((e as HTMLInputElement).labels ?? [])].some(l => l.contains(hit))) continue;
+      // 스크롤된 화면에서 고정·스티키 머리 띠 아래에 놓인 요소는 위로 스크롤하면 보인다(자동화가 입력칸을 화면 맨 위로 스크롤해 생김, 이메일 사이트 11/4).
+      // 페이지 맨 위에서도 가리면 진짜 결함이라 그대로 찾는다.
+      if (scrollY > 0) {
+        let bar: Element | null = hit;
+        while (bar && !['fixed', 'sticky'].includes(getComputedStyle(bar).position)) bar = bar.parentElement;
+        if (bar && !bar.contains(e) && r.top < bar.getBoundingClientRect().bottom && bar.getBoundingClientRect().top <= 1) continue;
+      }
       // 배경 덮개보다 아래에 깔린 요소는 모달 뒤의 내용이다. 덮개 위에 있는 모달 자신의 버튼이 가려진 것은 계속 찾는다.
       if (backdrops.length && !inFixedWindow(e)) {
         const stack = document.elementsFromPoint(x, y);
@@ -539,16 +547,52 @@ export async function auditPage(page: Page, viewport: AuditFinding['viewport'], 
       }
       covered.push({ target: label(e), detail: `${label(e)} 를 ${label(hit)} 가 가림` });
     }
+    // 글자 대비: 자기 글자가 있는 보이는 요소의 글자색과 실제 배경색(위로 올라가며 처음 만나는 불투명 배경). 배경 이미지·투명도가 끼면 계산할 수 없어 뺀다.
+    // shortcut: 2:1 미만(사실상 읽을 수 없음)만 찾는다. AA 4.5:1 기준 개선 제안은 결과가 넘쳐 넣지 않았다.
+    const rgb = (s: string) => { const m = s.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(/[\s,/]+/).filter(Boolean).map(Number); return { c: p.slice(0, 3), a: p.length > 3 ? p[3] : 1 }; };
+    const lum = (c: number[]) => { const [r, g, b] = c.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    // 배경은 화면상 그 글자 아래에 실제로 쌓인 요소에서 찾는다(절대 위치로 뒤에 깐 사진·덮개도 본다). 아래에 이미지·영상·배경 이미지가 있으면 계산할 수 없어 뺀다.
+    const MEDIA = new Set(['IMG', 'PICTURE', 'VIDEO', 'CANVAS', 'SVG', 'svg', 'IFRAME']);
+    const bgOf = (e: Element, x: number, y: number): number[] | null => {
+      const stack = document.elementsFromPoint(x, y);
+      const from = stack.findIndex(s => s === e || e.contains(s));
+      for (const a of from < 0 ? [] : stack.slice(from)) {
+        if (a !== e && e.contains(a)) continue;
+        const s = getComputedStyle(a);
+        if (MEDIA.has(a.tagName) || s.backgroundImage !== 'none' || Number(s.opacity) < 1) return null;
+        const b = rgb(s.backgroundColor);
+        if (b && b.a >= 0.95) return b.c;
+        if (b && b.a > 0.05) return null;
+      }
+      return from < 0 ? null : [255, 255, 255];
+    };
+    const low: string[] = [];
+    let scanned = 0;
+    for (const e of document.body.querySelectorAll('*')) {
+      if (scanned > 600) break;
+      // 글자·숫자가 있는 자기 글자만 본다(경로 구분자 "/"처럼 일부러 흐리게 둔 기호는 뺀다).
+      if (![...e.childNodes].some(n => n.nodeType === 3 && /[\p{L}\p{N}]/u.test(n.textContent ?? ''))) continue;
+      const r = e.getBoundingClientRect();
+      if (!shown(e) || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) continue;
+      scanned++;
+      const fg = rgb(getComputedStyle(e).color), bg = bgOf(e, r.left + Math.min(r.width, 40) / 2, r.top + r.height / 2);
+      if (!fg || fg.a < 0.95 || !bg) continue;
+      const [l1, l2] = [lum(fg.c), lum(bg)].sort((x, y) => y - x);
+      const ratio = (l1 + 0.05) / (l2 + 0.05);
+      if (ratio < 2) low.push(`${label(e)} ${ratio.toFixed(1)}:1`);
+    }
     const sw = document.documentElement.scrollWidth;
     let widest = '';
     if (sw > innerWidth + 1) {
       let max = innerWidth;
       for (const e of document.body.querySelectorAll('*')) { const r = e.getBoundingClientRect(); if (r.right > max + 1 && r.width > 0) { max = r.right; widest = label(e); } }
     }
-    return { covered, overflow: sw > innerWidth + 1 ? `페이지 폭 ${sw}px > 화면 ${innerWidth}px${widest ? `, 가장 넓게 나간 요소 ${widest}` : ''}` : '' };
-  }).catch(() => ({ covered: [] as { target: string; detail: string }[], overflow: '' }));
+    return { covered, low, overflow: sw > innerWidth + 1 ? `페이지 폭 ${sw}px > 화면 ${innerWidth}px${widest ? `, 가장 넓게 나간 요소 ${widest}` : ''}` : '' };
+  }).catch(() => ({ covered: [] as { target: string; detail: string }[], low: [] as string[], overflow: '' }));
   for (const c of measured.covered) out.push({ kind: 'covered-control', viewport, level: 'ui_defect', ...c });
   if (measured.overflow) out.push({ kind: 'horizontal-overflow', viewport, level: 'improvement', target: 'page', detail: measured.overflow });
+  if (measured.low.length) out.push({ kind: 'low-contrast-text', viewport, level: 'ui_defect', target: 'text',
+    detail: `글자 ${measured.low.length}곳이 배경과 거의 구분되지 않음(대비 2:1 미만), 예: ${measured.low.slice(0, 3).join(', ')}` });
   return out;
 }
 

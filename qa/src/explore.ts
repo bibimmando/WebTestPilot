@@ -31,6 +31,8 @@ export type ExploreResult = AgentResult & { plan?: Plan; blocked: string[]; viol
   exploredUrls: string[];
   conversations: { template: string; url: string; stop: AgentResult['stop'] | 'not_attempted'; detail?: string; turns: number; planned: boolean }[] };
 /** 템플릿별 대화가 함께 쓰는 번호·기록. 도구는 대화마다 새로 만들어 이전 대화의 대상·인용·행동 상태가 새지 않게 한다. */
+/** 대화가 계획 제출 없이 끝났을 때 쓸 계획: make = 한 번 더 묻기 때 통과한 계획, partial = 거부된 제출에서 받아 둔 시나리오 */
+export type Held = { make?: () => Plan; ids?: string[]; partial?: () => Plan | undefined };
 export type Part = { taken: Set<string>; next: { T: number; Q: number }; questions: Question[]; urls: Set<string> };
 /** reviewEarly: 턴의 절반도 쓰지 않고 통과한 계획에 한 번 "더 볼 것"을 묻는다(A/B로 효과를 확인하기 전까지 기본 끔) */
 type Task = { policy: Policy; startUrl: string; requirements: Requirement[]; reviewEarly?: boolean };
@@ -101,7 +103,7 @@ async function exploreSite(o: Parameters<typeof explore>[0]): Promise<ExploreRes
         // 구간을 넘는 ID는 제출에서 거부한다(완료 순서에 따라 어느 대화가 거부될지 달라지지 않게).
         const next = (prefix: string) => concurrency > 1 ? index * 100 + 1
           : Math.max(0, ...[...part.taken].filter(id => id.startsWith(prefix)).map(id => Number(id.slice(1)))) + 1;
-        const held: { make?: () => Plan; ids?: string[] } = {};
+        const held: Held = {};
         const tools = exploreTools(page, o, violations, single ? undefined : part, concurrency > 1 ? [index * 100 + 1, index * 100 + 100] : undefined, held);
         const retry = job.retryOf === undefined ? undefined : done[job.retryOf].result.turns.length;
         const user = taskMessage(o, single ? undefined : { map, template, url, nextScenario: next('S'), nextFeature: next('F'), retry });
@@ -109,9 +111,14 @@ async function exploreSite(o: Parameters<typeof explore>[0]): Promise<ExploreRes
           maxTurns: single ? o.maxTurns : o.turnsPerTemplate ?? 25 });
         if (result.stop === 'budget') stopped = '예산 소진';
         // "한 번 더 묻기" 뒤 다시 제출하지 않고 끝났으면 그때 통과한 계획을 쓴다(이메일 사이트 11/3: 통과한 계획이 버려짐).
-        if (!result.result && held.make) {
-          for (const id of held.ids ?? []) part.taken.add(id);
-          return { job, url, result: { ...result, result: held.make(), detail: `${result.stop}: 한 번 더 묻기 뒤 다시 제출하지 않아 앞서 통과한 계획을 씀` } };
+        if (!result.result) {
+          const kept = held.make?.(), partial = kept ? undefined : held.partial?.();
+          const plan = kept ?? partial;
+          if (plan) {
+            for (const id of [...plan.scenarios.map(s => s.id), ...plan.features.map(f => f.id)]) part.taken.add(id);
+            return { job, url, result: { ...result, result: plan, detail: kept ? `${result.stop}: 한 번 더 묻기 뒤 다시 제출하지 않아 앞서 통과한 계획을 씀`
+              : `${result.stop}${result.detail ? ` (${result.detail})` : ''}: 계획을 마치지 못해 받아 둔 시나리오 ${plan.scenarios.map(s => s.id).join(', ')}만 씀` } };
+          }
         }
         return { job, url, result };
       } finally {
@@ -215,7 +222,8 @@ export function taskMessage(o: Task, scope?: Scope): string {
  * held: "한 번 더 묻기" 때 통과한 계획. 대화가 다시 제출하지 않고 끝나도 버리지 않는다(호출한 쪽이 make()로 확정).
  * 끝날 때 만들어 그 사이 남긴 질문도 담는다. 이후 제출이 그 계획의 시나리오를 빼거나 바꾸면 모델의 뜻이 바뀐 것이므로 버린다.
  */
-export function exploreTools(page: Page, o: Task, violations: string[], part?: Part, idRange?: [number, number], held: { make?: () => Plan; ids?: string[] } = {}): Tool[] {
+/** held.partial: 대화가 계획 없이 끝났을 때(턴·예산) 받아 둔 시나리오로 만든 계획. 끝내지 못한 기능·요구사항은 미계획에 이유와 함께 둔다. */
+export function exploreTools(page: Page, o: Task, violations: string[], part?: Part, idRange?: [number, number], held: Held = {}): Tool[] {
   const pinned = new Map<string, Pinned>();
   // 탐색 중 본 snapshot 텍스트. constraint(화면 안내) 인용이 실제로 화면에 있었는지 확인한다.
   const seen: string[] = [];
@@ -226,6 +234,31 @@ export function exploreTools(page: Page, o: Task, violations: string[], part?: P
   const verified = new Set<string>();
   // 일찍 통과한 계획에 "더 볼 것" 안내를 이미 했는지(대화당 한 번).
   let reviewed = false;
+  // 거부된 채 대화가 끝나도 받아 둔 시나리오는 버리지 않는다(이메일 사이트 11/4: 예산 중단으로 받아 둔 S2·S6·S7까지 사라짐).
+  // 같은 검사(validate)를 통과한 시나리오만 쓰고, 다루지 못한 기능·요구사항은 미계획으로 남겨 분모에서 숨기지 않는다.
+  held.partial = () => {
+    if (!accepted?.scenarios.length) return undefined;
+    const known = new Set([...(accepted.features ?? []).map(f => f.id), ...o.requirements.map(r => r.id)]);
+    const ids = [...(accepted.features ?? []).map(f => f.id), ...(part ? [] : o.requirements.map(r => r.id))];
+    let scenarios = accepted.scenarios;
+    for (let i = 0; i < 3 && scenarios.length; i++) {
+      const covered = new Set(scenarios.flatMap(s => s.covers));
+      const given = accepted.unplanned.filter(u => known.has(u.requirement) && !covered.has(u.requirement));
+      const unplanned = [...given, ...ids.filter(id => !covered.has(id) && !given.some(u => u.requirement === id))
+        .map(id => ({ requirement: id, reason: '대화가 끝나 이 항목의 계획을 마치지 못함(받아 둔 시나리오만 실행)' }))];
+      const draft: Draft = { ...accepted, scenarios, unplanned };
+      const errors = validate(draft, o.requirements, pinned, o.policy.origins, seen.join('\n'), verified, part);
+      if (!errors.length) {
+        const used = new Set(startTargetsElsewhere(draft, pinned).map(x => `${x.id} ${x.url}`));
+        const declared = new Set((draft.features ?? []).map(f => f.id));
+        return freeze(draft, o.requirements, pinned, questions.map(q => !q.feature || declared.has(q.feature) ? q : (({ feature: _, ...rest }) => rest)(q)), [...verified].filter(v => used.has(v)));
+      }
+      const bad = scenariosWithErrors(errors);
+      if (!bad.size) return undefined;
+      scenarios = scenarios.filter(s => !bad.has(s.id));
+    }
+    return undefined;
+  };
   const nextTarget =() => part ? `T${part.next.T++}` : `T${pinned.size + 1}`;
   return [...browserTools(page, o.policy, pinned, violations, seen, nextTarget, u => part?.urls.add(u)), {
     def: { name: 'read_guide', strict: true, description: `기능 유형별 점검 안내(무엇을 시도하고 어떤 규칙·형식으로 검사할지)를 읽는다. 그 유형의 기능을 처음 만났을 때 한 번 읽는다. form 입력 폼, list 목록·필터·정렬·페이지 넘김, navigation 이동·링크, dialog 메뉴·모달·탭, flow 여러 화면에 걸친 결과, screen 모바일·겹침·빈 상태`,

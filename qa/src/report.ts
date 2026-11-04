@@ -110,7 +110,7 @@ export type Report = {
   passed: { checks: number; byClass: Record<string, number> };
 };
 
-const AUDIT_TEXT: Record<AuditFinding['kind'], string> = { 'unnamed-control': '이름 없는 조작 요소', 'covered-control': '가려진 조작 요소', 'horizontal-overflow': '가로 넘침' };
+const AUDIT_TEXT: Record<AuditFinding['kind'], string> = { 'unnamed-control': '이름 없는 조작 요소', 'covered-control': '가려진 조작 요소', 'horizontal-overflow': '가로 넘침', 'low-contrast-text': '읽기 어려운 글자 대비' };
 const LEVEL_TEXT: Record<SystemLevel, string> = { bug_high: '버그 — 확신 높음', bug_medium: '버그 — 확신 중간', hold: '판단 보류', incomplete: '미완료', not_bug: '버그 아님',
   ui_defect: 'UI 결함(시각 판정)', improvement: '개선 제안(시각 판정)' };
 
@@ -249,6 +249,16 @@ export function buildReport(dir: string): Report {
     .map(t => `${t.template}: ${t.conversations.map(c => `${c.stop}${c.detail ? ` (${c.detail})` : ''}`).join(', ') || '대화 없음'}`))];
   const signals = judgment.errorSignals ?? [];
   const audit: AuditItem[] = (explore.sitemap?.audit ?? []).flatMap(a => a.findings.map(f => ({ ...f, page: a.url })));
+  // 실행 중 행동 뒤 화면 점검: 시작 화면에 없던 문제가 그 행동 뒤에 두 번 다 나온 것(확인됨). 같은 페이지·같은 대상은 한 번만 센다.
+  for (const r of results.scenarios) for (const a of r.audits ?? []) {
+    const s = scenarioOf.get(r.id);
+    const st = s?.steps.find(x => x.id === a.after);
+    if (!s) continue;
+    for (const f of a.findings) {
+      if (audit.some(x => x.kind === f.kind && x.viewport === f.viewport && x.target === f.target && x.page === s.start.url)) continue;
+      audit.push({ ...f, page: s.start.url, confirmed: true, detail: `${st ? `"${stepText(st)}" 뒤: ` : ''}${f.detail}` });
+    }
+  }
   if (!explore.sitemap) incompleteReasons.push('탐색 기록(explore.json의 사이트 지도) 없음: 탐색 범위를 알 수 없다');
   const actions = actionSummary(plan, resultOf);
   const gaps = results.scenarios.flatMap(s => [
@@ -490,6 +500,7 @@ const AUDIT_MEANING: Record<AuditFinding['kind'], string> = {
   'unnamed-control': '화면 낭독기 같은 보조 기술이 무엇을 하는 조작인지 알 수 없다(접근성).',
   'covered-control': '다른 요소가 덮고 있어 누르면 엉뚱한 요소가 눌린다.',
   'horizontal-overflow': '화면보다 넓은 내용이 있어 페이지가 가로로 밀린다.',
+  'low-contrast-text': '글자색과 배경색이 거의 같아 읽을 수 없다(대비 2:1 미만, WCAG 계산식).',
 };
 const HOLD_TEXT: [string, string][] = [
   ['같은 템플릿 다른 페이지에서 이름으로 고정한 대상이 없음', '같은 종류의 다른 페이지에 같은 이름의 요소가 없다. 페이지마다 이름이 다른 것인지(예: 상품 이름) 요소가 빠진 것인지 사람이 확인해야 한다.'],

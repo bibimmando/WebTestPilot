@@ -74,7 +74,7 @@ export const ruleForm = (r: Rule): string => [
   r.form === 'bound' ? 'op less 또는 greater' : '',
   r.form === 'items' || r.read === 'items' ? 'read items' : '',
   r.form === 'visual' ? 'read visual' : '',
-  r.form === 'hidden' ? '행동 뒤 read visible, expected "false"(앞선 시점에 같은 대상 visible "true" 검사 필요)' : '',
+  r.form === 'hidden' ? '행동 뒤 read visible, expected "false"(앞선 시점에 같은 대상이 열려 있었다는 visible 검사 필요: expected "true" 또는 not_equals + expected_from)' : '',
   r.ops && r.form !== 'bound' ? `op ${r.ops.join('|')}` : '',
 ].filter(Boolean).join(', ');
 

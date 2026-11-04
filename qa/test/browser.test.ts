@@ -110,6 +110,15 @@ test('없음 판단: 처음부터 닫혀 있는 메뉴는 라벨이 있고 같�
   assert.equal(await absentEverywhere(other, t), false);
 });
 
+test('글자 대비 점검: 배경과 거의 같은 색의 글자만 찾고, 사진 위 글자·기호만 있는 글자는 계산하지 않는다', async () => {
+  const contrast = async (html: string) => (await auditPage(await page(html), 'desktop')).filter(f => f.kind === 'low-contrast-text');
+  assert.equal((await contrast('<body style="background:#1a1a1a"><h1 style="color:#222">받은 편지함</h1></body>')).length, 1, '어두운 배경에 어두운 글자');
+  assert.equal((await contrast('<body><h1 style="color:#222">받은 편지함</h1><p style="color:#767676">보조 글자</p></body>')).length, 0, '읽을 수 있는 대비');
+  const img = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="#000"/></svg>');
+  assert.equal((await contrast(`<div style="position:relative;height:200px"><img src="${img}" style="position:absolute;inset:0;width:100%;height:100%"><h1 style="position:relative;color:#fff">사진 위 제목</h1></div>`)).length, 0, '사진 위 글자');
+  assert.equal((await contrast('<nav><a href="#">홈</a><span style="color:#f4f4f4">/</span><a href="#">목록</a></nav>')).length, 0, '구분 기호');
+});
+
 test('구분할 수 없는 같은 요소는 순서로 고르지 않고 거부한다', async () => {
   const p = await page('<button>삭제</button><button>삭제</button>');
   const ref = refs(await snapshot(p), 'button "삭제"')[1];

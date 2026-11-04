@@ -30,7 +30,9 @@ Playwright Test Agents planner(github.com/microsoft/playwright, packages/playwri
 
 ## dialog
 메뉴·모달·탭·드롭다운·토글
-- 여는 버튼을 누르면 열리는지(action-has-effect, 누르기 전 값과 expected_from), 닫기 버튼·취소·Escape로 닫히는지(close-dismisses: read visible, expected "false"). 닫기 전에 열려 있음을 visible true로 확인해 둡니다.
+- 여는 버튼을 누르면 열리고, 닫기 버튼·취소·Escape로 닫히는지 봅니다. 예(메뉴 대상 T2, 여는 버튼 T1, 닫기 T3):
+  C0 start, T2 visible equals "false"(observed, precondition) → A1 T1 클릭 → C1 after A1, T2 visible not_equals expected_from C0(action-has-effect) → A2 T3 클릭 → C2 after A2, T2 visible equals "false"(close-dismisses).
+  close-dismisses 앞에는 같은 대상이 열려 있었다는 검사(C1)가 있어야 합니다.
 - 탭·토글을 바꾸면 내용이 바뀌는지, 이미 고른 탭은 바뀌지 않아도 정상입니다.
 - 비활성 컨트롤은 눌러도 동작하지 않아야 합니다(disabled-inert).
 - 펼친 메뉴·모달이 다른 요소에 가리거나 잘리지 않는지(content-readable, read visual). 모바일 크기에서 특히 봅니다.

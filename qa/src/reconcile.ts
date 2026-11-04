@@ -3,10 +3,11 @@
 // 코드에 있어도 실행되지 않은 검사는 not_run이다. 상태는 차원별로 나누고 분모에서 빼지 않는다.
 import { compareValues, sortKeys, expectedFrom, type Plan, type Check } from './plan.ts';
 import { sequence } from './generate.ts';
-import type { Signal } from './browser.ts';
+import type { AuditFinding, Signal } from './browser.ts';
 
 export type Entry = { kind: 'start' | 'act' | 'check' | 'policy'; at: string; scenario?: string; id?: string; status?: string;
   actual?: string; expected?: string; count?: number; reason?: string; error?: string; blocked?: string[]; violations?: string[]; signals?: Signal[]; signalsDropped?: number;
+  audits?: { after: string; findings: AuditFinding[] }[];
   ready?: boolean; evidence?: string[];
   /** 기록을 남긴 탭(페이지) 식별자, 증거 수집 실패, 시나리오 중에 새로 열린 탭(policy) */
   tab?: string; captureErrors?: string[]; newTabs?: { after: string; url: string }[];
@@ -47,6 +48,8 @@ export type ScenarioResult = {
   signals?: Signal[];
   /** 단계별 상한을 넘어 버린 신호 수 */
   signalsDropped?: number;
+  /** 행동 뒤 화면 점검(AI 없음)에서 새로 생겨 두 번 다 나온 문제. after = 그 행동 */
+  audits?: { after: string; findings: AuditFinding[] }[];
 };
 /** checks의 invalid는 무효 시나리오에 속해 결과를 믿을 수 없는 검사 수다. */
 export type RequirementResult = { id: string; plan: 'planned' | 'unplanned' | 'missing'; checks: Record<CheckStatus | 'invalid', number> };
@@ -137,7 +140,8 @@ export function reconcile(plan: Plan, entries: Entry[]): Reconciled {
       ...(policy.some(e => e.newTabs?.length) ? { newTabs: policy.flatMap(e => e.newTabs ?? []) } : {}),
       ...(policy.some(e => e.denied?.length) ? { denied: policy.flatMap(e => e.denied ?? []) } : {}),
       ...(policy.some(e => e.writeBlocked?.length) ? { writeBlocked: policy.flatMap(e => e.writeBlocked ?? []) } : {}), steps, checks, blocked: policy.flatMap(e => e.blocked ?? []), violations,
-      signals: policy.flatMap(e => e.signals ?? []), ...(policy.some(e => e.signalsDropped) ? { signalsDropped: policy.reduce((n, e) => n + (e.signalsDropped ?? 0), 0) } : {}) };
+      signals: policy.flatMap(e => e.signals ?? []), ...(policy.some(e => e.signalsDropped) ? { signalsDropped: policy.reduce((n, e) => n + (e.signalsDropped ?? 0), 0) } : {}),
+      ...(policy.some(e => e.audits?.length) ? { audits: policy.flatMap(e => e.audits ?? []) } : {}) };
   });
 
   const known = new Set(plan.scenarios.flatMap(s => [s.id, ...s.steps.map(x => x.id), ...s.checks.map(x => x.id)]));

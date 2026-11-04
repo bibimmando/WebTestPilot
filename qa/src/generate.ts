@@ -15,10 +15,11 @@ export function sequence(s: Scenario): { call: 'start' | 'act' | 'check'; id: st
 export function specFor(s: Scenario, fixtureImport: string): string {
   const body = sequence(s).map(x => `  await ${x.call}(page, ${JSON.stringify(x.id)});`).join('\n');
   return [
-    `import { test, start, act, check } from ${JSON.stringify(fixtureImport)};`,
+    `import { test, start, act, check, finish } from ${JSON.stringify(fixtureImport)};`,
     '',
     `test(${JSON.stringify(`${s.id} ${s.title}`)}, async ({ page }) => {`,
     body,
+    '  await finish(page);',
     '});',
     '',
   ].join('\n');

@@ -3,7 +3,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test as base, expect, type ElementHandle, type Page, type Locator } from '@playwright/test';
-import { absentEverywhere, areaOf, ariaText, pressKey, whyNot, ariaTextV1, deniedLink, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, type AriaNode, type Policy, type Signal } from './browser.ts';
+import { absentEverywhere, auditPage, areaOf, ariaText, pressKey, whyNot, ariaTextV1, deniedLink, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, MOBILE, type AriaNode, type AuditFinding, type Policy, type Signal } from './browser.ts';
 import { compareValues, expectedFrom, sortKeys, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
@@ -18,6 +18,26 @@ const steps = new Map(plan.scenarios.flatMap(s => s.steps.map(st => [st.id, st] 
 const checks = new Map(plan.scenarios.flatMap(s => s.checks.map(c => [c.id, c] as const)));
 /** 지금 실행 중인 단계. 오류 신호를 이 단계에 붙인다. 워커 하나는 시나리오를 하나씩 차례로 돌린다. */
 let phase = 'start';
+// 행동 뒤 화면 점검(AI 없음): 그 행동의 검사가 끝난 뒤(다음 행동 전·시나리오 끝) 0.3초 간격으로 두 번 재서 둘 다 나오고,
+// 시작 화면에는 없던 문제만 남긴다. 메뉴를 열거나 테마를 바꾼 뒤에 생긴 겹침·가림·글자 대비 문제를 계획과 상관없이 잡는다.
+// shortcut: 행동 사이 상태만 본다(검사 도중 잠깐 보인 상태는 놓침). 필요해지면 행동 직후에도 잰다.
+let auditBase = new Set<string>();
+let auditPending: string | undefined;
+let stepAudits: { after: string; findings: AuditFinding[] }[] = [];
+const auditKey = (f: AuditFinding) => `${f.kind}|${f.viewport}|${f.target}`;
+async function auditStep(page: Page): Promise<void> {
+  const after = auditPending;
+  auditPending = undefined;
+  if (!after || page.isClosed()) return;
+  const vp = page.viewportSize()?.width === MOBILE.width ? 'mobile' : 'desktop';
+  const first = (await auditPage(page, vp).catch(() => [])).filter(f => f.kind !== 'unnamed-control' && !auditBase.has(auditKey(f)));
+  if (!first.length) return;
+  await page.waitForTimeout(300);
+  const again = new Set((await auditPage(page, vp).catch(() => [])).map(auditKey));
+  const found = first.filter(f => again.has(auditKey(f)));
+  for (const f of found) auditBase.add(auditKey(f));
+  if (found.length) stepAudits.push({ after, findings: found });
+}
 const SIGNALS_PER_STEP = 10;
 const NORMAL_REJECTIONS = new Set([401, 403, 422]);
 /** 페이지 객체마다의 탭 식별자(워커 프로세스 안에서 유일). 시나리오의 기록이 한 탭에서 나왔는지 대조가 확인한다 */
@@ -60,6 +80,7 @@ export const test = base.extend<{ guard: void }>({
     // 오류 신호: 콘솔 오류, 잡히지 않은 스크립트 예외, 400 이상 응답, 실패한 요청.
     // 정책 차단(우리가 막은 요청)·이동으로 취소된 요청·브라우저가 스스로 여는 /favicon.ico는 앱의 신호가 아니라 뺀다.
     const signals: Signal[] = [];
+    auditBase = new Set(); auditPending = undefined; stepAudits = [];
     let signalsDropped = 0;
     const add = (s: Omit<Signal, 'after'>, after = phase) => {
       if (signals.filter(x => x.after === after).length >= SIGNALS_PER_STEP) { signalsDropped++; return; }
@@ -92,6 +113,7 @@ export const test = base.extend<{ guard: void }>({
     // shortcut: 300ms 안에 열리지 않은 탭은 놓친다. 실측에서 보이면 행동마다 popup 이벤트를 기다린다.
     if (phase !== 'start') await context.waitForEvent('page', { timeout: 300 }).catch(() => {});
     log({ kind: 'policy', scenario: info.title.split(' ')[0], blocked: g.blocked, violations: g.violations, signals, ...(signalsDropped ? { signalsDropped } : {}),
+      ...(stepAudits.length ? { audits: stepAudits } : {}),
       ...(denied.length ? { denied } : {}), ...(writeBlocked.length ? { writeBlocked } : {}), ...(newTabs.length ? { newTabs: newTabs.map(t => ({ after: t.after, url: (!t.page.isClosed() && t.page.url()) || t.url })) } : {}) });
   }, { auto: true }],
 });
@@ -120,8 +142,14 @@ export async function start(page: Page, scenarioId: string): Promise<void> {
     const t = plan.targets[id].target;
     if ((await toLocator(page, t).count().catch(() => 0)) === 1 && !(await shapeChanged(page, t).catch(() => true))) await remember(page, id);
   }
+  auditBase = new Set((await auditPage(page, s.viewport ?? 'desktop').catch(() => [])).map(auditKey));
   log({ kind: 'start', scenario: scenarioId, status: 'ok', url: page.url(), ready, viewport: page.viewportSize(), evidence,
     ...(captureErrors.length ? { captureErrors } : {}) }, page);
+}
+
+/** 시나리오 끝: 마지막 행동 뒤 화면을 점검한다. */
+export async function finish(page: Page): Promise<void> {
+  await auditStep(page);
 }
 
 /**
@@ -133,6 +161,7 @@ export async function start(page: Page, scenarioId: string): Promise<void> {
 export async function act(page: Page, stepId: string): Promise<void> {
   const st = steps.get(stepId);
   if (!st) throw new Error(`plan에 없는 단계: ${stepId}`);
+  await auditStep(page);
   phase = stepId;
   const stop = async (status: string, extra: Record<string, unknown>, prior: string[] = []) => {
     const c = await capture(page, stepId);
@@ -141,6 +170,7 @@ export async function act(page: Page, stepId: string): Promise<void> {
     return new Stopped(`${stepId} ${status}`);
   };
   let loc: Locator | undefined;
+  let disabled = false;
   // 행동을 시도하기 전의 모든 실패(대상 조립 오류 포함)는 not_executed다.
   try {
     loc = st.target ? toLocator(page, plan.targets[st.target].target) : undefined;
@@ -151,8 +181,10 @@ export async function act(page: Page, stepId: string): Promise<void> {
       await remember(page, st.target!);
       // 앱 설정이 금지한 주소(로그아웃 등)로 가는 링크는 누르지 않는다. 로그인 상태를 끊어 뒤 검사 전체를 바꾸기 때문이다.
       if (st.op === 'click' && await deniedLink(loc, policy)) throw await stop('not_executed', { reason: 'denied_by_app_config' });
+      // 보이는 비활성 컨트롤은 사용자도 누를 수 있다(disabled-inert 검사). 활성화를 기다리면 시간 초과로 자동화 실패가 된다(이메일 사이트 11/4 S6).
+      disabled = st.op === 'click' && await loc.isVisible() && await loc.isDisabled();
       // 효과 없이 행동 가능 여부만 확인한다.
-      if (st.op === 'click') await loc.click({ trial: true, timeout: TIMEOUT });
+      if (st.op === 'click' && !disabled) await loc.click({ trial: true, timeout: TIMEOUT });
       else if (st.op === 'fill' && !(await loc.isEditable())) throw new Error('not editable');
       else if (st.op === 'select' && !(await loc.isEnabled())) throw new Error('not enabled');
     }
@@ -167,7 +199,8 @@ export async function act(page: Page, stepId: string): Promise<void> {
     : { key: st.value };
   // shortcut: 숫자 입력칸의 문자열·없는 옵션처럼 미전달이 확실한 실패도 uncertain으로 센다. 값별 사전 검증이 필요해지면 추가한다.
   try {
-    if (st.op === 'click') await loc!.click({ timeout: TIMEOUT });
+    // 비활성 요소는 활성 대기 없이 누른다(브라우저가 클릭 이벤트를 보내지 않으므로 앱 동작은 없어야 한다).
+    if (st.op === 'click') await loc!.click({ timeout: TIMEOUT, ...(disabled ? { force: true } : {}) });
     else if (st.op === 'fill') await loc!.fill(st.value!, { timeout: TIMEOUT });
     else if (st.op === 'select') await loc!.selectOption({ label: st.value! }, { timeout: TIMEOUT });
     else await (loc ? loc.press(st.value!, { timeout: TIMEOUT }) : pressKey(page, st.value!, TIMEOUT));
@@ -182,6 +215,7 @@ export async function act(page: Page, stepId: string): Promise<void> {
   const captureErrors = [...(before.captureErrors ?? []).map(x => `직전 ${x}`), ...(after.captureErrors ?? []).map(x => `직후 ${x}`)];
   log({ kind: 'act', id: stepId, status: 'ok', urlBefore, url: page.url(), pressed, afterCaptureMs, evidence: [...before.evidence, ...after.evidence],
     ...(captureErrors.length ? { captureErrors } : {}) }, page);
+  auditPending = stepId;
 }
 
 /**

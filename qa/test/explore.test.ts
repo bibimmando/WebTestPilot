@@ -282,6 +282,32 @@ test('거부된 제출에서 오류 없는 시나리오는 받아 두고, 다음
   assert.equal(r.plan!.observations.length, 1);
 });
 
+test('부분 확정: 거부된 채 대화가 끝나면 받아 둔 시나리오만 계획으로 쓰고, 마치지 못한 기능은 미계획에 이유와 함께 남긴다', async () => {
+  const s = (id: string, f: string, target: string) => ({ id, title: id, covers: [f], start: { url: origin + '/list.html' },
+    steps: [{ id: `${id}.A1`, op: 'click', target: 'T1' }],
+    checks: [
+      { id: `${id}.C1`, after: 'start', target, read: 'text', op: 'equals', expected: '장바구니 (0)', source: { kind: 'observed' }, precondition: true },
+      { id: `${id}.C2`, after: `${id}.A1`, target, read: 'text', op: 'equals', expected_from: `${id}.C1`, offset: 1,
+        source: { kind: 'inferred', rule: 'step-by-one', quote: '담기를 한 번 누르면 개수가 하나 는다' } },
+    ] });
+  const r = await run('/list.html', [], [
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [
+      { name: 'pin', input: { ref: ref(snap, 'button "담기"', 16), group: false } },
+      { name: 'pin', input: { ref: ref(snap, '- banner'), group: false, text: '장바구니 (0)' } },
+    ],
+    () => [{ name: 'submit_plan', input: {
+      features: [{ id: 'F1', name: '담기', page: origin + '/list.html' }, { id: 'F2', name: '다시 담기', page: origin + '/list.html' }],
+      scenarios: [s('S1', 'F1', 'T2'), s('S2', 'F2', 'T9')], unplanned: [] } }],
+    () => null,
+  ]);
+  assert.equal(r.stop, 'done', r.detail ?? '');
+  assert.deepEqual(r.plan!.scenarios.map(x => x.id), ['S1']);
+  assert.deepEqual(r.plan!.unplanned.map(u => u.requirement), ['F2']);
+  assert.match(r.plan!.unplanned[0].reason, /대화가 끝나/);
+  assert.match(r.conversations[0].detail ?? '', /받아 둔 시나리오 S1만 씀/);
+});
+
 test('부분 확정: 형식이 틀린 ID는 받아 두지 않고, withdraw로 받아 둔 시나리오를 뺄 수 있다', async () => {
   const s = (id: string) => ({ id, title: id, covers: ['F1'], start: { url: origin + '/list.html' },
     steps: [{ id: `${id}.A1`, op: 'click', target: 'T1' }],

@@ -486,6 +486,39 @@ test('실행: 처음부터 닫혀 있는 메뉴는 라벨이 있고 같은 역�
   assert.notEqual(late.status, 'passed', `늦게 나타난 메뉴를 닫힘으로 통과시키면 안 된다: ${JSON.stringify(late)}`);
 });
 
+test('실행: 보이는 비활성 버튼은 활성화를 기다리지 않고 누르고(자동화 실패가 아님), 결과가 바뀌지 않았는지 읽는다', async () => {
+  const url = `${origin}/disabled.html`;
+  const p: Plan = { version: 1, textRead: 'name+content', features: [{ id: 'F1', name: '이전 버튼', page: url }], questions: [], observations: [], unplanned: [], requirements: [],
+    targets: { T1: { target: { role: 'button', name: '^이전$' }, group: false, url }, T2: { target: { text: '건$' }, group: false, url } },
+    scenarios: [{ id: 'S1', title: '비활성', covers: ['F1'], start: { url }, steps: [{ id: 'S1.A1', op: 'click', target: 'T1' }],
+      checks: [{ id: 'S1.C1', after: 'start', target: 'T2', read: 'text', op: 'equals', expected: '0건', source: { kind: 'observed' }, precondition: true },
+        { id: 'S1.C2', after: 'S1.A1', target: 'T2', read: 'text', op: 'equals', expected_from: 'S1.C1', source: { kind: 'inferred', rule: 'disabled-inert', quote: '비활성 이전 버튼은 눌러도 결과가 그대로다' } }] }] };
+  const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir('disabled'), timeoutMs: 1500 });
+  const s = r.scenarios[0];
+  assert.equal(s.valid, true, s.invalid.join());
+  assert.equal(s.steps[0].status, 'ok', JSON.stringify(s.steps[0]));
+  assert.equal(s.checks.find(c => c.id === 'S1.C2')!.status, 'passed');
+});
+
+test('실행: 행동 뒤 화면 점검은 시작 화면에 없던 겹침·글자 대비 문제를 그 행동에 붙여 남기고, 정상 버전에서는 남기지 않는다', async () => {
+  const mk = (q: string) => `${origin}/themes.html${q}`;
+  const req = { kind: 'requirement' as const, id: 'R1', quote: '테마를 바꾸면 표시가 바뀐다' };
+  const p: Plan = { version: 1, textRead: 'name+content', features: [], questions: [], observations: [], unplanned: [],
+    requirements: [{ id: 'R1', text: '테마를 바꾸면 표시가 바뀐다' }],
+    targets: { T1: { target: { role: 'button', name: '^테마 바꾸기$' }, group: false, url: mk('') }, T2: { target: { role: 'button', name: '^계정$' }, group: false, url: mk('') },
+      T3: { target: { text: '^테마:' }, group: false, url: mk('') } },
+    startVerified: ['T1 ' + mk('?bug'), 'T2 ' + mk('?bug')],
+    scenarios: ['', '?bug'].map((q, i) => ({ id: `S${i + 1}`, title: q || 'ok', covers: ['R1'], start: { url: mk(q) },
+      steps: [{ id: `S${i + 1}.A1`, op: 'click' as const, target: 'T1' }, { id: `S${i + 1}.A2`, op: 'click' as const, target: 'T2' }],
+      checks: [{ id: `S${i + 1}.C1`, after: `S${i + 1}.A1`, target: 'T3', read: 'text' as const, op: 'equals' as const, expected: '테마: 어둡게', source: req }] })) };
+  const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir('themes'), timeoutMs: 1500 });
+  const [ok, bug] = r.scenarios;
+  assert.equal(ok.audits, undefined, JSON.stringify(ok.audits));
+  const kinds = (bug.audits ?? []).map(a => `${a.after}:${a.findings.map(f => f.kind).join(',')}`);
+  assert.ok(kinds.some(k => k.startsWith('S2.A1:') && k.includes('low-contrast-text')), kinds.join(' / '));
+  assert.ok(kinds.some(k => k.startsWith('S2.A2:') && k.includes('covered-control')), kinds.join(' / '));
+});
+
 test('실행 폴더를 상대 경로로 줘도 실행한다', async () => {
   const p = plan();
   p.scenarios = [p.scenarios[0]];

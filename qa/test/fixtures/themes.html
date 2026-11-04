@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>테마와 메뉴</title>
+<style>
+  body { background: #fff; color: #222; font: 16px sans-serif; }
+  body.dark { background: #1a1a1a; }
+  body.dark h1, body.dark p { color: #222; }
+  ul[role=menu] { position: relative; list-style: none; padding: 0; width: 200px; }
+  ul[role=menu] li { height: 24px; background: #eee; }
+  /* ?bug: 두 번째 메뉴 항목이 첫 항목 위로 겹친다 */
+  .overlap li:nth-child(2) { position: absolute; top: 0; left: 0; width: 200px; }
+</style></head>
+<body>
+  <h1>받은 편지함</h1>
+  <p>읽지 않은 메일 3통</p>
+  <p id="count">테마: 밝게</p>
+  <button id="theme">테마 바꾸기</button>
+  <button id="acct">계정</button>
+  <script>
+    const bug = location.search.includes('bug');
+    document.getElementById('theme').onclick = () => { if (bug) document.body.classList.add('dark'); document.getElementById('count').textContent = '테마: 어둡게'; };
+    document.getElementById('acct').onclick = () => document.body.insertAdjacentHTML('beforeend',
+      `<ul role="menu" class="${bug ? 'overlap' : ''}"><li role="menuitem" tabindex="0" onclick="">계정 바꾸기</li><li role="menuitem" tabindex="0" onclick="">로그아웃</li></ul>`);
+  </script>
+</body></html>

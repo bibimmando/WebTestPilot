@@ -361,6 +361,14 @@ test('close-dismisses: 행동 뒤 read visible, expected "false"로만 검사하
   // 행동 없이 시작 시점에 "안 보임"만 확인하거나, 열려 있었다는 검사가 없으면 거부한다.
   assert.match(close({ after: 'start' }, []).join('\n'), /needs an earlier check of the same target/);
   assert.match(close({}, []).join('\n'), /needs an earlier check of the same target/);
+  // 앞서 읽은 값과 달라졌음(not_equals + expected_from)으로 연 것을 확인해도 된다.
+  const shut = { id: 'S1.C0', after: 'start', target: 'T2', read: 'visible', op: 'equals', expected: 'false', source: { kind: 'observed' }, precondition: true };
+  const openedRel = { id: 'S1.C1', after: 'S1.A1', target: 'T2', read: 'visible', op: 'not_equals', expected_from: 'S1.C0', source: { kind: 'inferred', rule: 'action-has-effect', quote: '여는 버튼을 누르면 메뉴가 나타난다' } };
+  assert.deepEqual(errorsOf(d => {
+    d.scenarios[0].steps.push({ id: 'S1.A2', op: 'click', target: 'T1' });
+    d.scenarios[0].checks.push(shut as never, openedRel as never, { id: 'S1.C2', after: 'S1.A2', target: 'T2', read: 'visible', op: 'equals', expected: 'false',
+      source: { kind: 'inferred', rule: 'close-dismisses', quote: '닫기 버튼을 누르면 메뉴가 닫힌다' } } as never);
+  }).filter(e => e.startsWith('S1.C')), []);
 });
 
 test('목록을 비교하는 관계 규칙(page-changes·effect-shown-elsewhere)은 read items를 요구한다', () => {

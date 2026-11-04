@@ -372,8 +372,10 @@ export function validate(draft: Draft, requirements: Requirement[], pinned: Map<
         // 닫기 행동 뒤이고, 같은 대상이 그보다 앞선 시점에 열려 있었음을 읽어 둔 검사가 있어야 한다. 처음부터 없던 요소를 "닫힘"으로 세지 않는다.
         const at = (x: Check) => ['start', ...s.steps.map(st => st.id)].indexOf(x.after);
         const same = (x: Check) => x.target === c.target || (!!x.target && !!c.target && JSON.stringify(pinned.get(x.target)?.target) === JSON.stringify(pinned.get(c.target)?.target));
-        if (c.after === 'start' || !s.checks.some(x => same(x) && x.read === 'visible' && x.expected === 'true' && at(x) < at(c))) {
-          errors.push(`${c.id}: rule ${rule.id} needs an earlier check of the same target with read visible, expected "true" (open before closing), and must run after an action`);
+        // 열림 확인은 고정값 true이거나, 앞서 읽은 값과 달라졌음(not_equals + expected_from, 예: 시작 때 안 보임 → 연 뒤 달라짐)으로 쓴다.
+        const opened = (x: Check) => x.read === 'visible' && (x.expected === 'true' || (x.op === 'not_equals' && x.expected_from !== undefined));
+        if (c.after === 'start' || !s.checks.some(x => same(x) && opened(x) && at(x) < at(c))) {
+          errors.push(`${c.id}: rule ${rule.id} needs an earlier check of the same target showing it was open (read visible with expected "true", or not_equals with expected_from), and must run after an action`);
         }
       }
       if ((rule.form === 'visual') !== (c.read === 'visual')) errors.push(`${c.id}: ${rule.form === 'visual' ? `rule ${rule.id} is judged from a screenshot; use read visual` : `read visual needs a visual rule (${RULES.filter(r => r.form === 'visual').map(r => r.id).join(', ')})`}`);
