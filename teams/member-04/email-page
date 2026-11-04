@@ -1,5 +1,6 @@
 https://github.com/shlee705/email_page/tree/bug-page
-- [기능 결함 3개](functional.md)
+- [기능 결함 4개](functional.md)
+| [F1](functional.md#f1-email-page-내-inbox-유지) | 기능 | Email 내 inbox 표시 유지 | Email 화면 안에서 sent 페이지로 넘어갔을때 상단 경로 표시가 Inbox로 표시됨.
 | [F2](functional.md#f2-email-내-compose-송신-실패) | 기능 | Email 내 Compose 송신 실패 | Email 화면 안의 Compose 모달로 보내면 오류가 발생하고 수신자에게 배달되지 않는다. compose.html 전용 작성 페이지에서는 발송할 수 있다. |
 | [F3](functional.md#f3-계정-선택-후-현재-계정-유지) | 기능 | 계정 선택 후 현재 계정 유지 | Add account로 계정은 추가할 수 있지만 Switch Account에서 다른 계정을 선택하면 전환 직전 계정이 그대로 유지된다. |
 | [F4](functional.md#f4-메일-열람-시-자동-읽음-처리-누락) | 기능 | 메일 열람 시 자동 읽음 처리 누락 | 메일 본문을 열어도 자동으로 읽음 처리되지 않아 새로고침 후에도 미읽음 상태가 남는다. 수동 Mark read는 동작한다. |
