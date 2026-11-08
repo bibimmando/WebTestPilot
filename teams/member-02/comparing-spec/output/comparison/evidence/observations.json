@@ -1,0 +1,171 @@
+{
+  "checked_at": "2026-11-06T01:11:11.812812+00:00",
+  "database": "disposable SQLite, no existing user DB used",
+  "checks": {
+    "self_send_setup": {
+      "status": 201,
+      "thread_id": "0289a669-51d7-48b5-939d-0d534ebe6bed"
+    },
+    "F1_U2_sent": {
+      "crumb": "Communications\nEmail\nInbox",
+      "folder_pressed": "false",
+      "folder_class": "mail-folder",
+      "title": "Email",
+      "results": "1 results",
+      "screenshot": "F1_U2_sent.png"
+    },
+    "U4_sidebar": {
+      "opacity": "0",
+      "href": "compose.html"
+    },
+    "U3_account_overlap": {
+      "logout_box": {
+        "x": 1189,
+        "y": 135.4375,
+        "width": 218,
+        "height": 40.140625
+      },
+      "switch_box": {
+        "x": 1189,
+        "y": 143.578125,
+        "width": 126.328125,
+        "height": 40.140625
+      },
+      "vertical_overlap_px": 32.0,
+      "screenshot": "U3_account_overlap.png"
+    },
+    "U5_dark_text": {
+      "light": {
+        "color": "rgb(30, 41, 59)",
+        "background": "rgb(240, 244, 248)"
+      },
+      "dark": {
+        "color": "rgb(30, 41, 59)",
+        "background": "rgb(11, 17, 32)"
+      },
+      "screenshot": "U5_dark_text.png"
+    },
+    "F2_modal_valid": {
+      "error": "Message could not be sent. Please try again.",
+      "send_post_count": 0,
+      "screenshot": "F2_modal_valid.png"
+    },
+    "X_cancel_stale_error": {
+      "status": "Composition cancelled. Previously saved drafts are retained.",
+      "global_error": "Message could not be sent. Please try again.",
+      "dialog_open": null,
+      "screenshot": "X_cancel_stale_error.png"
+    },
+    "X_modal_empty_validation": {
+      "error": "Message could not be sent. Please try again.",
+      "active_testid": "send-email",
+      "to_valid": true,
+      "send_post_count": 0,
+      "screenshot": "X_modal_empty_validation.png"
+    },
+    "X_standalone_required_control": {
+      "error": "Enter at least one To recipient.",
+      "status": "Operation failed"
+    },
+    "X_standalone_cancel": {
+      "error": "Enter at least one To recipient.",
+      "compose_error": "",
+      "screenshot": "X_standalone_cancel.png"
+    },
+    "V6_V7_accepted_addresses": {
+      "internal_unknown": {
+        "status": 201,
+        "delivery": "delivered-internal"
+      },
+      "external": {
+        "status": 201,
+        "delivery": "delivered-internal"
+      },
+      "malformed": {
+        "status": 201,
+        "delivery": "delivered-internal"
+      }
+    },
+    "mock_unblocked_control": {
+      "url": "http://127.0.0.1:62859/email.html?mailMode=mock",
+      "error": "",
+      "folders": 2,
+      "screenshot": "mock_unblocked_control.png"
+    },
+    "X_self_thread_F4": {
+      "thread_count": "2 message(s) in this thread",
+      "copies": [
+        {
+          "id": "34f3d8e5-6428-47d0-893f-b20c6b66d2fd",
+          "folder": "sent",
+          "messageId": "<75652d4a-5d14-4e2a-8db8-b322baefc1f0@adminator.test>",
+          "isRead": true
+        },
+        {
+          "id": "e6e51cd7-82cd-4ccf-95b6-9be638d138e0",
+          "folder": "inbox",
+          "messageId": "<75652d4a-5d14-4e2a-8db8-b322baefc1f0@adminator.test>",
+          "isRead": false
+        }
+      ],
+      "toggle_read": "Mark read",
+      "screenshot": "X_self_thread_F4.png",
+      "screenshot_recaptured_after_css_animation_settle": true,
+      "screenshot_recaptured_at": "2026-11-06T01:23:13.278806+00:00",
+      "screenshot_origin": "http://127.0.0.1:62391"
+    },
+    "X_self_reply_all": {
+      "to": "",
+      "cc": "admin@adminator.test",
+      "title": "New message",
+      "screenshot": "X_self_reply_all.png"
+    },
+    "U2_X_singular": {
+      "dropdown_value": "",
+      "results": "1 results",
+      "active": "false",
+      "screenshot": "U2_X_singular.png"
+    },
+    "X_mobile_before_scroll": {
+      "clientHeight": 259,
+      "scrollHeight": 306,
+      "scrollTop": 0,
+      "overflow": "auto",
+      "rail_bottom": 646.6409912109375,
+      "success_top": 638.2034912109375,
+      "success_bottom": 674.3441162109375,
+      "inside": false,
+      "screenshot": "X_mobile_before_scroll.png"
+    },
+    "X_mobile_after_scroll": {
+      "clientHeight": 259,
+      "scrollHeight": 306,
+      "scrollTop": 47,
+      "overflow": "auto",
+      "rail_bottom": 645.84375,
+      "success_top": 590.40625,
+      "success_bottom": 626.546875,
+      "inside": true,
+      "screenshot": "X_mobile_after_scroll.png"
+    },
+    "X_mobile_label_click": {
+      "status": "Ready",
+      "dropdown": ""
+    },
+    "N2_missing_route": {
+      "href": "/NewMail page",
+      "status": 404
+    },
+    "V8_short_password": {
+      "register_status": 201,
+      "displayed_hint": "12–128 characters."
+    },
+    "F3_switch_retains_current": {
+      "requested": "test",
+      "current_after": "admin",
+      "screenshot": "F3_switch_retains_current.png"
+    }
+  },
+  "origin": "http://127.0.0.1:62859",
+  "browser": "153.0.8010.12"
+}

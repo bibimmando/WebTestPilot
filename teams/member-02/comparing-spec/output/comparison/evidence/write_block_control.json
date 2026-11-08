@@ -1,0 +1,20 @@
+{
+  "diagnostic_only": true,
+  "policy": "abort non-GET/HEAD/OPTIONS after login",
+  "error": "Account server is unavailable. Start the backend and retry.",
+  "folders": 0,
+  "blocked": [
+    {
+      "method": "PUT",
+      "path": "/api/mock-mailbox?namespace=default"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/mock-mailbox?namespace=default"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/mock-mailbox?namespace=default"
+    }
+  ]
+}

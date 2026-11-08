@@ -1,0 +1,190 @@
+[
+  {
+    "id": "F1",
+    "file": "src/email.html",
+    "line_start": 20,
+    "line_end": 28,
+    "sha256": "588ca92409f89a2ce2e7a9d59ac5de1121f409d34f726e66bf02172b902083aa",
+    "snippet": "20:     </script>\n21:   </head>\n22:   <body data-active=\"email\" data-crumbs=\"Communications | Email | Inbox\">\n23:     <div class=\"shell\">\n24:       <div data-shell-sidebar></div>\n25:       <div class=\"main\">\n26:         <div data-shell-topbar></div>\n27:         <main class=\"content\" data-email-app></main>\n28:         <div data-shell-footer></div>",
+    "observation": "F1_U2_sent"
+  },
+  {
+    "id": "F2",
+    "file": "src/assets/scripts/2026/email/ui.js",
+    "line_start": 268,
+    "line_end": 276,
+    "sha256": "533871ddcc246b02c2ebdd860be186fa460aafaca968c0d67dc43209626fdc93",
+    "snippet": "268:     event.preventDefault();\n269:     run(async () => {\n270:       // F2: embedded composer intentionally fails before delivery.\n271:       if (!standalone) throw new Error('Message could not be sent. Please try again.');\n272:       const result = await service.sendEmail(composeData());\n273:       closeCompose(); state.selected = null; await refresh(); if (!standalone) await renderReader();\n274:       status(result.status === 'mock-sent' ? 'Mock email saved to Sent. No external email was sent.' : `Send request ${result.requestId}: ${result.status}`);\n275:     }).then(() => {});\n276:   });",
+    "observation": "F2_modal_valid"
+  },
+  {
+    "id": "F3",
+    "file": "src/assets/scripts/2026/auth/accounts-ui.js",
+    "line_start": 46,
+    "line_end": 54,
+    "sha256": "9d95692bbd56937698dbe4807e7f2e54ae4aa066146f4d359245a7c9b6942544",
+    "snippet": "46:       const state = document.createElement('small'); state.textContent = account.active ? 'Current account' : account.canSwitch ? 'Signed in' : 'Expired or disabled · Sign in again';\n47:       details.append(name, email, state); choose.append(icon, details);\n48:       choose.onclick = () => { if (window.adminatorCanLeave && !window.adminatorCanLeave()) return; return run(async () => { /* F3: submit the current account instead of the selected account. */ await client.switchAccount(client.user.id); form.reset(); dialog.close(); reloadAccount(client); }); };\n49:       const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn--ghost'; remove.textContent = 'Remove';\n50:       remove.dataset.testid = `account-remove-${account.id}`; remove.setAttribute('aria-label', `Remove ${account.username} from this browser`);\n51:       remove.onclick = () => { if (window.adminatorCanLeave && !window.adminatorCanLeave()) return; return run(async () => { await client.removeAccount(account.id); form.reset(); dialog.close(); if (client.user) reloadAccount(client); else client.broadcastChange?.(); }); };\n52:       row.append(choose, remove); list.append(row);\n53:     }\n54:     status.textContent = `${result.accounts.length} / ${result.maxAccounts} accounts · Remove signs out only this browser.`;",
+    "observation": "F3_switch_retains_current"
+  },
+  {
+    "id": "F4",
+    "file": "src/assets/scripts/2026/email/ui.js",
+    "line_start": 168,
+    "line_end": 176,
+    "sha256": "533871ddcc246b02c2ebdd860be186fa460aafaca968c0d67dc43209626fdc93",
+    "snippet": "168:   async function select(id) {\n169:     const mail = await service.getEmailById(id);\n170:     // F4: opening a message intentionally omits the automatic read-status update.\n171:     state.selected = mail; await refresh(); await renderReader();\n172:   }\n173:   async function mutate(operation, clear = false) {\n174:     await operation();\n175:     if (clear) state.selected = null;\n176:     await refresh(); await renderReader();",
+    "observation": "X_self_thread_F4"
+  },
+  {
+    "id": "U2",
+    "file": "src/assets/scripts/2026/email/ui.js",
+    "line_start": 112,
+    "line_end": 120,
+    "sha256": "533871ddcc246b02c2ebdd860be186fa460aafaca968c0d67dc43209626fdc93",
+    "snippet": "112:     committedQuery = { ...query };\n113:     if (page.total && state.offset >= page.total) { state.offset = Math.max(0, Math.floor((page.total - 1) / state.limit) * state.limit); return refresh(); }\n114:     // U2: filtering works, but current-view indicators are intentionally absent.\n115:     $('[data-mail-title]').textContent = 'Email';\n116:     $('[data-list-title]').textContent = `${page.total} results`;\n117:     $('[data-folders]').innerHTML = `<div class=\"mail-rail-label\">Folders · total / unread</div>${  folders.map((folder) => `<button class=\"mail-folder\" data-folder=\"${escape(folder.id)}\" data-testid=\"folder-${escape(folder.id)}\" aria-pressed=\"false\">${folderIcon}<span class=\"mail-folder-name\">${escape(folder.name)}</span><span class=\"mail-folder-count\">${folder.total} / ${folder.unread}</span></button>`).join('')}`;\n118:     renderLabels(labels);\n119:     $('[data-filter=\"label\"]').innerHTML = `<option value=\"\">All labels</option>${  labels.map((label) => `<option value=\"${escape(label.id)}\">${escape(label.name)}</option>`).join('')}`;\n120:     $('[data-filter=\"label\"]').value = '';",
+    "observation": "U2_X_singular"
+  },
+  {
+    "id": "U3",
+    "file": "src/assets/styles/2026/_accounts.scss",
+    "line_start": 89,
+    "line_end": 97,
+    "sha256": "25e98a5fce7fe830eda2ca952d4c7d4684702bc4cfb8b44bdc12d5b13304bd12",
+    "snippet": "89: .dd-profile > button.dd-menu-item {\n90:   position: relative;\n91:   margin-top: -32px;\n92:   z-index: 1;\n93: }\n94: \n95: /* U4: retain the sidebar link's layout and hit target while hiding its paint. */\n96: .d-sidebar a[href='compose.html'] {\n97:   opacity: 0;",
+    "observation": "U3_account_overlap"
+  },
+  {
+    "id": "U4",
+    "file": "src/assets/styles/2026/_accounts.scss",
+    "line_start": 94,
+    "line_end": 98,
+    "sha256": "25e98a5fce7fe830eda2ca952d4c7d4684702bc4cfb8b44bdc12d5b13304bd12",
+    "snippet": "94: \n95: /* U4: retain the sidebar link's layout and hit target while hiding its paint. */\n96: .d-sidebar a[href='compose.html'] {\n97:   opacity: 0;\n98: }",
+    "observation": "U4_sidebar"
+  },
+  {
+    "id": "U5",
+    "file": "src/assets/styles/2026/_tokens.scss",
+    "line_start": 56,
+    "line_end": 64,
+    "sha256": "3be48dcd0e673b43f83fb2e004f589e23fb74b557ac68cabe1f21c85c6182f03",
+    "snippet": "56:   --bg-muted:      #1A2237;\n57: \n58:   /* U5: dark surfaces retain the light theme's near-black text. */\n59:   --t-base:        #1E293B;\n60:   --t-muted:       #94A3B8;\n61:   --t-light:       #64748B;\n62:   --t-inverse:     #0B1120;\n63:   --border:        #222C42;\n64:   --border-soft:   #1A2237;",
+    "observation": "U5_dark_text"
+  },
+  {
+    "id": "V6",
+    "file": "backend/mail.py",
+    "line_start": 165,
+    "line_end": 173,
+    "sha256": "ee2653fd490ac8540ef0658a2127363f10db49dca6f20507eb64a22edca2eb4c",
+    "snippet": "165:             recipient = db.scalar(select(User).where(User.email_address == address.address.strip().lower(), User.is_active.is_(True)))\n166:             if not recipient:\n167:                 # V6: unknown/inactive recipients are silently skipped while Sent is saved.\n168:                 continue\n169:             recipients[recipient.id] = recipient\n170:         row = owned(db, user.id, data.id) if data.id else None\n171:         previous = json.loads(row.data_json) if row else None\n172:         if previous and previous[\"folderId\"] != \"drafts\":\n173:             # A concurrent identical send may commit between the receipt read",
+    "observation": "V6_V7_accepted_addresses"
+  },
+  {
+    "id": "V7",
+    "file": "src/assets/scripts/2026/email/model.js",
+    "line_start": 75,
+    "line_end": 83,
+    "sha256": "df64e75eaa5bc6fca1dcdf3e00cf4195c4962fe329fec2707e61cd5ccdf5a5a3",
+    "snippet": "75:   for (const field of ['to', 'cc', 'bcc']) {\n76:     if (!Array.isArray(data[field])) throw new EmailError('VALIDATION', `${field} must be an address list.`);\n77:     // V7: recipient syntax/domain validation is intentionally omitted.\n78:   }\n79:   if (sending && !data.to.length) throw new EmailError('VALIDATION', 'Enter at least one To recipient.');\n80:   if (sending && !data.subject.trim()) throw new EmailError('VALIDATION', 'Enter a subject.');\n81:   if (sending && !data.bodyText.trim()) throw new EmailError('VALIDATION', 'Enter a message.');\n82: }\n83: ",
+    "observation": "V6_V7_accepted_addresses"
+  },
+  {
+    "id": "V8",
+    "file": "backend/schemas.py",
+    "line_start": 28,
+    "line_end": 36,
+    "sha256": "9dac5d40a297d61a52dc985d820690319d11b87356bfbf8769237a045b6886b8",
+    "snippet": "28:     username: str = Field(min_length=3, max_length=32)\n29:     displayName: str = Field(min_length=1, max_length=80)\n30:     password: str = Field(min_length=1, max_length=128)\n31:     confirmPassword: str = Field(min_length=1, max_length=128)\n32: \n33:     @field_validator(\"username\")\n34:     @classmethod\n35:     def normalize_username(cls, value):\n36:         value = value.strip().lower()",
+    "observation": "V8_short_password"
+  },
+  {
+    "id": "N2",
+    "file": "src/assets/scripts/2026/Shell.js",
+    "line_start": 119,
+    "line_end": 127,
+    "sha256": "8b3046ca6a23a2946cf9f1997ea463af33fa487e56624ada760b9fe9dd27f6b7",
+    "snippet": "119:       </div>\n120:       <div class=\"topbar-actions\">\n121:         <a class=\"btn btn--ghost\" href=\"/NewMail page\">New mail</a>\n122: \n123:         <button class=\"icon-btn\" id=\"themeToggle\" aria-label=\"Toggle theme\"></button>\n124: \n125:         <div class=\"dd-wrap\">\n126:           <div class=\"avatar\" data-dropdown tabindex=\"0\" role=\"button\" aria-label=\"Account menu\">JD</div>\n127:           <div class=\"dd-menu dd-profile\" role=\"menu\">",
+    "observation": "N2_missing_route"
+  },
+  {
+    "id": "X1",
+    "file": "backend/mail_queries.py",
+    "line_start": 64,
+    "line_end": 72,
+    "sha256": "2ec46c99cbae434d374128a87527a366055dce2736f9e28a462f681aec1f8e64",
+    "snippet": "64:     if starred:\n65:         conditions.append(field(\"isStarred\") == 1)\n66:     if thread:\n67:         conditions.extend([field(\"threadId\") == thread, folder_of.not_in((\"trash\", \"spam\"))])\n68:     if query:\n69:         # Match the client haystack exactly, including field order and empty\n70:         # recipient arrays; SQL LIKE wildcards remain literal user input.\n71:         haystack = func.coalesce(field('from.name'), '').op('||')(' ').op('||')(func.coalesce(field('from.address'), ''))\n72:         for recipient in ('to', 'cc', 'bcc'):"
+  },
+  {
+    "id": "X1-UI",
+    "file": "src/assets/scripts/2026/email/ui.js",
+    "line_start": 132,
+    "line_end": 140,
+    "sha256": "533871ddcc246b02c2ebdd860be186fa460aafaca968c0d67dc43209626fdc93",
+    "snippet": "132:     if (disposed) return;\n133:     if (!thread.some((item) => item.id === mail.id)) thread.push(mail);\n134:     $('[data-reader]').innerHTML = `<div class=\"reader-toolbar\">${button('back-list', 'Back to list')}<div class=\"email-actions\">${button('toggle-read', mail.isRead ? 'Mark unread' : 'Mark read')}</div></div><div class=\"reader-scroll\"><h2 class=\"reader-subject\">${escape(mail.subject || '(No subject)')}</h2><p data-testid=\"delivery-status\">${escape(mail.deliveryStatus)}</p><div class=\"reader-meta-row\">${tags(mail)}</div><fieldset class=\"email-label-editor\"><legend>Labels for selected message</legend>${state.labels.map((label) => `<label><input type=\"checkbox\" data-email-label=\"${escape(label.id)}\" ${mail.labels.includes(label.id) ? 'checked' : ''}> ${escape(label.name)}</label>`).join('')}${button('apply-labels', 'Apply labels')}</fieldset><p data-testid=\"thread-count\">${thread.length} message(s) in this thread</p>${thread.map((item) => `<article class=\"reader-card\" data-testid=\"thread-message-${escape(item.id)}\"><div class=\"reader-card-head\"><div class=\"reader-from-block\"><div class=\"reader-from-name\">${escape(item.from.name)}</div><div class=\"reader-from-email\">${escape(item.from.address)}</div><div class=\"reader-from-meta\">To: ${escape(addresses(item.to))}${item.cc.length ? `<br>Cc: ${escape(addresses(item.cc))}` : ''}</div></div><time>${escape(date(item.sentAt || item.receivedAt))}</time></div><div class=\"reader-body email-body-text\">${escape(item.bodyText)}</div>${item.attachments.length ? `<div class=\"reader-attach\"><div class=\"reader-attach-head\">Attachments</div>${item.attachments.map((attachment) => `<div class=\"reader-attach-item\"><div class=\"attach-meta\"><div class=\"attach-name\">${escape(attachment.name)}</div><div class=\"attach-size\">${size(attachment.size)} · ${escape(attachment.type)}</div></div>${attachment.available ? `<button class=\"btn btn--ghost\" data-download=\"${escape(attachment.id)}\" data-testid=\"download-${escape(attachment.id)}\">Download</button>` : '<span>Sample only · no file content</span>'}</div>`).join('')}</div>` : ''}</article>`).join('')}<div class=\"email-actions\">${mail.folderId === 'drafts' ? button('edit-draft', 'Edit draft') : button('reply', 'Reply') + button('reply-all', 'Reply all') + button('forward', 'Forward')}</div></div>`;\n135:     $('.mail-shell').classList.add('has-selection');\n136:   }\n137: \n138:   function openCompose(data = {}) {\n139:     composeTrigger = document.activeElement;\n140:     state.compose = data; state.attachments = [...(data.attachments || [])];"
+  },
+  {
+    "id": "X2",
+    "file": "src/assets/scripts/2026/email/service.js",
+    "line_start": 68,
+    "line_end": 76,
+    "sha256": "79c44ea5dc44278e10787cab664c6cd3d7086f78cc1143b30f847b62c3742820",
+    "snippet": "68:     const forward = mode === 'forward';\n69:     const ownAddress = this.identity.address.toLowerCase();\n70:     const dedupe = (people) => [...new Map(people.filter((p) => p.address.toLowerCase() !== ownAddress).map((p) => [p.address.toLowerCase(), p])).values()];\n71:     const to = forward ? [] : dedupe(email.from.address.toLowerCase() === ownAddress ? email.to : [email.from]);\n72:     const cc = mode === 'reply-all' ? dedupe([...email.to, ...email.cc]).filter((p) => !to.some((t) => t.address.toLowerCase() === p.address.toLowerCase())) : [];\n73:     return {\n74:       to, cc, bcc: [], subject: `${forward ? 'Fwd' : 'Re'}: ${email.subject.replace(/^(Re|Fwd):\\s*/i, '')}`,\n75:       bodyText: `\\n\\n${forward ? 'Forwarded message' : 'Original message'} from ${email.from.address}:\\n${email.bodyText}`,\n76:       threadId: forward ? undefined : email.threadId,"
+  },
+  {
+    "id": "X3",
+    "file": "src/assets/scripts/2026/email/ui.js",
+    "line_start": 152,
+    "line_end": 160,
+    "sha256": "533871ddcc246b02c2ebdd860be186fa460aafaca968c0d67dc43209626fdc93",
+    "snippet": "152:     $('[data-action=\"keep-draft-input\"]').hidden = !visible;\n153:   }\n154:   function closeCompose() {\n155:     state.compose = null; state.attachments = []; form.reset(); window.dispatchEvent(new CustomEvent('adminator-form-saved', {detail:form}));\n156:     if (dialog?.open) dialog.close();\n157:     restoreComposeFocus = state.busy && !standalone;\n158:     composeTrigger?.focus();\n159:     if (standalone) openCompose();\n160:   }"
+  },
+  {
+    "id": "X3-cancel",
+    "file": "src/assets/scripts/2026/email/ui.js",
+    "line_start": 186,
+    "line_end": 194,
+    "sha256": "533871ddcc246b02c2ebdd860be186fa460aafaca968c0d67dc43209626fdc93",
+    "snippet": "186:     refresh: () => run(async () => { await refresh(); if (state.selected) await renderReader(); }, 'Mailbox refreshed'),\n187:     compose: () => openCompose(),\n188:     'cancel-compose': () => { closeCompose(); status('Composition cancelled. Previously saved drafts are retained.'); },\n189:     'reload-draft': () => run(async () => {\n190:       const latest = await service.getEmailById(state.compose.id);\n191:       if (latest.folderId !== 'drafts') throw Error('This message is no longer a draft. Keep your input as a new draft.');\n192:       openCompose(latest); window.dispatchEvent(new CustomEvent('adminator-form-saved', {detail:form}));\n193:     }, 'Latest draft loaded'),\n194:     'keep-draft-input': () => {"
+  },
+  {
+    "id": "X4",
+    "file": "src/assets/scripts/2026/email/ui.js",
+    "line_start": 114,
+    "line_end": 122,
+    "sha256": "533871ddcc246b02c2ebdd860be186fa460aafaca968c0d67dc43209626fdc93",
+    "snippet": "114:     // U2: filtering works, but current-view indicators are intentionally absent.\n115:     $('[data-mail-title]').textContent = 'Email';\n116:     $('[data-list-title]').textContent = `${page.total} results`;\n117:     $('[data-folders]').innerHTML = `<div class=\"mail-rail-label\">Folders · total / unread</div>${  folders.map((folder) => `<button class=\"mail-folder\" data-folder=\"${escape(folder.id)}\" data-testid=\"folder-${escape(folder.id)}\" aria-pressed=\"false\">${folderIcon}<span class=\"mail-folder-name\">${escape(folder.name)}</span><span class=\"mail-folder-count\">${folder.total} / ${folder.unread}</span></button>`).join('')}`;\n118:     renderLabels(labels);\n119:     $('[data-filter=\"label\"]').innerHTML = `<option value=\"\">All labels</option>${  labels.map((label) => `<option value=\"${escape(label.id)}\">${escape(label.name)}</option>`).join('')}`;\n120:     $('[data-filter=\"label\"]').value = '';\n121:     $('[data-message-list]').innerHTML = page.items.length ? page.items.map((mail, i) => `<article class=\"mail-row${!mail.isRead ? ' is-unread' : ''}${mail.id === state.selected?.id ? ' is-active' : ''}\" data-email-id=\"${escape(mail.id)}\" data-testid=\"email-row-${escape(mail.id)}\" data-read=\"${mail.isRead}\"><button class=\"email-row-open\" data-open=\"${escape(mail.id)}\" aria-label=\"Read ${escape(mail.subject)}\" aria-pressed=\"${mail.id === state.selected?.id}\"><span class=\"mail-row-avatar ma-${i % 5 + 1}\">${escape((mail.from.name || mail.from.address).slice(0, 2).toUpperCase())}</span><span class=\"mail-row-body\"><span class=\"mail-row-top\"><span class=\"mail-row-from\">${escape(mail.from.name || mail.from.address)}</span><span class=\"mail-row-time\">${escape(date(mail.sentAt || mail.receivedAt))}</span></span><span class=\"mail-row-subject\">${escape(mail.subject || '(No subject)')}</span><span class=\"mail-row-preview\">${escape(mail.bodyText)}</span><span class=\"mail-row-tags\">${tags(mail)}${mail.attachments.length ? `<span class=\"mail-tag attach\">${mail.attachments.length} files</span>` : ''}</span></span></button></article>`).join('') : '<p class=\"email-empty\" data-testid=\"empty-mailbox\">No messages match this view.</p>';\n122:     $('[data-page-info]').textContent = `${page.total ? state.offset + 1 : 0}–${Math.min(state.offset + state.limit, page.total)} / ${page.total}`;"
+  },
+  {
+    "id": "X5",
+    "file": "src/assets/styles/2026/_email-interactive.scss",
+    "line_start": 42,
+    "line_end": 48,
+    "sha256": "c119388412f9f484e56db77e650dd7f1615b5ee185672cea1afae8b9a6202824",
+    "snippet": "42: @media (width <= 767px) {\n43:   .email-app, .email-app.has-selection { grid-template-columns: minmax(0, 1fr); }\n44:   .email-app .mail-rail { display: flex; border-right: 0; border-bottom: 1px solid var(--border-soft); max-height: 260px; }\n45:   .email-app.has-selection .mail-rail { display: none; }\n46:   .email-app .reader-scroll { padding: 16px; }\n47:   .email-compose-dialog { padding: 16px; }\n48: }"
+  },
+  {
+    "id": "mock-control",
+    "file": "src/assets/scripts/2026/email/mock-api.js",
+    "line_start": 33,
+    "line_end": 41,
+    "sha256": "6703238953478ef62ee2bb4a3d0e97b1da7105b161e779be2a35690719532a53",
+    "snippet": "33:       const operationResult = operation(state);\n34:       const result = operationResult?.then ? await operationResult : operationResult;\n35:       try { if (this.persistence) await this.persistence.save(state); else this.storage.setItem(this.key, JSON.stringify(state)); }\n36:       catch (error) { if (this.persistence) throw error; throw new EmailError('STORAGE', 'Mailbox could not be saved. Browser storage is full or unavailable.'); }\n37:       return clone(result);\n38:     });\n39:     this.queue = task.catch(() => {});\n40:     return task;\n41:   }"
+  },
+  {
+    "id": "logout-control",
+    "file": "src/assets/scripts/2026/auth/ui.js",
+    "line_start": 111,
+    "line_end": 119,
+    "sha256": "63d74e4023c4261b66a55ac2116db8f162c05cfed0f7e63a2a94dee9735737e7",
+    "snippet": "111:     const logout = document.createElement('button'); logout.className = 'btn btn--ghost auth-logout'; logout.textContent = 'Log out'; logout.dataset.authLogout = ''; logout.dataset.testid = 'logout'; footer.append(logout);\n112:   }\n113:   document.querySelectorAll('[data-auth-logout]').forEach((button) => button.addEventListener('click', async (event) => {\n114:     event.preventDefault(); if (window.adminatorCanLeave && !window.adminatorCanLeave()) return; button.disabled = true;\n115:     try { await client.logout(); client.broadcastLogout?.(); if (client.user) reloadAccount(client); }\n116:     catch (error) {\n117:       button.disabled = false;\n118:       let alert = document.querySelector('[data-logout-error]');\n119:       if (!alert) { alert = document.createElement('p'); alert.dataset.logoutError = ''; alert.setAttribute('role', 'alert'); footer?.append(alert); }"
+  },
+  {
+    "id": "theme-default",
+    "file": "src/email.html",
+    "line_start": 12,
+    "line_end": 20,
+    "sha256": "588ca92409f89a2ce2e7a9d59ac5de1121f409d34f726e66bf02172b902083aa",
+    "snippet": "12:         try {\n13:           var saved = localStorage.getItem('dash26-theme');\n14:           var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;\n15:           document.documentElement.setAttribute('data-theme', saved || (prefersDark ? 'dark' : 'light'));\n16:         } catch (e) {\n17:           document.documentElement.setAttribute('data-theme', 'light');\n18:         }\n19:       })();\n20:     </script>"
+  }
+]

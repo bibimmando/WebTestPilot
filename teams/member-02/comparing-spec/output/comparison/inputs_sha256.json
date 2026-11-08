@@ -1,0 +1,176 @@
+[
+  {
+    "path": "01_원본자료/report.pdf",
+    "bytes": 411968,
+    "sha256": "91c0d6cce9146f8dc0b345950484473b5fc5ffbe373f76de1ef2dfc2b35c5618",
+    "original_path": "report.pdf"
+  },
+  {
+    "path": "01_원본자료/report.ko.pdf",
+    "bytes": 1725967,
+    "sha256": "385fbbe3be16d850096d722c5c5092c967791107f2f1932fa35a3b6d901b70ed",
+    "original_path": "report.ko.pdf"
+  },
+  {
+    "path": "01_원본자료/email-page.txt",
+    "bytes": 3608,
+    "sha256": "7fa1f235f78ca784c66abe65c53a59af326115a10f1c29a1f109cc9f6918efa9",
+    "original_path": "email-page.txt"
+  },
+  {
+    "path": "01_원본자료/bugs-injected.md",
+    "bytes": 22747,
+    "sha256": "3cc6d8c2cd6bf1a3d3008d4bbf06244dc4c4a6db14d83a7e0579ac1ae669ec70",
+    "original_path": "bugs-injected.md"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/README.md",
+    "bytes": 2958,
+    "sha256": "4058cbbdfc180a7bb9d28df376bd12b46c4e8c45851bafad7259d100ff99132d",
+    "original_path": "email_page-bug-page/email_page-bug-page/README.md"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/package.json",
+    "bytes": 3421,
+    "sha256": "ee008a94e290eb510b7dddc4e87aef82ede9634976a98c7472f2ee2177cf19b3",
+    "original_path": "email_page-bug-page/email_page-bug-page/package.json"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/docs/bugs/bugs.md",
+    "bytes": 2309,
+    "sha256": "f4f8b44df3e0ad61146599353ba8f9697942b2131d4ccd8100b4f3ce11d262a3",
+    "original_path": "email_page-bug-page/email_page-bug-page/docs/bugs/bugs.md"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/docs/bugs/functional.md",
+    "bytes": 7278,
+    "sha256": "f569aae6b259d3b0ed22734975779365711afc807c02009228e36ad6dc01b3e9",
+    "original_path": "email_page-bug-page/email_page-bug-page/docs/bugs/functional.md"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/docs/bugs/ui.md",
+    "bytes": 9542,
+    "sha256": "9396ec4e10d1089a6032420040e33765995cf0d23d24d680abba2fe68a7a08c0",
+    "original_path": "email_page-bug-page/email_page-bug-page/docs/bugs/ui.md"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/docs/bugs/validation.md",
+    "bytes": 11990,
+    "sha256": "cfc433396f6bbd7a6af4a589fdbe7a49e23029fe3edb68c52ffd093f3643dfc1",
+    "original_path": "email_page-bug-page/email_page-bug-page/docs/bugs/validation.md"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/docs/bugs/routing.md",
+    "bytes": 2987,
+    "sha256": "135b7179d90244625f621a0613a199d1352ecea73bc11a1da32b9b35d36b36d6",
+    "original_path": "email_page-bug-page/email_page-bug-page/docs/bugs/routing.md"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/backend/mail.py",
+    "bytes": 12792,
+    "sha256": "ee2653fd490ac8540ef0658a2127363f10db49dca6f20507eb64a22edca2eb4c",
+    "original_path": "email_page-bug-page/email_page-bug-page/backend/mail.py"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/backend/mail_queries.py",
+    "bytes": 6500,
+    "sha256": "2ec46c99cbae434d374128a87527a366055dce2736f9e28a462f681aec1f8e64",
+    "original_path": "email_page-bug-page/email_page-bug-page/backend/mail_queries.py"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/backend/schemas.py",
+    "bytes": 1974,
+    "sha256": "9dac5d40a297d61a52dc985d820690319d11b87356bfbf8769237a045b6886b8",
+    "original_path": "email_page-bug-page/email_page-bug-page/backend/schemas.py"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/src/assets/scripts/2026/Shell.js",
+    "bytes": 6778,
+    "sha256": "8b3046ca6a23a2946cf9f1997ea463af33fa487e56624ada760b9fe9dd27f6b7",
+    "original_path": "email_page-bug-page/email_page-bug-page/src/assets/scripts/2026/Shell.js"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/src/assets/scripts/2026/auth/accounts-ui.js",
+    "bytes": 6419,
+    "sha256": "9d95692bbd56937698dbe4807e7f2e54ae4aa066146f4d359245a7c9b6942544",
+    "original_path": "email_page-bug-page/email_page-bug-page/src/assets/scripts/2026/auth/accounts-ui.js"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/src/assets/scripts/2026/auth/ui.js",
+    "bytes": 7258,
+    "sha256": "63d74e4023c4261b66a55ac2116db8f162c05cfed0f7e63a2a94dee9735737e7",
+    "original_path": "email_page-bug-page/email_page-bug-page/src/assets/scripts/2026/auth/ui.js"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/src/assets/scripts/2026/email/mock-api.js",
+    "bytes": 9683,
+    "sha256": "6703238953478ef62ee2bb4a3d0e97b1da7105b161e779be2a35690719532a53",
+    "original_path": "email_page-bug-page/email_page-bug-page/src/assets/scripts/2026/email/mock-api.js"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/src/assets/scripts/2026/email/model.js",
+    "bytes": 5593,
+    "sha256": "df64e75eaa5bc6fca1dcdf3e00cf4195c4962fe329fec2707e61cd5ccdf5a5a3",
+    "original_path": "email_page-bug-page/email_page-bug-page/src/assets/scripts/2026/email/model.js"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/src/assets/scripts/2026/email/service.js",
+    "bytes": 5916,
+    "sha256": "79c44ea5dc44278e10787cab664c6cd3d7086f78cc1143b30f847b62c3742820",
+    "original_path": "email_page-bug-page/email_page-bug-page/src/assets/scripts/2026/email/service.js"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/src/assets/scripts/2026/email/ui.js",
+    "bytes": 26108,
+    "sha256": "533871ddcc246b02c2ebdd860be186fa460aafaca968c0d67dc43209626fdc93",
+    "original_path": "email_page-bug-page/email_page-bug-page/src/assets/scripts/2026/email/ui.js"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/src/assets/styles/2026/_accounts.scss",
+    "bytes": 1827,
+    "sha256": "25e98a5fce7fe830eda2ca952d4c7d4684702bc4cfb8b44bdc12d5b13304bd12",
+    "original_path": "email_page-bug-page/email_page-bug-page/src/assets/styles/2026/_accounts.scss"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/src/assets/styles/2026/_email-interactive.scss",
+    "bytes": 3839,
+    "sha256": "c119388412f9f484e56db77e650dd7f1615b5ee185672cea1afae8b9a6202824",
+    "original_path": "email_page-bug-page/email_page-bug-page/src/assets/styles/2026/_email-interactive.scss"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/src/assets/styles/2026/_tokens.scss",
+    "bytes": 2614,
+    "sha256": "3be48dcd0e673b43f83fb2e004f589e23fb74b557ac68cabe1f21c85c6182f03",
+    "original_path": "email_page-bug-page/email_page-bug-page/src/assets/styles/2026/_tokens.scss"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/src/email.html",
+    "bytes": 1321,
+    "sha256": "588ca92409f89a2ce2e7a9d59ac5de1121f409d34f726e66bf02172b902083aa",
+    "original_path": "email_page-bug-page/email_page-bug-page/src/email.html"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/dist/2026.0de6c125.js",
+    "bytes": 23947,
+    "sha256": "e80d6cda6a0553cd154b10034fa519a0c6483f6829355741ade8a01611d3c950",
+    "original_path": "email_page-bug-page/email_page-bug-page/dist/2026.0de6c125.js"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/dist/email-page.4772d8ef.js",
+    "bytes": 39228,
+    "sha256": "6d1082cedb8fc4e08d9f99331e06562a53caaba48d8486939db3196ba6a5726e",
+    "original_path": "email_page-bug-page/email_page-bug-page/dist/email-page.4772d8ef.js"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/dist/runtime.f247021a.js",
+    "bytes": 2776,
+    "sha256": "ac76f91a88b4662832e190f58d95e727c0f5b00785f629c9e7d174526cacb599",
+    "original_path": "email_page-bug-page/email_page-bug-page/dist/runtime.f247021a.js"
+  },
+  {
+    "path": "02_대상사이트/email_page-bug-page/dist/style.71c4ce06.css",
+    "bytes": 50415,
+    "sha256": "d00ea402f1adf414f5deeb2d933881b60aa9a8c1e01fe2b5334e7988824e5d30",
+    "original_path": "email_page-bug-page/email_page-bug-page/dist/style.71c4ce06.css"
+  }
+]

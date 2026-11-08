@@ -1,0 +1,39 @@
+{
+  "format": "qa-report-review/1",
+  "review_scope": null,
+  "inputs": [],
+  "target_version": null,
+  "ground_truth": [],
+  "reports": [],
+  "metric_policy": {
+    "requested_measure": null,
+    "evaluation_unit": null,
+    "denominator_source": null,
+    "included_report_sections": [],
+    "partial_match_policy": null,
+    "deduplication_policy": null,
+    "additional_finding_policy": null,
+    "verification_requirement": null,
+    "requested_measures": [],
+    "confirmed_extra_union": [],
+    "per_report_extra_attribution": []
+  },
+  "claims": [],
+  "additional_findings": [],
+  "results": null,
+  "comparability_limits": [],
+  "validation_notes": [],
+  "prior_record_comparison": {
+    "source_versions_unchanged": null,
+    "checked_records": [],
+    "fact_corrections": [],
+    "metric_policy_changes": []
+  },
+  "deliverable": {
+    "version": null,
+    "document_input": null,
+    "output": null,
+    "sha256": null,
+    "pages": null
+  }
+}

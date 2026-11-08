@@ -1,0 +1,8 @@
+# Local state and historical drafts
+**/.claude/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+output/archive/
+output/comparison/final/이전_JSON/

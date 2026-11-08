@@ -1,0 +1,27 @@
+﻿의도된 버그,WebTestPilot,Dogfood
+F1(상단 경로가 Inbox로 고정),"발견
+WebTestPilot p.2-3","발견
+Dogfood p.15-16"
+F2(Email 화면 안의 작성창에서 발송 실패),기록 없음,"발견
+Dogfood p.2-4"
+F3(다른 계정을 선택해도 계정이 바뀌지 않음),기록 없음,기록 없음
+F4(메일을 열어도 자동으로 읽음 처리되지 않음),기록 없음,기록 없음
+U2(선택한 폴더·라벨의 표시가 바뀌지 않음),기록 없음,"발견
+Dogfood p.15-16"
+U3(계정 메뉴의 버튼 두 개가 겹침),"발견
+WebTestPilot p.6",기록 없음
+U4(사이드바의 Compose가 보이지 않음),"보이지 않는다고 기록
+WebTestPilot p.8-9","발견
+Dogfood p.10-11"
+U5(다크 모드에서도 글자가 검정색으로 남음),"발견
+WebTestPilot p.4-5","발견
+Dogfood p.8-10"
+V6(가입하지 않은 내부 주소로도 발송 성공 처리),기록 없음,"발견
+Dogfood p.19-21"
+V7(수신자 형식·도메인 검증 누락),"일부 증상만 기록
+WebTestPilot p.8","발견
+Dogfood p.19-21"
+V8(안내보다 짧은 비밀번호로 가입 가능),기록 없음,기록 없음
+N2(New mail이 없는 페이지로 이동),"발견
+WebTestPilot p.3","발견
+Dogfood p.4-5"

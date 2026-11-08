@@ -1,0 +1,13 @@
+﻿명세ID,결함,WebTestPilot 위치,W 전체보고서 적중,W 정식발견 적중,Dogfood 위치,D 적중,소스 경로,이번 관찰ID
+F1,Sent 뒤 Inbox 경로 유지,"W 발견 1, p2-3",1,1,"D ISSUE-008, p15-16",1,src/email.html,F1_U2_sent
+F2,Email 모달 송신 실패,없음,0,0,"D ISSUE-001, p2-4",1,src/assets/scripts/2026/email/ui.js,F2_modal_valid
+F3,계정 선택 후 직전 계정 유지,없음,0,0,없음,0,src/assets/scripts/2026/auth/accounts-ui.js,F3_switch_retains_current
+F4,열람 자동 읽음 처리 누락,없음,0,0,없음,0,src/assets/scripts/2026/email/ui.js,X_self_thread_F4
+U2,폴더·라벨 활성 표시 누락,없음,0,0,"D ISSUE-008, p15-16",1,src/assets/scripts/2026/email/ui.js,U2_X_singular
+U3,계정 메뉴 버튼 겹침,"W 발견 5, p6",1,1,없음,0,src/assets/styles/2026/_accounts.scss,U3_account_overlap
+U4,사이드바 Compose 시각적 누락,"W 부록 C, p8-9",1,0,"D ISSUE-005, p10-11",1,src/assets/styles/2026/_accounts.scss,U4_sidebar
+U5,다크 모드 기본 글자색 검정,"W 발견 3·4, p4-5",1,1,"D ISSUE-004, p8-10",1,src/assets/styles/2026/_tokens.scss,U5_dark_text
+V6,미등록 내부 수신자 성공 저장,없음,0,0,"D ISSUE-010, p19-21",1,backend/mail.py,V6_V7_accepted_addresses
+V7,수신자 형식·도메인 검증 누락,"W 부록 C, p8 (부분 관찰)",1,0,"D ISSUE-010, p19-21 (외부 도메인)",1,src/assets/scripts/2026/email/model.js,V6_V7_accepted_addresses
+V8,비밀번호 최소 12자 검증 누락,없음,0,0,없음,0,backend/schemas.py,V8_short_password
+N2,New mail 잘못된 경로/404,"W 발견 2, p3",1,1,"D ISSUE-002, p4-5",1,src/assets/scripts/2026/Shell.js,N2_missing_route

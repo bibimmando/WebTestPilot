@@ -1,0 +1,49 @@
+{
+  "denominator": 12,
+  "criterion": "email-page.txt; unique IDs; additional issues excluded",
+  "whole_report": {
+    "WebTestPilot": {
+      "hits": 6,
+      "recall_percent": 50,
+      "ids": [
+        "F1",
+        "U3",
+        "U4",
+        "U5",
+        "V7",
+        "N2"
+      ]
+    },
+    "Dogfood": {
+      "hits": 8,
+      "recall_percent": 66.66666666666667,
+      "ids": [
+        "F1",
+        "F2",
+        "U2",
+        "U4",
+        "U5",
+        "V6",
+        "V7",
+        "N2"
+      ]
+    }
+  },
+  "formal_findings": {
+    "WebTestPilot": {
+      "hits": 4,
+      "recall_percent": 33.333333333333336
+    },
+    "Dogfood": {
+      "hits": 8,
+      "recall_percent": 66.66666666666667
+    }
+  },
+  "caveat": "W appendix V7 records client-side omission and attempted transmission only; current review verifies reality, not original tool full persistence verification",
+  "common_misses": [
+    "F3",
+    "F4",
+    "V8"
+  ],
+  "additional_issues_counted_in_score": false
+}

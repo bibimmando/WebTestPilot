@@ -1,0 +1,11 @@
+{
+  "format": "qa-document-render/1",
+  "input_sha256": "02d7e6b00fbb8b5a89dc5bf169df53bf3e2e6c9174ada38008a6daf55fd7d37b",
+  "output_sha256": "912a685b9d468b96727647e69b0f7126789f749e9dedd7fa36d233933343cb75",
+  "pages": 7,
+  "fonts": [
+    "C:\\WINDOWS\\Fonts\\malgun.ttf",
+    "C:\\WINDOWS\\Fonts\\malgunbd.ttf"
+  ],
+  "semantic_verification": "not performed by renderer"
+}

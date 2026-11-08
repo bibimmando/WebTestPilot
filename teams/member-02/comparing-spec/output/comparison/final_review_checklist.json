@@ -1,0 +1,21 @@
+{
+  "pdf_pages": 12,
+  "originals_unchanged": true,
+  "unique_ground_truth_ids": 12,
+  "whole_report_hits": {
+    "WebTestPilot": 6,
+    "Dogfood": 8
+  },
+  "formal_hits": {
+    "WebTestPilot": 4,
+    "Dogfood": 8
+  },
+  "final_visual_screens_reviewed": 11,
+  "manual_launcher_health": "passed",
+  "pdf_all_pages_rendered_and_visually_reviewed": true,
+  "known_limits": [
+    "WebTestPilot appendix V7 is partial observation; no original tool persistence proof",
+    "real touch devices not tested",
+    "original run trace and exact historical commit not supplied"
+  ]
+}

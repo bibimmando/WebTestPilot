@@ -1,0 +1,8 @@
+{
+  "scenarios": [
+    "desktop: add/password failure, switch/reload, independent mailbox, remove/re-add/failure, active fallback/logout/last removal, Chat sender, Calendar authors, Dashboard, cross-tab reload, HttpOnly/storage",
+    "mobile: add/password failure, switch/reload, independent mailbox, remove/re-add/failure, active fallback/logout/last removal, Chat sender, Calendar authors, Dashboard, cross-tab reload, HttpOnly/storage"
+  ],
+  "errors": [],
+  "checkedAt": "2026-11-01T13:27:57.575Z"
+}

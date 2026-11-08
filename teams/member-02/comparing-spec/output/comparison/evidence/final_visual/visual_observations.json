@@ -1,0 +1,114 @@
+{
+  "reviewed_at": "2026-11-06T01:27:09.967737+00:00",
+  "method": "new isolated DB; settled real browser screenshots, no CSS changes or force clicks",
+  "screens": {
+    "01_standalone_send": {
+      "url": "http://127.0.0.1:53698/compose.html",
+      "observed": {
+        "send_status": "Send request <da368ec4-756b-4f17-95b0-2dfce6e27cf2@adminator.test>: delivered-internal",
+        "new_mail_href": "/NewMail page"
+      },
+      "image": "01_standalone_send.png"
+    },
+    "02_sent_and_hidden_compose": {
+      "url": "http://127.0.0.1:53698/email.html",
+      "observed": {
+        "crumb": "Communications\nEmail\nInbox",
+        "sent_selected": "false",
+        "sidebar_compose_opacity": "0",
+        "results": "1 results"
+      },
+      "image": "02_sent_and_hidden_compose.png"
+    },
+    "03_account_menu_overlap": {
+      "url": "http://127.0.0.1:53698/email.html",
+      "observed": {
+        "logout": {
+          "x": 1189,
+          "y": 135.4375,
+          "width": 218,
+          "height": 40.140625
+        },
+        "switch": {
+          "x": 1189,
+          "y": 143.578125,
+          "width": 126.328125,
+          "height": 40.140625
+        }
+      },
+      "image": "03_account_menu_overlap.png"
+    },
+    "04_dark_theme": {
+      "url": "http://127.0.0.1:53698/email.html",
+      "observed": {
+        "title_color": "rgb(30, 41, 59)",
+        "theme": "dark"
+      },
+      "image": "04_dark_theme.png"
+    },
+    "05_modal_send_error": {
+      "url": "http://127.0.0.1:53698/email.html",
+      "observed": {
+        "error": "Message could not be sent. Please try again."
+      },
+      "image": "05_modal_send_error.png"
+    },
+    "06_cancel_stale_alert": {
+      "url": "http://127.0.0.1:53698/email.html",
+      "observed": {
+        "status": "Composition cancelled. Previously saved drafts are retained.",
+        "error": "Message could not be sent. Please try again.",
+        "dialog_open": null
+      },
+      "image": "06_cancel_stale_alert.png"
+    },
+    "07_self_thread_and_unread": {
+      "url": "http://127.0.0.1:53698/email.html",
+      "observed": {
+        "thread": "2 message(s) in this thread",
+        "read_action": "Mark read"
+      },
+      "image": "07_self_thread_and_unread.png"
+    },
+    "08_reply_all_empty_to": {
+      "url": "http://127.0.0.1:53698/email.html",
+      "observed": {
+        "to": "",
+        "cc": "admin@adminator.test",
+        "title": "New message"
+      },
+      "image": "08_reply_all_empty_to.png"
+    },
+    "09_mobile_before_rail_scroll": {
+      "url": "http://127.0.0.1:53698/email.html",
+      "observed": {
+        "scroll_top": 0
+      },
+      "image": "09_mobile_before_rail_scroll.png"
+    },
+    "10_mobile_after_rail_scroll": {
+      "url": "http://127.0.0.1:53698/email.html",
+      "observed": {
+        "scroll_top": 46,
+        "success_box": {
+          "x": 31,
+          "y": 579.09375,
+          "width": 328,
+          "height": 36.140625
+        }
+      },
+      "image": "10_mobile_after_rail_scroll.png"
+    },
+    "11_mobile_success_clicked": {
+      "url": "http://127.0.0.1:53698/email.html",
+      "observed": {
+        "status": "Ready",
+        "visible_empty_result": true
+      },
+      "image": "11_mobile_success_clicked.png"
+    }
+  },
+  "new_mail_http_status": 404,
+  "browser": "153.0.8010.12",
+  "visual_screens": 11
+}
