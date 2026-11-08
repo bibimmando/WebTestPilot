@@ -1,7 +1,7 @@
 // ① 사이트 지도 (AI 없음). 시작 URL에서 같은 origin 링크를 GET으로만 따라가며 페이지를 모으고, URL 모양으로 템플릿을 묶는다.
 // 템플릿은 대화를 나누고 보고서의 범위를 표시하는 단위다. "사이트 전체"라고 주장하지 않도록 방문하지 못한 링크도 남긴다.
 import type { Page } from 'playwright';
-import { auditPage, settle, MOBILE, type AuditFinding, type Policy } from './browser.ts';
+import { auditPage, settle, BROKEN, MOBILE, type AuditFinding, type Policy } from './browser.ts';
 
 export type Template = { key: string; pages: string[] };
 /**
@@ -10,7 +10,10 @@ export type Template = { key: string; pages: string[] };
  * auditErrors: 점검하지 못한 페이지와 사유(미완료로 보고한다).
  */
 export type SiteMap = { templates: Template[]; visited: string[]; unvisited: string[]; failed: string[];
-  audit?: { url: string; findings: (AuditFinding & { confirmed: boolean })[] }[]; auditErrors?: string[] };
+  audit?: { url: string; findings: (AuditFinding & { confirmed: boolean })[] }[]; auditErrors?: string[];
+  /** 같은 origin 링크를 따라갔더니 없는 페이지(404·410)나 서버 오류(5xx)가 온 것. from = 그 링크가 있던 페이지와 링크 글자. 다시 요청해도 같으면 confirmed */
+  broken?: { url: string; status: number; from: string; text: string; confirmed: boolean }[] };
+
 
 /** 쿼리·hash를 뺀 경로. 같은 경로의 다른 쿼리(정렬·필터)는 같은 페이지 종류로 본다. */
 export const pathOf = (url: string) => { const u = new URL(url); return u.origin + (u.pathname.replace(/\/+$/, '') || '/'); };
@@ -62,6 +65,8 @@ export async function crawl(page: Page, startUrl: string, policy: Policy, o: { m
   const failed: string[] = [];
   const found = new Map<string, { findings: AuditFinding[]; ready: boolean }>();
   const auditErrors: string[] = [];
+  const from = new Map<string, { page: string; text: string }>();
+  const broken: { url: string; status: number }[] = [];
   // 실패한 이동도 한도에 센다. 실패하는 URL이 많아도 시도 수와 발견 수가 끝없이 늘지 않게 한다.
   const maxAttempts = o.maxPages * 2, maxKnown = o.maxPages * 10;
   let attempts = 0;
@@ -73,7 +78,9 @@ export async function crawl(page: Page, startUrl: string, policy: Policy, o: { m
     attempts++;
     let ready = false;
     try {
-      await page.goto(url, { timeout: o.timeoutMs * 3 });
+      const res = await page.goto(url, { timeout: o.timeoutMs * 3 });
+      // 깨진 페이지는 방문한 페이지 종류로 세지 않는다(탐색 대화를 열지 않고 링크가 있던 페이지의 이동 결함으로 보고).
+      if (res && BROKEN(res.status()) && from.has(url)) { broken.push({ url, status: res.status() }); continue; }
       ready = await settle(page, o.timeoutMs);
     } catch { failed.push(url); continue; }
     visited.push(url);
@@ -82,12 +89,14 @@ export async function crawl(page: Page, startUrl: string, policy: Policy, o: { m
       try { found.set(url, { findings: await audit(page, o.timeoutMs), ready }); }
       catch (e) { auditErrors.push(`${url}: ${String((e as Error)?.message ?? e).split('\n')[0]}`); }
     }
-    const links = await page.locator('a[href]').evaluateAll(as => as.map(a => (a as HTMLAnchorElement).href)).catch(() => [] as string[]);
+    const links = await page.locator('a[href]').evaluateAll(as => as.map(a => ({ href: (a as HTMLAnchorElement).href,
+      text: (a.getAttribute('aria-label') ?? a.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40) }))).catch(() => [] as { href: string; text: string }[]);
     for (const l of links) {
       let u: string;
-      try { u = clean(l); } catch { continue; }
+      try { u = clean(l.href); } catch { continue; }
       if (!policy.origins.includes(new URL(u).origin) || policy.deny?.some(d => u.includes(d)) || known.has(u) || known.size >= maxKnown) continue;
       known.add(u);
+      from.set(u, { page: url, text: l.text });
       queue.push(u);
     }
   }
@@ -106,8 +115,18 @@ export async function crawl(page: Page, startUrl: string, policy: Policy, o: { m
     // 로딩 중인 화면(덮개가 버튼을 가리는 등)에서 나온 발견은 두 번 나와도 확인됨으로 두지 않는다.
     auditResult.push({ url, findings: findings.map(f => ({ ...f, confirmed: ready && readyAgain && seen.has(key(f)) })) });
   }
-  return { templates: groupTemplates(all), visited, failed, unvisited: all.filter(u => !visited.includes(u)),
-    ...(o.audit ? { audit: auditResult, ...(auditErrors.length ? { auditErrors } : {}) } : {}) };
+  // 일시적인 서버 오류를 결함으로 단정하지 않도록 한 번 더 요청한다(GET, 같은 컨텍스트 쿠키).
+  const brokenResult: NonNullable<SiteMap['broken']> = [];
+  for (const b of broken) {
+    const again = await page.request.get(b.url, { timeout: o.timeoutMs * 3 }).then(r => r.status()).catch(() => 0);
+    const f = from.get(b.url)!;
+    brokenResult.push({ ...b, from: f.page, text: f.text, confirmed: BROKEN(again) });
+  }
+  const gone = new Set(broken.map(b => b.url));
+  const kept = all.filter(u => !gone.has(u));
+  return { templates: groupTemplates(kept), visited, failed, unvisited: kept.filter(u => !visited.includes(u)),
+    ...(o.audit ? { audit: auditResult, ...(auditErrors.length ? { auditErrors } : {}) } : {}),
+    ...(brokenResult.length ? { broken: brokenResult } : {}) };
 }
 
 /**

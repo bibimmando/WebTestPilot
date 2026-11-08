@@ -457,13 +457,18 @@ function tree(page: Page): Promise<AriaNode[]> {
  * - covered-control: 화면 안 조작 요소의 가운데를 누르면 다른 요소가 눌림(조작을 막으므로 UI 결함)
  * - horizontal-overflow: 페이지가 화면 폭보다 넓어 가로로 넘침(개선 제안)
  * - low-contrast-text: 글자와 배경의 대비가 2:1 미만이라 사실상 읽을 수 없음(UI 결함). WCAG 대비 계산식을 쓰되 기준은 AA(4.5:1)보다 훨씬 낮게 둔다
+ * - invisible-control: 링크·버튼이 투명(누적 opacity 0)한데 그 자리를 누르면 그 요소가 눌림. 마우스를 올려 나타나는 것은 뺀다(UI 결함)
+ * - clipped-content: 모바일에서 화면 절반 이하 높이의 스크롤 영역(overflow auto·scroll) 아래로 조작 요소가 잘려 안을 스크롤해야 보임(개선 제안)
+ * - broken-link: 사이트 지도가 따라간 같은 origin 링크가 404·410·5xx(sitemap.ts가 만든다, 이동 결함)
  */
-export type AuditFinding = { kind: 'unnamed-control' | 'covered-control' | 'horizontal-overflow' | 'low-contrast-text'; viewport: 'desktop' | 'mobile';
+export type AuditFinding = { kind: 'unnamed-control' | 'covered-control' | 'horizontal-overflow' | 'low-contrast-text' | 'invisible-control' | 'clipped-content' | 'broken-link'; viewport: 'desktop' | 'mobile';
   level: 'ui_defect' | 'improvement';
   /** 재점검 때 같은 문제인지 가르는 대상 식별(역할·요소). 개수·폭 같은 측정값은 넣지 않는다 */
   target: string;
   detail: string };
 export const MOBILE = { width: 390, height: 844 };
+/** 이동 결과가 깨진 페이지인 상태. 권한(401·403)·방식(405) 거절은 로그인 상태나 정책에 따라 정상일 수 있어 세지 않는다 */
+export const BROKEN = (s: number) => s === 404 || s === 410 || s >= 500;
 /** Playwright 기본 화면 크기. 탐색·실행 컨텍스트가 따로 정하지 않으므로 데스크톱은 이 크기다 */
 export const DESKTOP = { width: 1280, height: 720 };
 export type Viewport = 'desktop' | 'mobile';
@@ -581,14 +586,55 @@ export async function auditPage(page: Page, viewport: AuditFinding['viewport'], 
       const ratio = (l1 + 0.05) / (l2 + 0.05);
       if (ratio < 2) low.push(`${label(e)} ${ratio.toFixed(1)}:1`);
     }
+    // 투명한 링크·버튼: 조상까지 곱한 opacity가 0인데 가운데를 누르면 그 요소가 눌린다. 입력(꾸민 체크박스 뒤의 실제 input)은 라벨이 대신 보이므로 뺀다.
+    const invisible: { target: string; detail: string; x: number; y: number }[] = [];
+    for (const e of document.querySelectorAll('a[href], button, summary, [role=button], [role=link], [role=tab], [role=menuitem]')) {
+      const r = e.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4 || r.top < 0 || r.left < 0 || r.bottom > innerHeight || r.right > innerWidth || invisible.length >= 5) continue;
+      let op = 1;
+      for (let a: Element | null = e; a; a = a.parentElement) op *= Number(getComputedStyle(a).opacity);
+      if (op > 0.05 || getComputedStyle(e).visibility === 'hidden') continue;
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      if (hit && (e === hit || e.contains(hit))) invisible.push({ target: label(e), detail: `${label(e)} 가 투명(opacity 0)한데 눌림`, x, y });
+    }
+    // 작은 세로 스크롤 영역 아래로 잘린 조작 요소: 터치 화면에서는 스크롤 막대가 보이지 않아 있는지 모르기 쉽다. 안쪽 영역만 세고 바깥 영역은 건너뛴다.
+    // shortcut: 세로만 본다. 가로로 넘기는 칩·캐러셀은 의도한 것이 많아 넣지 않았다.
+    const cut: { target: string; detail: string }[] = [];
+    for (const c of document.body.querySelectorAll('*')) {
+      if (cut.length >= 3 || !/auto|scroll/.test(getComputedStyle(c).overflowY) || c.scrollHeight <= c.clientHeight + 4) continue;
+      const cr = c.getBoundingClientRect();
+      if (cr.height < 40 || cr.height > innerHeight * 0.5 || cr.top >= innerHeight || cr.bottom <= 0) continue;
+      const hidden = [...c.querySelectorAll('a[href], button, summary, [role=button], [role=link], [role=tab], [role=menuitem]')].filter(e => {
+        const r = e.getBoundingClientRect();
+        // 절반 넘게 영역 아래로 나간 것(마지막 항목이 반쯤 걸친 것 포함, email 모바일 라벨 11/5)
+        return r.width > 0 && r.height > 0 && r.bottom - cr.bottom > r.height / 2 && getComputedStyle(e).visibility !== 'hidden';
+      });
+      if (hidden.length && !cut.some(x => x.target === label(c)))
+        cut.push({ target: label(c), detail: `${label(c)} 아래로 조작 요소 ${hidden.length}개가 잘려 안을 스크롤해야 보임, 예: ${label(hidden[0])}` });
+    }
     const sw = document.documentElement.scrollWidth;
     let widest = '';
     if (sw > innerWidth + 1) {
       let max = innerWidth;
       for (const e of document.body.querySelectorAll('*')) { const r = e.getBoundingClientRect(); if (r.right > max + 1 && r.width > 0) { max = r.right; widest = label(e); } }
     }
-    return { covered, low, overflow: sw > innerWidth + 1 ? `페이지 폭 ${sw}px > 화면 ${innerWidth}px${widest ? `, 가장 넓게 나간 요소 ${widest}` : ''}` : '' };
-  }).catch(() => ({ covered: [] as { target: string; detail: string }[], low: [] as string[], overflow: '' }));
+    return { covered, low, invisible, cut, overflow: sw > innerWidth + 1 ? `페이지 폭 ${sw}px > 화면 ${innerWidth}px${widest ? `, 가장 넓게 나간 요소 ${widest}` : ''}` : '' };
+  }).catch(() => ({ covered: [] as { target: string; detail: string }[], low: [] as string[], invisible: [] as { target: string; detail: string; x: number; y: number }[], cut: [] as { target: string; detail: string }[], overflow: '' }));
+  if (viewport === 'mobile') for (const c of measured.cut) out.push({ kind: 'clipped-content', viewport, level: 'improvement', ...c });
+  // 마우스를 올리면 나타나는 조작(목록 줄의 아이콘 버튼 등)은 의도한 것이라 올려 보고 여전히 투명한 것만 남긴다.
+  for (const v of measured.invisible) {
+    await page.mouse.move(v.x, v.y).catch(() => {});
+    await page.waitForTimeout(250);
+    const still = await page.evaluate(([x, y]) => {
+      const hit = document.elementFromPoint(x, y);
+      let op = 1;
+      for (let a: Element | null = hit; a; a = a.parentElement) op *= Number(getComputedStyle(a).opacity);
+      return op <= 0.05;
+    }, [v.x, v.y] as const).catch(() => false);
+    if (still) out.push({ kind: 'invisible-control', viewport, level: 'ui_defect', target: v.target, detail: v.detail });
+  }
+  if (measured.invisible.length) await page.mouse.move(0, 0).catch(() => {});
   for (const c of measured.covered) out.push({ kind: 'covered-control', viewport, level: 'ui_defect', ...c });
   if (measured.overflow) out.push({ kind: 'horizontal-overflow', viewport, level: 'improvement', target: 'page', detail: measured.overflow });
   if (measured.low.length) out.push({ kind: 'low-contrast-text', viewport, level: 'ui_defect', target: 'text',

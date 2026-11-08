@@ -331,7 +331,12 @@ export function exploreTools(page: Page, o: Task, violations: string[], part?: P
       }
       // 턴의 절반도 쓰지 않고 통과하면 한 번만 더 볼 것이 있는지 묻는다. 계획은 받아 두므로 그대로 다시 내면 확정된다.
       // 일찍 끝내 계획이 작아지는 경우(Sonnet 10/30: 대화 8개 중 4개가 2~3턴에 제출, 시나리오 41→11)를 범위 축소 없이 줄이려는 안내다. 거부가 아니다.
-      if (o.reviewEarly && !reviewed && ctx && ctx.turnsLeft * 2 >= ctx.maxTurns) {
+      // 입력칸에 값을 넣는 시나리오는 있는데 형식이 틀린 값 검사(invalid-input-feedback)가 없으면 한 번 묻는다. 거부가 아니다.
+      // 빈 값만 계획하면 형식 검증 결함(이메일 칸에 not-an-email 허용 등)을 놓친다(email_page 11/3 A, dogfood만 찾음). 형식 없는 칸이면 그대로 내면 된다.
+      const formatGap = draft.scenarios.some(s => s.steps.some(st => st.op === 'fill' && st.value?.trim()))
+        && !draft.scenarios.some(s => s.checks.some(c => c.source?.rule === 'invalid-input-feedback'));
+      const early = !!o.reviewEarly && !!ctx && ctx.turnsLeft * 2 >= ctx.maxTurns;
+      if (!reviewed && ctx && ctx.turnsLeft >= 3 && (early || formatGap)) {
         reviewed = true;
         accepted = draft;
         const used = new Set(startTargetsElsewhere(draft, pinned).map(x => `${x.id} ${x.url}`));
@@ -343,7 +348,8 @@ export function exploreTools(page: Page, o: Task, violations: string[], part?: P
         };
         held.ids = [...draft.scenarios.map(s => s.id), ...(draft.features ?? []).map(f => f.id)];
         return { text: [`계획이 검사를 통과해 받아 두었습니다(시나리오 ${draft.scenarios.map(s => s.id).join(', ')}). 아직 남은 턴이 ${ctx.turnsLeft}번 있습니다.`,
-          '이 페이지 종류에서 아직 써 보지 않은 기능이 있는지 확인하세요: 입력 폼(잘못된 입력 포함), 목록의 필터·정렬·페이지 넘김·개수, 메뉴·모달·탭, 다른 화면에 결과가 반영되는 흐름, 모바일 화면, 겹침·잘림 같은 화면 상태.',
+          ...(early ? ['이 페이지 종류에서 아직 써 보지 않은 기능이 있는지 확인하세요: 입력 폼(잘못된 입력 포함), 목록의 필터·정렬·페이지 넘김·개수, 메뉴·모달·탭, 다른 화면에 결과가 반영되는 흐름, 모바일 화면, 겹침·잘림 같은 화면 상태.'] : []),
+          ...(formatGap ? ['입력칸에 값을 넣는 시나리오가 있지만 형식이 틀린 값을 넣는 검사(invalid-input-feedback)가 없습니다. 이메일·주소·숫자·날짜·전화처럼 형식이 있는 칸이면 틀린 형식 값(예: @ 없는 주소, 글자 섞인 숫자)을 넣고 받아들여지지 않는지와 안내가 나오는지 검사하세요. 형식이 없는 칸(검색어·본문)뿐이면 그대로 확정하면 됩니다.'] : []),
           '있으면 더 탐색해 새 시나리오와 바뀐 features·unplanned 전체를 제출하세요. 더 볼 것이 없으면 scenarios: []와 지금과 같은 unplanned로 다시 제출하면 그대로 확정됩니다.'].join('\n') };
       }
       // 템플릿별 대화면 이 계획의 ID를 다음 대화가 다시 쓰지 못하게 남긴다.
@@ -461,7 +467,8 @@ const REASONS: Record<string, string> = {
   unknown_ref: '현재 snapshot에 없는 ref (페이지가 바뀌었으면 다시 snapshot)',
   unnamed: '이름·텍스트가 없고, 가까운 영역에 기준이 될 고유한 라벨도 없어 식별할 수 없음',
   value_only: '숫자 값만 있고, 가까운 영역에 기준이 될 고유한 라벨도 없어 값이 바뀌면 식별할 수 없음',
-  ambiguous: '같은 모양의 요소와 구분되지 않음',
+  // 같은 이름 항목이 둘 있는 목록에서 그 항목만 거부된 뒤 기능 전체를 포기하는 일이 있었다(email 11/8: 내게 보낸 메일이 받은·보낸 두 줄). 다른 길을 알려 준다.
+  ambiguous: '같은 모양의 요소와 구분되지 않음. 목록이면 이름이 겹치지 않는 다른 항목을 pin하거나, 항목 전체를 group: true로 pin하세요',
   text_not_found: '그 ref 요소가 직접 담은 텍스트가 아님 (- text: 줄의 바로 위 요소 ref를 쓰세요)',
 };
 

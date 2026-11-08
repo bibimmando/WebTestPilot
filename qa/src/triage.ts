@@ -49,6 +49,8 @@ export type Verdict = {
   /** 재현 두 축의 사유(판단 불가일 때). 설명 문장은 reproductionDetail */
   reproductionReason?: ReproReason;
   reproductionDetail?: string;
+  /** 쓰기 허용·초기화 없음에서 같은 시나리오 안 앞뒤 비교라 초기화 없이 재실행해 재현함. 서버 상태가 달랐을 수 있어 확신 중간이 상한 */
+  reproducedWithoutReset?: true;
   /** 단계별 결과 위에 붙이는 시스템 판정 (설계 3.3, 5장 6단계) */
   system?: { level: SystemLevel; reason: string };
 };
@@ -202,6 +204,8 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
     const s = o.plan.scenarios.find(x => x.id === v.scenario)!;
     const r = o.run.scenarios.find(x => x.id === v.scenario)!;
     const { files, own, image } = evidenceFor(o.run.runDir, v, r, o.plan);
+    let allowWrites = false;
+    try { allowWrites = !!JSON.parse(readFileSync(join(o.run.runDir, 'policy.json'), 'utf8')).allowWrites; } catch { /* 예전 실행 폴더 */ }
     let accepted: { class: Class; reason: string; quotes: Quote[] } | undefined;
     const classify: Tool = {
       def: { name: 'classify', description: '실패 한 건의 분류와 근거 인용을 제출한다.', strict: true, input_schema: {
@@ -220,10 +224,10 @@ export async function triage(o: { plan: Plan; run: RunResult; verdicts: Verdict[
       },
     };
     const result = await runAgent({ send: o.send, model: o.model, system: o.system ?? SYSTEM, tools: [classify],
-      user: image ? [{ type: 'text', text: `${triageMessage(o.plan, s, v, files, r)}
+      user: image ? [{ type: 'text', text: `${triageMessage(o.plan, s, v, files, r, allowWrites)}
 첨부 이미지: ${image} (실패 시점 화면. 이미지에서 본 것은 reason에 적고, 인용은 텍스트 증거 파일에서만 한다)` },
         { type: 'image', source: { type: 'base64', media_type: 'image/png', data: readFileSync(join(o.run.runDir, image)).toString('base64') } }]
-        : triageMessage(o.plan, s, v, files, r), budget: o.budget, maxTurns: 3, maxTokens: 8000, nudge: true });
+        : triageMessage(o.plan, s, v, files, r, allowWrites), budget: o.budget, maxTurns: 3, maxTokens: 8000, nudge: true });
     mkdirSync(join(o.run.runDir, logDir), { recursive: true });
     v.triageLog = `${logDir}/${v.id}.json`;
     writeFileSync(join(o.run.runDir, v.triageLog), JSON.stringify({ stop: result.stop, detail: result.detail, turns: result.turns }, null, 2));
@@ -301,7 +305,7 @@ export function groupSignals(scenarios: ScenarioResult[]): Judgment['errorSignal
   return [...out.values()];
 }
 
-function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, files: Map<string, string>, r: ScenarioResult): string {
+function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, files: Map<string, string>, r: ScenarioResult, allowWrites = false): string {
   const item = v.kind === 'start' ? { start: s.start }
     : v.kind === 'act' ? s.steps.find(x => x.id === v.id)
     : s.checks.find(x => x.id === v.id);
@@ -334,6 +338,9 @@ function triageMessage(plan: Plan, s: Plan['scenarios'][number], v: Verdict, fil
       return all.length ? [`증거 수집 실패(이 증거는 없음): ${all.join('; ')}`] : [];
     })(),
     // 우리가 막은 쓰기 요청. 실패가 그 요청의 결과(저장·전송)에 기대면 앱이 아니라 차단 때문일 수 있다.
+    // 쓰기 정책을 늘 밝힌다. 밝히지 않으면 쓰기를 허용한 실행에서도 "정책이 막았을 수 있다"며 판단을 미룬다(email 11/8 S8).
+    allowWrites ? `쓰기 정책: 허용(이 실행은 앱의 쓰기 요청을 막지 않았다). 서버로 간 같은 origin 쓰기 요청과 응답 (after = 요청이 나간 단계): ${JSON.stringify((r.writes ?? []).slice(0, 10))}`
+      : '쓰기 정책: 차단(이 실행은 앱의 POST 등 쓰기 요청을 막는다).',
     ...(r.writeBlocked?.length ? [`이 시나리오에서 테스트 정책이 막은 앱의 쓰기 요청 (after = 요청이 나간 단계): ${JSON.stringify(r.writeBlocked.slice(0, 10))}`] : []),
     // 우리가 막은 다른 서버 요청(스크립트·fetch 등). 화면이 덜 그려지거나 기능이 비면 앱이 아니라 차단 때문일 수 있다.
     ...(blockedSummary(r.blocked, [new URL(s.start.url).origin]) ? [`이 시나리오에서 테스트 정책이 막은 다른 서버 요청(origin별 건수): ${blockedSummary(r.blocked, [new URL(s.start.url).origin])}`] : []),
@@ -365,7 +372,20 @@ export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir
   const allInconclusive = (reason: ReproReason, detail: string) => { for (const v of candidates) { v.reproduction = 'reproduction_inconclusive'; v.reproductionReason = reason; v.reproductionDetail = detail; } };
   // 쓰기를 허용한 실행은 앞 시나리오가 서버 상태를 바꿨을 수 있다. 등록된 초기화 없이 다시 돌리면 같은 시작이라고 할 수 없다.
   // 쓰기를 막은 실행은 우리가 서버 상태를 바꾸지 않으므로 초기화 없이 같은 시작 URL에서 재실행한다.
-  if (policy.allowWrites && !o.reset) { allInconclusive('reset_unavailable', '쓰기 허용 실행인데 등록된 초기화가 없음'); return undefined; }
+  // 예외: 기대값이 같은 시나리오 안에서 앞서 읽은 값(expected_from)인 검사는 앞뒤 비교라 서버에 쌓인 데이터에 기대지 않는다
+  // (틀린 주소를 넣고 보낸 뒤 입력칸이 그대로인가 등). 이런 검사만 초기화 없이 다시 돌리고, 판정은 확신 중간까지만 준다.
+  let pending = candidates;
+  if (policy.allowWrites && !o.reset) {
+    const checks = new Map(plan.scenarios.flatMap(s => s.checks.map(c => [c.id, { c, scenario: s.id }] as const)));
+    const stateFree = (v: Verdict) => {
+      const x = v.kind === 'check' && !v.visual ? checks.get(v.id) : undefined;
+      return !!x?.c.expected_from && checks.get(x.c.expected_from)?.scenario === x.scenario;
+    };
+    for (const v of candidates.filter(v => !stateFree(v))) { v.reproduction = 'reproduction_inconclusive'; v.reproductionReason = 'reset_unavailable'; v.reproductionDetail = '쓰기 허용 실행인데 등록된 초기화가 없음'; }
+    pending = candidates.filter(stateFree);
+    if (!pending.length) return undefined;
+    for (const v of pending) v.reproducedWithoutReset = true;
+  }
   if (policy.allowWrites && o.startReset && !o.startReset.ok) { allInconclusive('reset_failed', `실행 전 초기화 실패(최초 시작 상태 미확인): ${o.startReset.reason}`); return undefined; }
   // 같은 폴더로 다시 판정하면 재실행이 거부된다. 초기화를 부르기 전에 확인해 상태만 바꾸고 끝나는 일을 막는다.
   if (existsSync(o.runDir)) throw new Error(`재현 폴더가 이미 있음: ${o.runDir}`);
@@ -377,10 +397,10 @@ export async function reproduce(o: { run: RunResult; verdicts: Verdict[]; runDir
     state = r.storageState ?? state;
   }
   const again = await runPlan({ plan, policy, runDir: o.runDir, timeoutMs: o.timeoutMs ?? firstManifest.timeoutMs,
-    only: [...new Set(candidates.map(v => v.scenario))], workers: firstManifest.workers, storageState: state, hideEnv: o.hideEnv });
+    only: [...new Set(pending.map(v => v.scenario))], workers: firstManifest.workers, storageState: state, hideEnv: o.hideEnv });
   const secondManifest = JSON.parse(readFileSync(join(o.runDir, 'manifest.json'), 'utf8'));
   const changed = Object.keys(firstManifest.files).filter(k => k.startsWith('src/') && firstManifest.files[k] !== secondManifest.files[k]);
-  for (const v of candidates) {
+  for (const v of pending) {
     const first = o.run.scenarios.find(x => x.id === v.scenario)!;
     const second = again.scenarios.find(x => x.id === v.scenario)!;
     const inconclusive = (reason: ReproReason, detail: string) => { v.reproduction = 'reproduction_inconclusive'; v.reproductionReason = reason; v.reproductionDetail = detail; };
@@ -438,6 +458,8 @@ export function systemVerdict(plan: Plan, v: Verdict): NonNullable<Verdict['syst
   if (v.kind === 'check' && v.observed !== 'mismatch') return incomplete(`실제 값을 읽지 못함(${v.observed})`);
   if (v.reproduction === 'flaky') return { level: 'hold', reason: `재실행에서 재현 안 됨${v.reproductionDetail ? `: ${v.reproductionDetail}` : ''}` };
   if (v.reproduction !== 'reproduced') return incomplete(`재현 판단 불가${v.reproductionDetail ? `: ${v.reproductionDetail}` : ''}`);
+  if (v.reproducedWithoutReset && v.source !== 'observed') return { level: 'bug_medium',
+    reason: `${v.source === 'requirement' ? '요구사항' : v.source === 'constraint' ? '화면 제약 문구' : `일반 규칙 ${plan.scenarios.flatMap(s => s.checks).find(c => c.id === v.id)?.source.rule ?? '?'}`} 근거 위반, 초기화 없이 같은 시나리오 안 앞뒤 비교로 재현됨 (서버 상태가 달랐을 수 있어 확신 중간 상한)` };
   if (v.source === 'requirement') return { level: 'bug_high', reason: '요구사항 위반, 재현됨, 증거 인용으로 자동화 실패 아님' };
   // 화면 제약 인용이 이 기대값을 실제로 뒷받침하는지는 기계적으로 확인할 수 없다. 그래서 확신 중간까지만 준다(2026-10-16).
   if (v.source === 'constraint') return { level: 'bug_medium', reason: '화면 제약 문구 근거 위반, 재현됨 (인용과 기대의 관계는 사람이 확인)' };

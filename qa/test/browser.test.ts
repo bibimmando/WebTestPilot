@@ -119,6 +119,25 @@ test('글자 대비 점검: 배경과 거의 같은 색의 글자만 찾고, 사
   assert.equal((await contrast('<nav><a href="#">홈</a><span style="color:#f4f4f4">/</span><a href="#">목록</a></nav>')).length, 0, '구분 기호');
 });
 
+test('투명 조작 요소 점검: 투명한데 눌리는 링크만 찾고, 마우스를 올리면 나타나는 버튼·꾸민 체크박스·닫힌 메뉴는 뺀다', async () => {
+  const inv = async (html: string) => (await auditPage(await page(html), 'desktop')).filter(f => f.kind === 'invisible-control').map(f => f.target);
+  assert.deepEqual(await inv('<nav><a href="#a">Email</a><a href="#b" style="display:block;opacity:0">Compose</a></nav>'), ['a "Compose"'], '투명한 링크');
+  assert.deepEqual(await inv('<style>.row .act{opacity:0}.row:hover .act{opacity:1}</style><div class="row" style="padding:20px">메일 <button class="act">삭제</button></div>'), [], '올리면 나타나는 버튼');
+  assert.deepEqual(await inv('<label><input type="checkbox" style="opacity:0;position:absolute"> 읽음</label>'), [], '꾸민 체크박스');
+  assert.deepEqual(await inv('<ul role="menu" style="opacity:0;pointer-events:none"><li><a href="#x" role="menuitem">Logout</a></li></ul>'), [], '닫힌 메뉴');
+});
+
+test('잘린 스크롤 영역 점검: 모바일에서 작은 세로 스크롤 영역 아래로 잘린 조작 요소만 찾는다', async () => {
+  const cut = async (html: string, vp: 'mobile' | 'desktop' = 'mobile') => (await auditPage(await page(html), vp)).filter(f => f.kind === 'clipped-content').map(f => f.detail);
+  const rail = (h: number) => `<aside style="height:${h}px;overflow-y:auto">${['Inbox', 'Sent', 'important', 'work', 'success'].map(x => `<button style="display:block;height:40px">${x}</button>`).join('')}</aside>`;
+  const found = await cut(rail(120));
+  assert.equal(found.length, 1, JSON.stringify(found));
+  assert.match(found[0], /조작 요소 2개가 잘려.*"work"/);
+  assert.deepEqual(await cut(rail(120), 'desktop'), [], '데스크톱은 보지 않는다');
+  assert.deepEqual(await cut(rail(400)), [], '다 들어가는 영역');
+  assert.deepEqual(await cut(`<div style="height:${2000}px">긴 글</div><a href="#e">맨 아래</a>`), [], '페이지 전체 스크롤은 대상이 아니다');
+});
+
 test('구분할 수 없는 같은 요소는 순서로 고르지 않고 거부한다', async () => {
   const p = await page('<button>삭제</button><button>삭제</button>');
   const ref = refs(await snapshot(p), 'button "삭제"')[1];

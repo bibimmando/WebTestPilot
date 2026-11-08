@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resetApp, type ResetSpec } from '../src/reset.ts';
 import { runPlan } from '../src/run.ts';
-import { judge } from '../src/triage.ts';
+import { judge, systemVerdict } from '../src/triage.ts';
 import { Budget } from '../src/agent.ts';
 import type { Plan } from '../src/plan.ts';
 
@@ -75,6 +75,27 @@ for (const c of [
   assert.deepEqual([v.reproduction, v.reproductionReason], c.want, JSON.stringify(v));
   assert.equal(resets - before, c.reset && c.writes && !('startFailed' in c) ? 1 : 0, '초기화는 쓰기 허용 실행의 재현 전에 한 번만 부른다');
   assert.equal(existsSync(join(out, 'repro')), c.reran, '초기화할 수 없으면 다시 돌리지 않는다');
+});
+
+test('재현 두 축: 쓰기 허용 + 초기화 없음이라도 같은 시나리오 안 앞뒤 비교 검사는 초기화 없이 다시 돌려 재현하고 확신 중간까지만 준다', async () => {
+  const policy = { origins: [origin], allowWrites: true };
+  const out = fileURLToPath(new URL(`../runs/test-reset-rel-${Date.now()}`, import.meta.url));
+  count = 4;
+  const p = plan();
+  p.targets.T2 = { target: { role: 'heading', name: '^상태$' }, group: false, url: `${origin}/state` };
+  // 제목과 개수 문구가 같아야 한다는 관계 검사: 늘 불일치(같은 시나리오 안에서 읽은 값과 비교)
+  p.scenarios[0].checks = [
+    { id: 'S1.C0', after: 'start', target: 'T2', read: 'text', op: 'equals', expected: '상태', source: { kind: 'observed' }, precondition: true },
+    { id: 'S1.C1', after: 'start', target: 'T1', read: 'text', op: 'equals', expected_from: 'S1.C0', source: { kind: 'requirement', id: 'R1', quote: 'count=99가 보인다' } }];
+  const run = await runPlan({ plan: p, policy, runDir: join(out, 'run'), timeoutMs: 1500 });
+  const j = await judge({ plan: p, run, send: async () => { throw new Error('호출 안 함'); }, model: 'claude-sonnet-5-5', budget: new Budget(1), reproduceDir: join(out, 'repro') });
+  const v = j.verdicts.find(x => x.id === 'S1.C1')!;
+  assert.deepEqual([v.reproduction, v.reproducedWithoutReset], ['reproduced', true], JSON.stringify(v));
+  // AI가 결함 후보로 분류했다면: 요구사항 근거여도 확신 중간이 상한이다.
+  const sys = systemVerdict(p, { ...v, class: 'app_defect_candidate' });
+  assert.equal(sys.level, 'bug_medium');
+  assert.match(sys.reason, /초기화 없이/);
+  assert.ok(existsSync(join(out, 'repro')));
 });
 
 test('다시 판정: 판정 회차마다 재현 폴더를 따로 쓰고 판정 파일에 남긴다. 잘못된 초기화 주소는 설정에서 거부한다', async () => {

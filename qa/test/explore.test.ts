@@ -182,6 +182,26 @@ test('폼: 탐색 중 쓰기 요청은 서버에 닿지 않고, 허용 밖 이�
   assert.ok(JSON.stringify(r.messages).includes('neither covered'));
 });
 
+test('입력 형식: 값을 넣는 시나리오에 형식이 틀린 값 검사가 없으면 한 번 묻고, 그대로 다시 내면 확정한다. 검사가 있으면 묻지 않는다', async () => {
+  const sc = (rule?: string) => ({ id: 'S1', title: '가입', covers: ['F1'], start: { url: origin + '/form.html' },
+    steps: [{ id: 'S1.A1', op: 'fill', target: 'T1', value: rule ? 'not-an-email' : 'a@b.c' }, { id: 'S1.A2', op: 'click', target: 'T2' }],
+    checks: [{ id: 'S1.C1', after: 'S1.A2', target: 'T1', read: 'value', op: 'equals', expected: rule ? 'not-an-email' : 'a@b.c',
+      source: { kind: 'inferred', rule: rule ?? 'required-input', quote: '형식이 틀린 이메일은 받아들여지지 않는다' } }] });
+  const steps = (rule?: string, again = false) => [
+    () => [{ name: 'snapshot', input: {} }],
+    (snap: string) => [{ name: 'pin', input: { ref: ref(snap, 'textbox "이메일"'), group: false } }, { name: 'pin', input: { ref: ref(snap, 'button "가입"'), group: false } }],
+    () => [{ name: 'submit_plan', input: { features: [{ id: 'F1', name: '가입', page: origin + '/form.html' }], scenarios: [sc(rule)], unplanned: [] } }],
+    ...(again ? [(out: string) => { asked = out; return [{ name: 'submit_plan', input: { scenarios: [], unplanned: [] } }]; }] : []),
+  ];
+  let asked = '';
+  const r = await run('/form.html', [], steps(undefined, true));
+  assert.match(asked, /형식이 틀린 값을 넣는 검사\(invalid-input-feedback\)가 없습니다/);
+  assert.equal(r.stop, 'done', r.detail ?? '');
+  assert.deepEqual(r.plan!.scenarios.map(x => x.id), ['S1']);
+  const ok = await run('/form.html', [], steps('invalid-input-feedback'));
+  assert.equal(ok.stop, 'done', ok.detail ?? '');
+});
+
 test('예산을 넘을 호출은 보내지 않는다', async () => {
   const r = await run('/form.html', [{ id: 'R1', text: 'x' }], [() => [{ name: 'snapshot', input: {} }]], 0.001);
   assert.equal(r.stop, 'budget');
@@ -625,6 +645,16 @@ test('사이트 지도 점검: 방문한 페이지를 데스크톱·모바일로
     assert.deepEqual(map.audit!.map(a => a.url.replace(origin, '')), ['/audit.html'], '정상 게시판 페이지에서는 발견이 없다');
     assert.deepEqual(map.audit![0].findings.map(f => [f.kind, f.viewport, f.confirmed]), [
       ['unnamed-control', 'desktop', true], ['covered-control', 'desktop', true], ['covered-control', 'mobile', true], ['horizontal-overflow', 'mobile', true]]);
+  } finally { await g.context.close(); }
+});
+
+test('사이트 지도: 같은 origin 링크가 404면 링크가 있던 페이지의 깨진 링크로 남기고 페이지 종류·방문하지 않은 링크에서 뺀다', async () => {
+  const g = await openContext(browser!, { origins: [origin] });
+  try {
+    const map = await crawl(await g.context.newPage(), origin + '/links.html', { origins: [origin] }, { maxPages: 10, perTemplate: 2, timeoutMs: 2000 });
+    assert.deepEqual(map.broken, [{ url: origin + '/NewMail%20page', status: 404, from: origin + '/links.html', text: 'New mail', confirmed: true }]);
+    assert.ok(map.visited.some(u => u.endsWith('/board.html')) && !map.visited.some(u => u.includes('NewMail')), JSON.stringify(map.visited));
+    assert.ok(!map.templates.some(t => t.key.includes('NewMail')) && !map.unvisited.some(u => u.includes('NewMail')), JSON.stringify(map.templates));
   } finally { await g.context.close(); }
 });
 

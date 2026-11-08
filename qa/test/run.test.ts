@@ -519,6 +519,21 @@ test('실행: 행동 뒤 화면 점검은 시작 화면에 없던 겹침·글자
   assert.ok(kinds.some(k => k.startsWith('S2.A2:') && k.includes('covered-control')), kinds.join(' / '));
 });
 
+test('실행: 버튼으로 이동한 같은 origin 주소가 404면 그 행동 뒤 이동 결함으로 남기고, 정상 이동은 남기지 않는다', async () => {
+  const mk = (q: string) => `${origin}/jsnav.html${q}`;
+  const p: Plan = { version: 1, textRead: 'name+content', features: [], questions: [], observations: [], unplanned: [],
+    requirements: [{ id: 'R1', text: '보내기를 누르면 다른 화면으로 간다' }],
+    targets: { T1: { target: { role: 'button', name: '^보내기$' }, group: false, url: mk('') } },
+    startVerified: ['T1 ' + mk('?bug')],
+    scenarios: ['', '?bug'].map((q, i) => ({ id: `S${i + 1}`, title: q || 'ok', covers: ['R1'], start: { url: mk(q) },
+      steps: [{ id: `S${i + 1}.A1`, op: 'click' as const, target: 'T1' }],
+      checks: [{ id: `S${i + 1}.C1`, after: `S${i + 1}.A1`, read: 'url' as const, op: 'contains' as const, expected: '.html', source: { kind: 'requirement' as const, id: 'R1', quote: '다른 화면으로 간다' } }] })) };
+  const r = await runPlan({ plan: p, policy: { origins: [origin] }, runDir: runDir('jsnav'), timeoutMs: 1500 });
+  const [ok, bug] = r.scenarios;
+  assert.equal(ok.audits, undefined, JSON.stringify(ok.audits));
+  assert.deepEqual((bug.audits ?? []).map(a => [a.after, a.findings.map(f => `${f.kind} ${f.detail}`)]), [['S2.A1', ['broken-link 이동한 주소 /sent-done.html 가 404']]]);
+});
+
 test('실행 폴더를 상대 경로로 줘도 실행한다', async () => {
   const p = plan();
   p.scenarios = [p.scenarios[0]];

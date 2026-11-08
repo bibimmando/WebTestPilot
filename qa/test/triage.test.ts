@@ -391,6 +391,8 @@ test('쓰기를 막은 실행: 같은 화면의 저장 요청을 막은 뒤의 �
   const allowed = await runPlan({ plan: p, policy: { origins: [origin], allowWrites: true }, runDir: dir('save-allowed'), timeoutMs: 1500 });
   const w = Object.fromEntries(preclassify(p, allowed).map(x => [x.id, x]));
   assert.equal(allowed.scenarios.find(x => x.id === 'S1')!.writeBlocked, undefined);
+  // 쓰기 허용 실행은 실제로 서버에 간 쓰기 요청과 응답 상태를 남긴다(쿼리 없이). 분류 입력에 쓰기 정책과 함께 들어간다.
+  assert.deepEqual(allowed.scenarios.find(x => x.id === 'S1')!.writes?.map(x => [x.after, x.request, x.status]), [['S1.A2', 'POST /api/items', 200]]);
   assert.equal(w['S1.C1'].class, 'passed', '쓰기를 허용하면 저장이 반영된다');
   assert.equal(w['S2.C1'].class, 'mismatch');
 });

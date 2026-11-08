@@ -3,7 +3,7 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test as base, expect, type ElementHandle, type Page, type Locator } from '@playwright/test';
-import { absentEverywhere, auditPage, areaOf, ariaText, pressKey, whyNot, ariaTextV1, deniedLink, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, MOBILE, type AriaNode, type AuditFinding, type Policy, type Signal } from './browser.ts';
+import { absentEverywhere, auditPage, BROKEN, areaOf, ariaText, pressKey, whyNot, ariaTextV1, deniedLink, goneFromArea, guardContext, settle, shapeChanged, toLocator, VIEWPORTS, MOBILE, type AriaNode, type AuditFinding, type Policy, type Signal } from './browser.ts';
 import { compareValues, expectedFrom, sortKeys, type Plan, type Check } from './plan.ts';
 
 const dir = process.env.QA_RUN_DIR;
@@ -76,6 +76,8 @@ export const test = base.extend<{ guard: void }>({
     const denied: { after: string; url: string }[] = [];
     // 쓰기를 막은 실행에서 앱의 쓰기 요청을 막은 단계. 그 단계 뒤 화면의 실패는 앱이 아니라 차단 때문일 수 있다.
     const writeBlocked: { after: string; request: string }[] = [];
+    // 쓰기 허용 실행에서 실제로 서버에 간 같은 origin 쓰기 요청과 응답 상태. 저장·전송이 받아들여졌는지의 근거다(분류 입력).
+    const writes: { after: string; request: string; status: number }[] = [];
     const g = await guardContext(context, policy, [], url => denied.push({ after: phase, url }), request => writeBlocked.push({ after: phase, request }));
     // 오류 신호: 콘솔 오류, 잡히지 않은 스크립트 예외, 400 이상 응답, 실패한 요청.
     // 정책 차단(우리가 막은 요청)·이동으로 취소된 요청·브라우저가 스스로 여는 /favicon.ico는 앱의 신호가 아니라 뺀다.
@@ -100,7 +102,17 @@ export const test = base.extend<{ guard: void }>({
     });
     context.on('weberror', e => add({ kind: 'pageerror', url: e.page()?.url() ?? '', text: String(e.error()?.message ?? e.error()) }));
     context.on('response', r => {
+      if (policy.allowWrites && !['GET', 'HEAD', 'OPTIONS'].includes(r.request().method()) && policy.origins.includes(new URL(r.url()).origin) && writes.length < 20)
+        writes.push({ after: sentIn.get(r.request()) ?? phase, request: `${r.request().method()} ${new URL(r.url()).pathname}`, status: r.status() });
       if (r.status() < 400 || favicon(r.url())) return;
+      // 행동으로 이동한 같은 origin 주소가 없는 페이지·서버 오류면 그 행동 뒤의 이동 결함이다(버튼·스크립트 이동도 포함, 링크는 사이트 지도가 따로 본다).
+      const after = sentIn.get(r.request()) ?? phase;
+      let main = false;
+      try { main = r.request().isNavigationRequest() && r.frame() === r.frame().page().mainFrame(); } catch { /* 프레임이 이미 닫힘 */ }
+      if (main && after !== 'start' && BROKEN(r.status()) && policy.origins.includes(new URL(r.url()).origin)
+        && !stepAudits.some(a => a.findings.some(f => f.kind === 'broken-link' && f.target === r.url())))
+        stepAudits.push({ after, findings: [{ kind: 'broken-link', viewport: 'desktop', level: 'ui_defect', target: r.url(),
+          detail: `이동한 주소 ${new URL(r.url()).pathname}${new URL(r.url()).search} 가 ${r.status()}` }] });
       add({ kind: 'http', url: r.url(), status: r.status(), text: `${r.request().method()} ${r.status()}`, ...(NORMAL_REJECTIONS.has(r.status()) ? { normal: true as const } : {}) }, sentIn.get(r.request()));
     });
     context.on('requestfailed', r => {
@@ -114,7 +126,7 @@ export const test = base.extend<{ guard: void }>({
     if (phase !== 'start') await context.waitForEvent('page', { timeout: 300 }).catch(() => {});
     log({ kind: 'policy', scenario: info.title.split(' ')[0], blocked: g.blocked, violations: g.violations, signals, ...(signalsDropped ? { signalsDropped } : {}),
       ...(stepAudits.length ? { audits: stepAudits } : {}),
-      ...(denied.length ? { denied } : {}), ...(writeBlocked.length ? { writeBlocked } : {}), ...(newTabs.length ? { newTabs: newTabs.map(t => ({ after: t.after, url: (!t.page.isClosed() && t.page.url()) || t.url })) } : {}) });
+      ...(denied.length ? { denied } : {}), ...(writeBlocked.length ? { writeBlocked } : {}), ...(writes.length ? { writes } : {}), ...(newTabs.length ? { newTabs: newTabs.map(t => ({ after: t.after, url: (!t.page.isClosed() && t.page.url()) || t.url })) } : {}) });
   }, { auto: true }],
 });
 

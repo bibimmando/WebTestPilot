@@ -110,7 +110,8 @@ export type Report = {
   passed: { checks: number; byClass: Record<string, number> };
 };
 
-const AUDIT_TEXT: Record<AuditFinding['kind'], string> = { 'unnamed-control': '이름 없는 조작 요소', 'covered-control': '가려진 조작 요소', 'horizontal-overflow': '가로 넘침', 'low-contrast-text': '읽기 어려운 글자 대비' };
+const AUDIT_TEXT: Record<AuditFinding['kind'], string> = { 'unnamed-control': '이름 없는 조작 요소', 'covered-control': '가려진 조작 요소', 'horizontal-overflow': '가로 넘침', 'low-contrast-text': '읽기 어려운 글자 대비', 'invisible-control': '보이지 않는데 눌리는 조작 요소', 'clipped-content': '잘린 스크롤 영역', 'broken-link': '깨진 링크' };
+const auditLevel = (a: AuditFinding) => a.kind === 'broken-link' ? '이동 결함' : a.level === 'ui_defect' ? 'UI 결함' : '개선 제안';
 const LEVEL_TEXT: Record<SystemLevel, string> = { bug_high: '버그 — 확신 높음', bug_medium: '버그 — 확신 중간', hold: '판단 보류', incomplete: '미완료', not_bug: '버그 아님',
   ui_defect: 'UI 결함(시각 판정)', improvement: '개선 제안(시각 판정)' };
 
@@ -249,6 +250,8 @@ export function buildReport(dir: string): Report {
     .map(t => `${t.template}: ${t.conversations.map(c => `${c.stop}${c.detail ? ` (${c.detail})` : ''}`).join(', ') || '대화 없음'}`))];
   const signals = judgment.errorSignals ?? [];
   const audit: AuditItem[] = (explore.sitemap?.audit ?? []).flatMap(a => a.findings.map(f => ({ ...f, page: a.url })));
+  for (const b of explore.sitemap?.broken ?? []) audit.push({ kind: 'broken-link', viewport: 'desktop', level: 'ui_defect', target: b.url, page: b.from, confirmed: b.confirmed,
+    detail: `"${b.text || '(글자 없음)'}" 링크 → ${new URL(b.url).pathname}${new URL(b.url).search} 가 ${b.status}` });
   // 실행 중 행동 뒤 화면 점검: 시작 화면에 없던 문제가 그 행동 뒤에 두 번 다 나온 것(확인됨). 같은 페이지·같은 대상은 한 번만 센다.
   for (const r of results.scenarios) for (const a of r.audits ?? []) {
     const s = scenarioOf.get(r.id);
@@ -501,6 +504,9 @@ const AUDIT_MEANING: Record<AuditFinding['kind'], string> = {
   'covered-control': '다른 요소가 덮고 있어 누르면 엉뚱한 요소가 눌린다.',
   'horizontal-overflow': '화면보다 넓은 내용이 있어 페이지가 가로로 밀린다.',
   'low-contrast-text': '글자색과 배경색이 거의 같아 읽을 수 없다(대비 2:1 미만, WCAG 계산식).',
+  'invisible-control': '투명해서 보이지 않는데 그 자리를 누르면 동작한다(마우스를 올려도 나타나지 않음).',
+  'clipped-content': '좁은 화면에서 작은 스크롤 영역 아래로 조작 요소가 잘려, 안을 스크롤해야 있는 줄 안다(터치 화면은 스크롤 막대가 잘 안 보임).',
+  'broken-link': '같은 사이트 링크를 따라가면 없는 페이지(404)나 서버 오류(5xx)가 나온다. 두 번 요청해 같았던 것만 센다.',
 };
 const HOLD_TEXT: [string, string][] = [
   ['같은 템플릿 다른 페이지에서 이름으로 고정한 대상이 없음', '같은 종류의 다른 페이지에 같은 이름의 요소가 없다. 페이지마다 이름이 다른 것인지(예: 상품 이름) 요소가 빠진 것인지 사람이 확인해야 한다.'],
@@ -607,12 +613,12 @@ export function renderHtml(rep: Report, dir: string): string {
     for (const a of list) g.set(`${a.level}|${a.kind}|${a.viewport}`, [...g.get(`${a.level}|${a.kind}|${a.viewport}`) ?? [], a]);
     return [...g.values()].sort((a, b) => Number(b[0].level === 'ui_defect') - Number(a[0].level === 'ui_defect'));
   };
-  const auditSummary = (list: AuditItem[]) => list.length ? `<table><tr><th class="nw">구분</th><th>종류</th><th class="nw">화면</th><th class="nw">건수</th><th>뜻</th><th>페이지</th></tr>${auditGroups(list).map(g => `<tr><td class="nw">${g[0].level === 'ui_defect' ? 'UI 결함' : '개선 제안'}</td><td class="nw">${esc(AUDIT_TEXT[g[0].kind])}</td><td class="nw">${g[0].viewport === 'mobile' ? '모바일' : '데스크톱'}</td><td class="nw">${g.length}</td><td>${esc(AUDIT_MEANING[g[0].kind])}</td><td>${pageList([...new Set(g.map(a => a.page))], 4)}</td></tr>`).join('')}</table>` : '<p class="empty">없음</p>';
+  const auditSummary = (list: AuditItem[]) => list.length ? `<table><tr><th class="nw">구분</th><th>종류</th><th class="nw">화면</th><th class="nw">건수</th><th>뜻</th><th>페이지</th></tr>${auditGroups(list).map(g => `<tr><td class="nw">${auditLevel(g[0])}</td><td class="nw">${esc(AUDIT_TEXT[g[0].kind])}</td><td class="nw">${g[0].viewport === 'mobile' ? '모바일' : '데스크톱'}</td><td class="nw">${g.length}</td><td>${esc(AUDIT_MEANING[g[0].kind])}</td><td>${pageList([...new Set(g.map(a => a.page))], 4)}</td></tr>`).join('')}</table>` : '<p class="empty">없음</p>';
   // 부록 B: 페이지별로 한 줄씩.
   const auditByPage = (list: AuditItem[]) => {
     const g = new Map<string, AuditItem[]>();
     for (const a of list) g.set(a.page, [...g.get(a.page) ?? [], a]);
-    return list.length ? `<table class="small"><tr><th>페이지</th><th>구분</th><th>종류</th><th>화면</th><th>내용</th></tr>${[...g].map(([page, xs]) => xs.map((a, i) => `<tr>${i === 0 ? `<td rowspan="${xs.length}">${esc(host(page))}</td>` : ''}<td class="nw">${a.level === 'ui_defect' ? 'UI 결함' : '개선 제안'}</td><td>${esc(AUDIT_TEXT[a.kind])}</td><td class="nw">${a.viewport === 'mobile' ? '모바일' : '데스크톱'}</td><td>${esc(a.detail)}</td></tr>`).join('')).join('')}</table>` : '<p class="empty">없음</p>';
+    return list.length ? `<table class="small"><tr><th>페이지</th><th>구분</th><th>종류</th><th>화면</th><th>내용</th></tr>${[...g].map(([page, xs]) => xs.map((a, i) => `<tr>${i === 0 ? `<td rowspan="${xs.length}">${esc(host(page))}</td>` : ''}<td class="nw">${auditLevel(a)}</td><td>${esc(AUDIT_TEXT[a.kind])}</td><td class="nw">${a.viewport === 'mobile' ? '모바일' : '데스크톱'}</td><td>${esc(a.detail)}</td></tr>`).join('')).join('')}</table>` : '<p class="empty">없음</p>';
   };
   // 부록 A: 미완료 항목을 사유별로.
   const incompleteByReason = () => {
