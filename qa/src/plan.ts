@@ -1,5 +1,5 @@
 // 계획 계약. 모델은 submit_plan으로 Draft를 내고, 하네스가 검증한 뒤 대상(T#)을 실제 Target으로 바꿔 Plan으로 고정한다.
-import type { Target, Viewport } from './browser.ts';
+import { hashRoute, type Target, type Viewport } from './browser.ts';
 import { RULES, RULE_IDS, ruleOf } from './rules.ts';
 
 export type Requirement = { id: string; text: string };
@@ -108,17 +108,28 @@ export function expectedFrom(c: Check, ref: string | undefined): string | undefi
 export const SORT_BY = ['number', 'text'] as const;
 
 /**
- * 정렬을 확인할 기준 값. number: 항목마다 숫자가 정확히 하나일 때 그 숫자. text: 항목 글자 전체.
+ * 정렬을 확인할 기준 값. text: 항목 글자 전체. number: 항목마다 서로 다른 숫자가 하나뿐이면 그 숫자, 여러 개면 통화 기호가 붙은 숫자가 한 값뿐일 때 그 값
+ * (상품 카드: 이름의 "20V"와 같은 가격 "$125.23"이 두 번, toolshop 11/10).
  * 기준을 특정할 수 없거나(숫자가 없거나 여러 개, 모르는 기준), 항목이 2개 미만이거나, 기준 값이 모두 같으면 undefined(정렬을 확인한 것이 아니다 → 실행은 "값 못 읽음"으로 남긴다).
  * shortcut: 글자 비교는 실행 환경의 기본 로캘을 따른다. 앱의 정렬 정책(로캘·대소문자)이 다르면 오판할 수 있다.
  */
+const NUM = /-?\d[\d,]*(?:\.\d+)?/g;
+const MONEY = /[$€£¥₩]\s?(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s?(?:원|円|€|USD|KRW|EUR)/g;
+function numberKeys(text: string[]): number[] | undefined {
+  const keys = text.map(t => {
+    const one = (xs: string[]) => { const v = new Set(xs.map(x => Number(x.replace(/,/g, '')))); return v.size === 1 ? [...v][0] : undefined; };
+    return one(t.match(NUM) ?? []) ?? one([...t.matchAll(MONEY)].map(m => m[1] ?? m[2]));
+  });
+  return keys.every(k => k !== undefined) ? keys as number[] : undefined;
+}
+
 export function sortKeys(actual: string, by: string): number[] | string[] | undefined {
   let items: unknown;
   try { items = JSON.parse(actual); } catch { return undefined; }
   if (!Array.isArray(items) || items.length < 2) return undefined;
   const text = items.map(String);
   const keys = by === 'text' ? text
-    : by === 'number' && text.every(t => (t.match(/-?\d[\d,]*(?:\.\d+)?/g) ?? []).length === 1) ? text.map(numberIn) : undefined;
+    : by === 'number' ? numberKeys(text) : undefined;
   // 기준 값이 모두 같으면 오름·내림차순이 둘 다 참이라 정렬을 확인한 것이 아니다.
   return keys && new Set<number | string>(keys).size > 1 ? keys : undefined;
 }
@@ -529,7 +540,7 @@ function isOwnLabel(quote: string, c: Check, s: Scenario, pinned: Map<string, Pi
   });
 }
 
-/** 같은 페이지인지 비교하기 위한 URL (hash 제외). */
+/** 같은 페이지인지 비교하기 위한 URL (쪽 안 hash 제외, hash 라우팅은 포함). */
 function page(url: string): string {
-  try { const u = new URL(url); return u.origin + u.pathname + u.search; } catch { return url; }
+  try { const u = new URL(url); return u.origin + u.pathname + u.search + hashRoute(u); } catch { return url; }
 }

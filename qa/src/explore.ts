@@ -74,6 +74,12 @@ async function exploreSite(o: Parameters<typeof explore>[0]): Promise<ExploreRes
     await reader.context.close();
   }
   const blocked = [...reader.blocked];
+  // 앱 API가 형제 하위 도메인(api.example.com)에 있으면 정책이 막아 목록·상세가 비어 보인다. 권한은 넓히지 않고 사람에게 알린다.
+  // shortcut: 상위 도메인을 끝 두 조각으로 어림한다(co.kr·github.io 같은 공용 접미사는 구분하지 않아 경고가 더 나올 수 있다).
+  const site = (h: string) => h.split('.').slice(-2).join('.');
+  const sibling = [...new Set(blocked.map(b => { try { return new URL(b.split(' ')[1]).origin; } catch { return ''; } }))]
+    .filter(x => x && !o.policy.origins.includes(x) && site(new URL(x).hostname) === site(new URL(o.startUrl).hostname));
+  if (sibling.length) console.warn(`경고: 같은 사이트의 다른 origin 요청을 정책이 막았습니다(${sibling.join(', ')}). 앱 API라면 화면이 비어 보일 수 있습니다. 허용하려면 --origins ${[...o.policy.origins, ...sibling].join(',')}`);
   const violations = reader.violations.map(v => `사이트 지도 수집 중 ${v}`);
   {
     // 시작 페이지의 템플릿을 먼저, 나머지는 발견 순서대로.

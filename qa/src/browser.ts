@@ -157,12 +157,28 @@ export async function resolveGroup(page: Page, ref: string): Promise<Resolved> {
   while (up && typeof describe(up) === 'string') up = up.parent;
   const target: Target = up ? { role: node.role, within: describe(up) as Target } : { role: node.role };
   const loc = toLocator(page, target);
-  if (up && (await toLocator(page, target.within!).count()) !== 1) return { ok: false, ref, reason: 'ambiguous' };
-  if ((await loc.and(page.getByRef(ref)).count()) !== 1) return { ok: false, ref, reason: 'ambiguous' };
   // 중첩 목록·표의 다른 열이 섞이지 않도록, 모은 수가 같은 부모 아래 같은 역할의 형제 수와 같아야 한다.
-  const siblings = [...nodes.values()].filter(n => n.parent === node.parent && n.role === node.role).length;
-  if ((await loc.count()) !== siblings) return { ok: false, ref, reason: 'ambiguous' };
-  return { ok: true, ref, target };
+  const sibs = [...nodes.values()].filter(n => n.parent === node.parent && n.role === node.role);
+  if ((!up || (await toLocator(page, target.within!).count()) === 1) && (await loc.and(page.getByRef(ref)).count()) === 1
+    && (await loc.count()) === sibs.length) return { ok: true, ref, target };
+  // 이름 있는 상위 영역이 없는 목록 카드(상품 카드 링크가 하나씩 이름 없는 div에 싸여 있음, toolshop 11/10): 자기 주소의 앞부분(마지막 / 까지,
+  // `#/product/`)이 같은 링크를 모은다. 모은 링크가 공통 조상 아래 모두 같은 깊이에 있어야 한 목록이다(목록 밖에 따로 놓인 같은 모양 링크가 섞이면 거절).
+  if (node.role !== 'link') return { ok: false, ref, reason: 'ambiguous' };
+  const own = await page.getByRef(ref).getAttribute('href').catch(() => null);
+  const hrefPrefix = own ? own.slice(0, own.lastIndexOf('/') + 1) : '';
+  if (hrefPrefix.replace(/^[#!/.]+/, '').length < 2) return { ok: false, ref, reason: 'ambiguous' };
+  const byHref: Target = { role: node.role, hrefPrefix };
+  const l2 = toLocator(page, byHref);
+  if ((await l2.and(page.getByRef(ref)).count()) !== 1) return { ok: false, ref, reason: 'ambiguous' };
+  const sameDepth = await l2.evaluateAll(es => {
+    if (es.length < 2) return false;
+    let lca: Element | null = es[0];
+    while (lca && !es.every(e => lca!.contains(e))) lca = lca.parentElement;
+    const depth = (e: Element) => { let d = 0; for (let x: Element | null = e; x && x !== lca; x = x.parentElement) d++; return d; };
+    return new Set(es.map(depth)).size === 1;
+  }).catch(() => false);
+  if (!sameDepth) return { ok: false, ref, reason: 'ambiguous' };
+  return { ok: true, ref, target: byHref };
 }
 
 /**
@@ -170,7 +186,11 @@ export async function resolveGroup(page: Page, ref: string): Promise<Resolved> {
  * anchor·nth·of는 이름 없는 아이콘 버튼·숫자만 있는 값처럼 스스로 신원이 없는 요소용이다: 페이지에서 유일한 라벨(anchor)을 담은
  * 가장 작은 영역 안에서, 같은 모양 요소 of개 중 nth번째(0부터). 영역 안 개수가 of와 다르면 대상이 바뀐 것으로 본다.
  */
-export type Target = { role?: string; name?: string; text?: string; within?: Target; anchor?: string; nth?: number; of?: number; href?: string };
+export type Target = { role?: string; name?: string; text?: string; within?: Target; anchor?: string; nth?: number; of?: number; href?: string;
+  /** 묶음(group) 링크: href 속성 원문이 이 문자열로 시작하는 것(`#/product/`). 이름 있는 상위 영역이 없는 목록 카드를 메뉴 링크와 가른다 */
+  hrefPrefix?: string;
+  /** anchor가 페이지 주 제목(문서의 첫 h1)이다. 상품명처럼 페이지마다 바뀌므로 실행 때는 그 글자가 아니라 지금 페이지의 주 제목을 라벨로 쓴다 */
+  anchorTitle?: true };
 
 export type Resolved =
   | { ok: true; ref: string; target: Target }
@@ -304,10 +324,15 @@ export async function stableOnReload(page: Page, t: Target, group: boolean, time
 export function toLocator(page: Page, t: Target): Locator {
   let scope: Page | Locator = t.within ? toLocator(page, t.within) : page;
   // 라벨을 담고 같은 모양 요소도 담은 상위 요소 중 가장 안쪽(문서 순서상 마지막). 라벨이 유일하므로 후보는 그 조상들뿐이다.
-  if (t.anchor !== undefined) scope = scope.locator('*').filter({ has: page.getByText(new RegExp(t.anchor)) })
+  if (t.anchor !== undefined) scope = scope.locator('*').filter({ has: labelOf(page, t) })
     .filter({ has: shape(page, t) }).last();
   const loc = shape(scope, t);
   return t.nth === undefined ? loc : loc.nth(t.nth);
+}
+
+/** anchor 라벨 요소. 주 제목 anchor는 글자가 아니라 지금 페이지의 첫 h1이다(같은 템플릿 다른 페이지에서도 같은 영역, toolshop 11/10). */
+function labelOf(page: Page, t: Target): Locator {
+  return t.anchorTitle ? page.getByRole('heading', { level: 1 }).first() : page.getByText(new RegExp(t.anchor!));
 }
 
 function shape(scope: Page | Locator, t: Target): Locator {
@@ -316,7 +341,8 @@ function shape(scope: Page | Locator, t: Target): Locator {
     t.name === undefined ? {} : { name: new RegExp(t.name) });
   const withText = t.text === undefined ? loc : loc.filter({ hasText: new RegExp(t.text) });
   // href 속성 원문과 비교한다. JSON 문자열의 따옴표·역슬래시 이스케이프는 CSS 문자열에서도 같은 뜻이다.
-  return t.href === undefined ? withText : withText.and(scope.locator(`[href=${JSON.stringify(t.href)}]`));
+  const exact = t.href === undefined ? withText : withText.and(scope.locator(`[href=${JSON.stringify(t.href)}]`));
+  return t.hrefPrefix === undefined ? exact : exact.and(scope.locator(`[href^=${JSON.stringify(t.hrefPrefix)}]`));
 }
 
 /**
@@ -325,7 +351,7 @@ function shape(scope: Page | Locator, t: Target): Locator {
  */
 export async function areaOf(page: Page, t: Target): Promise<ElementHandle | null> {
   if (t.anchor === undefined) return null;
-  return page.locator('*').filter({ has: page.getByText(new RegExp(t.anchor)) }).filter({ has: shape(page, t) }).last()
+  return page.locator('*').filter({ has: labelOf(page, t) }).filter({ has: shape(page, t) }).last()
     .elementHandle({ timeout: 1000 }).catch(() => null);
 }
 
@@ -342,7 +368,7 @@ export async function goneFromArea(page: Page, t: Target, area: ElementHandle | 
     return false;
   };
   // 라벨이 그 영역에 그대로 있어야 같은 영역이다(영역 전체가 다시 그려졌으면 판단하지 않는다).
-  return await inArea(page.getByText(new RegExp(t.anchor))) && !(await inArea(shape(page, t)));
+  return await inArea(labelOf(page, t)) && !(await inArea(shape(page, t)));
 }
 
 /**
@@ -352,14 +378,14 @@ export async function goneFromArea(page: Page, t: Target, area: ElementHandle | 
  */
 export async function absentEverywhere(page: Page, t: Target): Promise<boolean> {
   if (t.anchor === undefined || t.role === undefined) return false;
-  return (await page.getByText(new RegExp(t.anchor)).count()) === 1 && (await page.getByText(new RegExp(t.anchor)).filter({ visible: true }).count()) === 1
+  return (await labelOf(page, t).count()) === 1 && (await labelOf(page, t).filter({ visible: true }).count()) === 1
     && (await shape(page, t).count()) === 0;
 }
 
 /** 순서로 고정한 대상의 영역 안 같은 모양 요소 수가 고정 때와 다르면 순서가 다른 요소를 가리킬 수 있다. */
 export async function shapeChanged(page: Page, t: Target): Promise<boolean> {
   // 라벨이 하나 더 생기면 .last()가 다른 영역을 고르므로, 실행 때도 라벨이 유일한지 본다.
-  if (t.anchor !== undefined && (await page.getByText(new RegExp(t.anchor)).count()) !== 1) return true;
+  if (t.anchor !== undefined && (await labelOf(page, t).count()) !== 1) return true;
   return t.of !== undefined && (await toLocator(page, { ...t, nth: undefined }).count()) !== t.of;
 }
 
@@ -380,9 +406,13 @@ async function resolveAnchored(page: Page, from: Node | undefined, except: Node 
     for (const label of labelsIn(up, except)) {
       const anchor = `^${label}$`;
       if ((await page.getByText(new RegExp(anchor)).count()) !== 1) continue;
+      // 라벨이 페이지 주 제목(문서의 첫 h1, 관련 상품 같은 h1이 뒤에 더 있을 수 있음)이면 상품명·글 제목처럼 페이지마다 바뀌는 값이다. 글자 대신 "주 제목"으로 고정한다.
+      // shortcut: 짧은 글자 값 칸(가격)은 라벨 글자를 모양에서 빼야 해서 제목 고정을 쓰지 않는다. 다른 페이지에서는 대상이 바뀜으로 남는다.
+      const h1 = page.getByRole('heading', { level: 1 });
+      const title = new RegExp(anchor).test((await h1.first().textContent({ timeout: 1000 }).catch(() => null))?.trim() ?? '') ? { anchorTitle: true as const } : {};
       for (const base of bases) {
         // 라벨도 짧은 텍스트라, 값 칸의 모양에서 라벨을 빼야 라벨 자신이 아닌 라벨을 담은 영역이 범위가 된다.
-        const t: Target = base.text === SHORT_TEXT ? { text: String.raw`^(?!\s*${label}\s*$)\s*\S.{0,39}$`, anchor } : { ...base, anchor };
+        const t: Target = base.text === SHORT_TEXT ? { text: String.raw`^(?!\s*${label}\s*$)\s*\S.{0,39}$`, anchor } : { ...base, anchor, ...title };
         let n: number;
         try { n = await toLocator(page, t).count(); } catch { continue; }
         if (n < 1 || n > MAX_GROUP) continue;
@@ -460,8 +490,9 @@ function tree(page: Page): Promise<AriaNode[]> {
  * - invisible-control: 링크·버튼이 투명(누적 opacity 0)한데 그 자리를 누르면 그 요소가 눌림. 마우스를 올려 나타나는 것은 뺀다(UI 결함)
  * - clipped-content: 모바일에서 화면 절반 이하 높이의 스크롤 영역(overflow auto·scroll) 아래로 조작 요소가 잘려 안을 스크롤해야 보임(개선 제안)
  * - broken-link: 사이트 지도가 따라간 같은 origin 링크가 404·410·5xx(sitemap.ts가 만든다, 이동 결함)
+ * - unrendered-value: 화면 글자·같은 사이트 링크 주소에 undefined·NaN·[object Object]·{{이름}}이 그대로 나옴(UI 결함, 데스크톱에서만 센다)
  */
-export type AuditFinding = { kind: 'unnamed-control' | 'covered-control' | 'horizontal-overflow' | 'low-contrast-text' | 'invisible-control' | 'clipped-content' | 'broken-link'; viewport: 'desktop' | 'mobile';
+export type AuditFinding = { kind: 'unnamed-control' | 'covered-control' | 'horizontal-overflow' | 'low-contrast-text' | 'invisible-control' | 'clipped-content' | 'broken-link' | 'unrendered-value'; viewport: 'desktop' | 'mobile';
   level: 'ui_defect' | 'improvement';
   /** 재점검 때 같은 문제인지 가르는 대상 식별(역할·요소). 개수·폭 같은 측정값은 넣지 않는다 */
   target: string;
@@ -469,12 +500,16 @@ export type AuditFinding = { kind: 'unnamed-control' | 'covered-control' | 'hori
 export const MOBILE = { width: 390, height: 844 };
 /** 이동 결과가 깨진 페이지인 상태. 권한(401·403)·방식(405) 거절은 로그인 상태나 정책에 따라 정상일 수 있어 세지 않는다 */
 export const BROKEN = (s: number) => s === 404 || s === 410 || s >= 500;
+/** hash 경로 라우팅(`#/products/1`, `#!/x`)이면 그 hash. 쪽 안 이동(`#top`)은 같은 페이지라 ''. */
+export const hashRoute = (url: URL) => /^#!?\//.test(url.hash) ? url.hash : '';
 /** Playwright 기본 화면 크기. 탐색·실행 컨텍스트가 따로 정하지 않으므로 데스크톱은 이 크기다 */
 export const DESKTOP = { width: 1280, height: 720 };
 export type Viewport = 'desktop' | 'mobile';
 // shortcut: 화면 크기만 바꾼다. 터치·모바일 UA(isMobile·hasTouch)는 컨텍스트 단위라 켜지 않는다. 터치 전용 동작을 검사해야 하면 모바일 컨텍스트를 따로 연다.
 export const VIEWPORTS: Record<Viewport, { width: number; height: number }> = { desktop: DESKTOP, mobile: MOBILE };
 const NAMED_ROLES = new Set(['link', 'button', 'textbox', 'searchbox', 'checkbox', 'radio', 'combobox', 'switch', 'slider', 'spinbutton', 'tab', 'menuitem']);
+/** 접근 가능한 이름을 자기 내용(자식 글자)에서 얻는 역할. 입력칸·콤보박스는 내용이 아니라 라벨로 이름을 얻는다. */
+const CONTENT_NAMED = new Set(['link', 'button', 'checkbox', 'radio', 'switch', 'tab', 'menuitem']);
 
 /**
  * 지금 화면(현재 크기)을 점검한다. skipUnnamed: 이미 다른 화면 크기에서 센 이름 없는 요소의 역할(같은 대상을 두 번 세지 않는다).
@@ -485,8 +520,10 @@ export async function auditPage(page: Page, viewport: AuditFinding['viewport'], 
   // 역할별로 묶는다. 목록 카드마다 같은 아이콘 버튼이 있으면 한 줄로 세고 첫 위치만 예로 든다.
   const unnamed = new Map<string, { count: number; first: string }>();
   const where = (n: Node) => { for (let p = n.parent; p; p = p.parent) if (p.name) return `"${p.name.slice(0, 40)}" 안`; return ''; };
+  // ai 모드 snapshot은 자식이 같은 이름을 가지면 부모 이름을 생략한다(menuitem 안의 link "Home"). 내용으로 이름을 얻는 역할은 자식 글자·이름이 있으면 이름이 있다.
+  const fromContent = (n: Node): boolean => n.children.some(c => !!(c.name?.trim() || c.text?.trim() || c.ownText.some(t => t.trim())) || fromContent(c));
   for (const n of parseSnapshot(await tree(page).catch(() => [])).values()) {
-    if (!NAMED_ROLES.has(n.role) || n.name?.trim() || skipUnnamed.has(n.role)) continue;
+    if (!NAMED_ROLES.has(n.role) || n.name?.trim() || skipUnnamed.has(n.role) || (CONTENT_NAMED.has(n.role) && fromContent(n))) continue;
     const u = unnamed.get(n.role) ?? { count: 0, first: where(n) };
     u.count++;
     unnamed.set(n.role, u);
@@ -537,12 +574,15 @@ export async function auditPage(page: Page, viewport: AuditFinding['viewport'], 
       if (!hit || e.contains(hit) || hit.contains(e)) continue;
       // 자기 라벨이 눌리면 같은 조작이다(라벨 클릭은 그 입력을 조작한다).
       if ([...((e as HTMLInputElement).labels ?? [])].some(l => l.contains(hit))) continue;
-      // 스크롤된 화면에서 고정·스티키 머리 띠 아래에 놓인 요소는 위로 스크롤하면 보인다(자동화가 입력칸을 화면 맨 위로 스크롤해 생김, 이메일 사이트 11/4).
-      // 페이지 맨 위에서도 가리면 진짜 결함이라 그대로 찾는다.
-      if (scrollY > 0) {
-        let bar: Element | null = hit;
-        while (bar && !['fixed', 'sticky'].includes(getComputedStyle(bar).position)) bar = bar.parentElement;
-        if (bar && !bar.contains(e) && r.top < bar.getBoundingClientRect().bottom && bar.getBoundingClientRect().top <= 1) continue;
+      // 고정·스티키 요소(머리 띠, 화면 아래 채팅 버튼)에 가린 요소는 스크롤해서 그 요소와 겹치지 않는 위치로 옮길 수 있으면 사용자가 누를 수 있다
+      // (자동화가 입력칸을 화면 맨 위로 스크롤해 생김, 이메일 11/4; 화면 아래 고정 채팅 버튼, toolshop 11/8). 어떤 스크롤 위치에서도 겹치면 진짜 결함이다.
+      let bar: Element | null = hit;
+      while (bar && !['fixed', 'sticky'].includes(getComputedStyle(bar).position)) bar = bar.parentElement;
+      if (bar && !bar.contains(e)) {
+        const b = bar.getBoundingClientRect(), h = r.height;
+        const lo = r.top - (document.documentElement.scrollHeight - innerHeight - scrollY), hi = r.top + scrollY; // 스크롤로 갈 수 있는 화면 안 위치 범위
+        const fits = (y: number) => y >= Math.max(0, lo) && y <= Math.min(innerHeight - h, hi) && (y + h <= b.top || y >= b.bottom);
+        if ([b.bottom, b.top - h, 0, innerHeight - h, lo, hi].some(fits)) continue;
       }
       // 배경 덮개보다 아래에 깔린 요소는 모달 뒤의 내용이다. 덮개 위에 있는 모달 자신의 버튼이 가려진 것은 계속 찾는다.
       if (backdrops.length && !inFixedWindow(e)) {
@@ -613,14 +653,40 @@ export async function auditPage(page: Page, viewport: AuditFinding['viewport'], 
       if (hidden.length && !cut.some(x => x.target === label(c)))
         cut.push({ target: label(c), detail: `${label(c)} 아래로 조작 요소 ${hidden.length}개가 잘려 안을 스크롤해야 보임, 예: ${label(hidden[0])}` });
     }
+    // 채워지지 않은 값: 화면 글자나 같은 사이트 링크 주소에 프로그램 값이 그대로 찍힌 것(undefined, NaN, [object Object], 템플릿 {{이름}}).
+    // 링크 주소는 경로·쿼리 조각이 통째로 그 값일 때만 본다(null 포함). 코드·입력칸 안의 글자는 사용자 내용일 수 있어 뺀다.
+    const raw: string[] = [];
+    const textBad = /(^|[^\w])undefined(?!\w)|(^|[^\w])NaN(?!\w)|\[object Object\]|\{\{\s*[\w.$]+\s*\}\}/i;
+    const skip = 'script,style,noscript,code,pre,textarea,[contenteditable=""],[contenteditable=true]';
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let t = walker.nextNode(); t && raw.length < 5; t = walker.nextNode()) {
+      const el = t.parentElement, m = (t.textContent ?? '').match(textBad);
+      // 긴 글 속 낱말("undefined behavior")은 값이 아니다. 값이 들어갈 짧은 글자 조각(라벨·가격·이름)만 본다.
+      if (!m || !el || (t.textContent ?? '').trim().length > 40 || el.closest(skip) || !shown(el)) continue;
+      // NaN은 대소문자를 가린다(사람 이름 Nan 등).
+      if (/^nan$/i.test(m[0].replace(/^[^\w]/, '')) && !/NaN/.test(m[0])) continue;
+      raw.push(`${label(el)} 글자에 "${m[0].replace(/^[^\w[{]/, '')}"`);
+    }
+    for (const a of document.querySelectorAll('a[href]')) {
+      if (raw.length >= 5) break;
+      const href = a.getAttribute('href') ?? '';
+      let u: URL; try { u = new URL(href, location.href); } catch { continue; }
+      // 링크는 닫힌 메뉴 안에 있어도 열면 누를 수 있어 보임 여부를 따지지 않는다.
+      if (u.origin !== location.origin) continue;
+      const parts = decodeURIComponent(u.pathname + u.search + u.hash).split(/[\/?&=#]/);
+      if (parts.some(p => /^(undefined|null|NaN|\[object Object\])$/.test(p))) raw.push(`${label(a)} 주소 ${href}`);
+    }
     const sw = document.documentElement.scrollWidth;
     let widest = '';
     if (sw > innerWidth + 1) {
       let max = innerWidth;
       for (const e of document.body.querySelectorAll('*')) { const r = e.getBoundingClientRect(); if (r.right > max + 1 && r.width > 0) { max = r.right; widest = label(e); } }
     }
-    return { covered, low, invisible, cut, overflow: sw > innerWidth + 1 ? `페이지 폭 ${sw}px > 화면 ${innerWidth}px${widest ? `, 가장 넓게 나간 요소 ${widest}` : ''}` : '' };
-  }).catch(() => ({ covered: [] as { target: string; detail: string }[], low: [] as string[], invisible: [] as { target: string; detail: string; x: number; y: number }[], cut: [] as { target: string; detail: string }[], overflow: '' }));
+    return { covered, low, invisible, cut, raw, overflow: sw > innerWidth + 1 ? `페이지 폭 ${sw}px > 화면 ${innerWidth}px${widest ? `, 가장 넓게 나간 요소 ${widest}` : ''}` : '' };
+  }).catch(() => ({ covered: [] as { target: string; detail: string }[], low: [] as string[], invisible: [] as { target: string; detail: string; x: number; y: number }[], cut: [] as { target: string; detail: string }[], raw: [] as string[], overflow: '' }));
+  // 같은 글자가 모바일에서 또 나오므로 데스크톱에서만 센다.
+  if (viewport === 'desktop' && measured.raw.length) out.push({ kind: 'unrendered-value', viewport, level: 'ui_defect', target: 'text',
+    detail: `채워지지 않은 값 ${measured.raw.length}곳, 예: ${measured.raw.slice(0, 3).join(', ')}` });
   if (viewport === 'mobile') for (const c of measured.cut) out.push({ kind: 'clipped-content', viewport, level: 'improvement', ...c });
   // 마우스를 올리면 나타나는 조작(목록 줄의 아이콘 버튼 등)은 의도한 것이라 올려 보고 여전히 투명한 것만 남긴다.
   for (const v of measured.invisible) {

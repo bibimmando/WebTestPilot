@@ -11,7 +11,7 @@ import type { Plan, Check } from './plan.ts';
 import { REPRO_REASON_TEXT, type Judgment, type Verdict, type SystemLevel } from './triage.ts';
 import type { RunResult } from './run.ts';
 import type { SiteMap } from './sitemap.ts';
-import { MOBILE, type AuditFinding, type Target } from './browser.ts';
+import { MOBILE, hashRoute, type AuditFinding, type Target } from './browser.ts';
 import { pathOf } from './sitemap.ts';
 import { ruleOf } from './rules.ts';
 
@@ -110,7 +110,7 @@ export type Report = {
   passed: { checks: number; byClass: Record<string, number> };
 };
 
-const AUDIT_TEXT: Record<AuditFinding['kind'], string> = { 'unnamed-control': '이름 없는 조작 요소', 'covered-control': '가려진 조작 요소', 'horizontal-overflow': '가로 넘침', 'low-contrast-text': '읽기 어려운 글자 대비', 'invisible-control': '보이지 않는데 눌리는 조작 요소', 'clipped-content': '잘린 스크롤 영역', 'broken-link': '깨진 링크' };
+const AUDIT_TEXT: Record<AuditFinding['kind'], string> = { 'unnamed-control': '이름 없는 조작 요소', 'covered-control': '가려진 조작 요소', 'horizontal-overflow': '가로 넘침', 'low-contrast-text': '읽기 어려운 글자 대비', 'invisible-control': '보이지 않는데 눌리는 조작 요소', 'clipped-content': '잘린 스크롤 영역', 'broken-link': '깨진 링크', 'unrendered-value': '채워지지 않은 값' };
 const auditLevel = (a: AuditFinding) => a.kind === 'broken-link' ? '이동 결함' : a.level === 'ui_defect' ? 'UI 결함' : '개선 제안';
 const LEVEL_TEXT: Record<SystemLevel, string> = { bug_high: '버그 — 확신 높음', bug_medium: '버그 — 확신 중간', hold: '판단 보류', incomplete: '미완료', not_bug: '버그 아님',
   ui_defect: 'UI 결함(시각 판정)', improvement: '개선 제안(시각 판정)' };
@@ -149,8 +149,9 @@ export function targetText(x: Target): string {
   const role = x.role ? ROLE_TEXT[x.role] ?? x.role : '';
   const name = x.name ?? x.text, shown = name && shownText(name), area = x.anchor && shownText(x.anchor);
   let s = shown ? `"${shown}" ${role || '글자'}` : role || '요소';
-  if (area) s = `"${area}" 영역의 ${s}`;
+  if (area) s = x.anchorTitle ? `페이지 제목("${area}") 영역의 ${s}` : `"${area}" 영역의 ${s}`;
   if (x.href) s += ` (주소 ${x.href})`;
+  if (x.hrefPrefix) s += ` (주소가 ${x.hrefPrefix}로 시작)`;
   if (x.nth !== undefined && (x.of ?? 0) > 1) s += ` (${x.of}개 중 ${x.nth + 1}번째)`;
   return x.within ? `${targetText(x.within)} 안의 ${s}` : s;
 }
@@ -251,7 +252,7 @@ export function buildReport(dir: string): Report {
   const signals = judgment.errorSignals ?? [];
   const audit: AuditItem[] = (explore.sitemap?.audit ?? []).flatMap(a => a.findings.map(f => ({ ...f, page: a.url })));
   for (const b of explore.sitemap?.broken ?? []) audit.push({ kind: 'broken-link', viewport: 'desktop', level: 'ui_defect', target: b.url, page: b.from, confirmed: b.confirmed,
-    detail: `"${b.text || '(글자 없음)'}" 링크 → ${new URL(b.url).pathname}${new URL(b.url).search} 가 ${b.status}` });
+    detail: `"${b.text || '(글자 없음)'}" 링크 → ${new URL(b.url).pathname}${new URL(b.url).search}${hashRoute(new URL(b.url))} 가 ${b.status}` });
   // 실행 중 행동 뒤 화면 점검: 시작 화면에 없던 문제가 그 행동 뒤에 두 번 다 나온 것(확인됨). 같은 페이지·같은 대상은 한 번만 센다.
   for (const r of results.scenarios) for (const a of r.audits ?? []) {
     const s = scenarioOf.get(r.id);
@@ -505,6 +506,7 @@ const AUDIT_MEANING: Record<AuditFinding['kind'], string> = {
   'horizontal-overflow': '화면보다 넓은 내용이 있어 페이지가 가로로 밀린다.',
   'low-contrast-text': '글자색과 배경색이 거의 같아 읽을 수 없다(대비 2:1 미만, WCAG 계산식).',
   'invisible-control': '투명해서 보이지 않는데 그 자리를 누르면 동작한다(마우스를 올려도 나타나지 않음).',
+  'unrendered-value': '화면 글자나 링크 주소에 undefined·NaN·[object Object]·{{이름}} 같은 프로그램 값이 그대로 나온다(데이터를 못 받았거나 화면에 채우지 못함).',
   'clipped-content': '좁은 화면에서 작은 스크롤 영역 아래로 조작 요소가 잘려, 안을 스크롤해야 있는 줄 안다(터치 화면은 스크롤 막대가 잘 안 보임).',
   'broken-link': '같은 사이트 링크를 따라가면 없는 페이지(404)나 서버 오류(5xx)가 나온다. 두 번 요청해 같았던 것만 센다.',
 };
@@ -527,7 +529,7 @@ export function renderHtml(rep: Report, dir: string): string {
     ? `<img src="data:image/png;base64,${readFileSync(join(dir, path)).toString('base64')}" alt="${esc(alt)}">` : '';
   const shot = (x: ReportItem) => { const png = x.evidence.find(e => e.endsWith('.png') && !e.includes('.before.')); return png ? img(png, `${x.title} 화면`) : ''; };
   const badge = (level: SystemLevel) => `<span class="badge ${level}">${esc(LEVEL_TEXT[level])}</span>`;
-  const host = (u: string) => { try { const x = new URL(u); return x.pathname + x.search || '/'; } catch { return u; } };
+  const host = (u: string) => { try { const x = new URL(u); return x.pathname + x.search + hashRoute(x) || '/'; } catch { return u; } };
   const pageList = (pages: string[], max = 6) => `${pages.slice(0, max).map(p => esc(host(p))).join(', ')}${pages.length > max ? ` 외 ${pages.length - max}곳` : ''}`;
   const r = rep.run;
 

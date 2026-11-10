@@ -195,6 +195,19 @@ test('그룹 고정: 중첩 목록의 하위 항목이 섞이면 거부한다', 
   assert.ok(!r.ok, JSON.stringify(r));
 });
 
+test('그룹 고정: 이름 있는 상위 영역이 없는 카드 링크는 같은 상세 주소 앞부분으로 묶고, 주소가 제각각인 메뉴 링크는 거부한다', async () => {
+  const list = '<nav><a href="#/">홈</a><a href="#/contact">연락</a></nav><div><div><a href="#/product/1">펜치 $14</a><a href="#/product/2">망치 $12</a><a href="#/product/13">톱 $9</a></div></div>';
+  const p = await page(list);
+  const snap = await snapshot(p);
+  const card = await resolveGroup(p, refs(snap, '- link "펜치')[0]);
+  assert.ok(card.ok && card.target.hrefPrefix === '#/product/' && (await toLocator(p, card.target).count()) === 3, JSON.stringify(card));
+  const menu = await resolveGroup(p, refs(snap, '- link "연락')[0]);
+  // 목록 밖에 같은 모양 링크(추천 상품)가 있으면 섞이므로 거부한다.
+  const mixed = await page(list + '<a href="#/product/9">추천 상품</a>');
+  assert.ok(!(await resolveGroup(mixed, refs(await snapshot(mixed), '- link "펜치')[0])).ok);
+  assert.ok(!menu.ok, JSON.stringify(menu));
+});
+
 test('클릭할 수 있는 링크와 콜론이 든 이름(YAML에서 따옴표로 감싸지는 줄)도 고정한다', async () => {
   const p = await page('<nav><a href="/products">Shop: All</a></nav>');
   const snap = await snapshot(p);
@@ -472,6 +485,20 @@ test('품질·사용성 점검: ARIA 없는 모달의 보이는 배경 덮개 �
   assert.ok((await covered(base + '<div style="position:fixed;top:30%;left:20%;width:60%;padding:20px;background:#fff;z-index:1"><p>안내</p><button>창 닫기</button></div><div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2"><p style="position:absolute;top:0;left:0;margin:0;background:#fff">공지</p></div>')).includes('button "창 닫기"'), '모달 창의 버튼은 덮개 아래에 깔려도 결함이다');
   // 창이 덮개 안에 있는 모양도 모달이다.
   assert.deepEqual(await covered(base + '<div style="position:fixed;inset:0;background:rgba(0,0,0,.5)"><div style="margin:20% auto;width:50%;background:#fff"><p>공지</p><button>확인</button></div></div>'), [], '덮개 안의 창: 뒤의 버튼은 가림이 아니다');
+  // 화면 아래 고정 버튼(채팅 등): 스크롤로 비켜 갈 수 있으면 누를 수 있고, 페이지가 짧아 비켜 갈 수 없으면 결함이다.
+  const chat = '<div style="position:fixed;right:0;bottom:0;width:300px;height:80px;background:#08f"><button>채팅</button></div>';
+  const low = '<div style="height:670px"></div><button style="float:right;width:250px">보내기</button>';
+  assert.deepEqual(await covered(low + '<div style="height:1500px"></div>' + chat), [], '스크롤하면 고정 버튼 위로 올라온다');
+  assert.deepEqual(await covered(low + chat), ['button "보내기"'], '짧은 페이지에서는 비켜 갈 수 없다');
+  assert.deepEqual(await covered('<div style="position:fixed;top:0;left:0;right:0;height:60px;background:#fff">머리</div><button style="margin-top:10px">맨 위 버튼</button><div style="height:2000px"></div>'),
+    ['button "맨 위 버튼"'], '페이지 맨 위 요소를 가리는 머리 띠는 스크롤로 비켜 갈 수 없다');
+});
+
+test('품질·사용성 점검: 자식 링크로 이름을 얻는 메뉴 항목은 이름 없음이 아니고, 글자 없는 아이콘 메뉴 항목은 이름 없음이다', async () => {
+  const p = await page('<ul role="menubar" aria-label="주 메뉴"><li role="menuitem"><a href="/a">Home</a></li><li role="menuitem"><a href="/b"><img src="data:," alt=""></a></li></ul>');
+  const f = (await auditPage(p, 'desktop')).filter(x => x.kind === 'unnamed-control').map(x => x.detail);
+  await p.close();
+  assert.deepEqual(f, ['menuitem ("주 메뉴" 안)'], 'Home 메뉴 항목은 세지 않아 1개다');
 });
 
 test('pressKey: 이동 단축키만 goBack·goForward로, 상속 속성 이름·일반 키는 키 입력으로 보낸다', async () => {
@@ -480,4 +507,33 @@ test('pressKey: 이동 단축키만 goBack·goForward로, 상속 속성 이름·
     goBack: async () => { log.push('back'); return null; }, goForward: async () => { log.push('forward'); return null; } } as never;
   for (const k of ['Alt+ArrowLeft', 'Meta+]', 'Enter', 'constructor', 'toString', '__proto__']) await pressKey(page, k, 1000);
   assert.deepEqual(log, ['back', 'forward', 'key Enter', 'key constructor', 'key toString', 'key __proto__']);
+});
+
+test('품질·사용성 점검: 화면 글자·같은 사이트 링크 주소에 채워지지 않은 값을 찾고, 코드·입력칸·사람 이름·외부 링크는 빼며 모바일에서는 다시 세지 않는다', async () => {
+  const p = await browser!.newPage();
+  const html = '<p>가격: NaN원</p><p>Nan Goldin</p><p>C 언어 명세에서 이런 코드는 undefined behavior 로 분류되며 컴파일러마다 결과가 다르다.</p><a href="/category/undefined">공구</a><a href="https://other.test/x/undefined">밖</a>'
+    + '<code>undefined</code><input value="undefined"><p>안녕하세요 {{ user.name }}</p><a href="/p?id=null">상품</a><a href="/nullable">정상</a><p hidden>undefined</p><span>undefined</span>';
+  await p.route('**/*', r => r.fulfill({ contentType: 'text/html; charset=utf-8', body: html }));
+  await p.goto('http://app.test/');
+  const f = (await auditPage(p, 'desktop')).filter(x => x.kind === 'unrendered-value');
+  assert.equal(f.length, 1);
+  assert.match(f[0].detail, /^채워지지 않은 값 5곳, 예: p "가격: NaN원" 글자에 "NaN", p "안녕하세요 \{\{ user.name \}\}" 글자에 "\{\{ user.name \}\}", span "undefined" 글자에 "undefined"$/, '글자 3곳 + 링크 2곳(/category/undefined, ?id=null)');
+  assert.ok(!/Goldin|behavior/.test(f[0].detail), '사람 이름 Nan, 긴 글 속 낱말은 빼야 한다');
+  await p.setViewportSize(MOBILE);
+  assert.deepEqual((await auditPage(p, 'mobile')).filter(x => x.kind === 'unrendered-value'), []);
+  await p.close();
+});
+
+test('anchor 고정: 라벨이 페이지 주 제목(h1)이면 글자 대신 주 제목으로 고정해, 제목이 다른 같은 템플릿 페이지에서도 같은 버튼을 찾는다', async () => {
+  const body = (title: string) => `<main><div><h1>${title}</h1><p>설명</p><div><button aria-label="">−</button><input type="number" value="1"><button>+</button></div></div><aside><h2>관련 상품</h2><a href="/p/9">톱</a></aside></main>`;
+  const p = await page(body('펜치'));
+  // 숫자 입력칸은 이름이 없어 라벨 영역으로 고정된다. 가까운 라벨은 주 제목뿐이다.
+  const spin = refs(await snapshot(p), '- spinbutton')[0];
+  const r = await resolveRef(p, spin);
+  assert.ok(r.ok && r.target.anchor === '^펜치$' && r.target.anchorTitle === true, JSON.stringify(r));
+  if (!r.ok) return;
+  await p.setContent(body('망치'));
+  assert.equal(await toLocator(p, r.target).count(), 1, '제목이 다른 페이지에서도 같은 영역의 입력칸을 찾는다');
+  assert.equal(await shapeChanged(p, r.target), false);
+  await p.close();
 });

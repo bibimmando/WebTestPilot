@@ -1,7 +1,7 @@
 // ① 사이트 지도 (AI 없음). 시작 URL에서 같은 origin 링크를 GET으로만 따라가며 페이지를 모으고, URL 모양으로 템플릿을 묶는다.
 // 템플릿은 대화를 나누고 보고서의 범위를 표시하는 단위다. "사이트 전체"라고 주장하지 않도록 방문하지 못한 링크도 남긴다.
 import type { Page } from 'playwright';
-import { auditPage, settle, BROKEN, MOBILE, type AuditFinding, type Policy } from './browser.ts';
+import { auditPage, settle, BROKEN, hashRoute, MOBILE, type AuditFinding, type Policy } from './browser.ts';
 
 export type Template = { key: string; pages: string[] };
 /**
@@ -15,8 +15,8 @@ export type SiteMap = { templates: Template[]; visited: string[]; unvisited: str
   broken?: { url: string; status: number; from: string; text: string; confirmed: boolean }[] };
 
 
-/** 쿼리·hash를 뺀 경로. 같은 경로의 다른 쿼리(정렬·필터)는 같은 페이지 종류로 본다. */
-export const pathOf = (url: string) => { const u = new URL(url); return u.origin + (u.pathname.replace(/\/+$/, '') || '/'); };
+/** 쿼리·hash를 뺀 경로. 같은 경로의 다른 쿼리(정렬·필터)는 같은 페이지 종류로 본다. hash 라우팅이면 hash 안 경로가 페이지 경로다. */
+export const pathOf = (url: string) => { const u = new URL(url); return u.origin + (u.pathname.replace(/\/+$/, '') || '/') + hashRoute(u).split('?')[0].replace(/\/+$/, '').replace(/^#!?$/, ''); };
 
 // 식별자처럼 보이는 경로 조각: 숫자를 담거나, 인코딩·비ASCII 글자(글 제목 slug)이거나, 아주 긴 조각.
 const idLike = (s: string) => /\d|%[0-9a-f]{2}|[^\x00-\x7f]/i.test(s) || s.length > 40;
@@ -31,9 +31,11 @@ const idLike = (s: string) => /\d|%[0-9a-f]{2}|[^\x00-\x7f]/i.test(s) || s.lengt
  */
 export function groupTemplates(urls: string[]): Template[] {
   const shapes = new Map(urls.map(u => {
-    const { origin, pathname } = new URL(pathOf(u));
-    const segs = pathname.split('/').slice(1);
-    return [u, { origin, segs: segs.map((s, i) => i > 0 && idLike(s) ? ':x' : s) }] as const;
+    const { origin } = new URL(u);
+    // hash 라우팅이면 hash 안 경로로 묶는다(앞 경로가 /이면 생략해 첫 조각 규칙이 라우트 첫 조각에 적용되게 한다).
+    const full = pathOf(u).slice(origin.length), route = full.replace(/^\/#!?(?=\/)/, '');
+    const segs = route.split('/').slice(1);
+    return [u, { origin: origin + full.slice(0, full.length - route.length), segs: segs.map((s, i) => i > 0 && idLike(s) ? ':x' : s) }] as const;
   }));
   const all = [...shapes.values()];
   // 뒤에서부터 위치마다: 그 위치만 빼고 같은 경로들이 그 위치에서 둘 이상 다르면 :x로 묶는다(그 위치는 비교에서 빠지므로 바꿔도 다른 묶음에 영향 없음).
@@ -58,7 +60,7 @@ export function groupTemplates(urls: string[]): Template[] {
  * 쓰기 요청은 컨텍스트 정책이 막는다. 방문 수 한도를 넘긴 링크는 unvisited로 남긴다.
  */
 export async function crawl(page: Page, startUrl: string, policy: Policy, o: { maxPages: number; perTemplate: number; timeoutMs: number; audit?: boolean }): Promise<SiteMap> {
-  const clean = (u: string) => { const x = new URL(u); x.hash = ''; return x.href; };
+  const clean = (u: string) => { const x = new URL(u); x.hash = /^#!?\/?$/.test(x.hash) ? '' : hashRoute(x); return x.href; };
   const queue = [clean(startUrl)];
   const known = new Set(queue);
   const visited: string[] = [];

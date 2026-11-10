@@ -178,6 +178,10 @@ test('비교 규칙: 숫자 비교는 첫 숫자로, 목록 조건은 빈 목록
   assert.equal(sortKeys('["가","나"]', ''), undefined, '기준이 없으면 판정하지 않는다');
   assert.ok(!compareValues('sorted_asc', '["가 5","나 5"]', 'number') && !compareValues('sorted_desc', '["가 5","나 5"]', 'number'), '기준 값이 모두 같으면 정렬을 확인한 것이 아니다');
   assert.deepEqual(sortKeys('["가 · 조회 3","나 · 조회 1"]', 'number'), [3, 1]);
+  // 상품 카드: 이름 속 숫자(20V)와 두 번 나온 같은 가격 → 통화 기호가 붙은 한 값이 기준. 통화 값이 둘 이상(정가·할인가)이면 특정하지 않는다.
+  assert.deepEqual(sortKeys('["Drill 20V CO₂ $125.23 Drill 20V $125.23","Saw $46.50 Saw $46.50"]', 'number'), [125.23, 46.5]);
+  assert.deepEqual(sortKeys('["가방 12,000원","모자 9,500원"]', 'number'), [12000, 9500]);
+  assert.equal(sortKeys('["Drill 20V $125 $99","Saw $46"]', 'number'), undefined, '정가·할인가처럼 통화 값이 둘이면 기준을 특정할 수 없다');
   assert.ok(compareValues('same_number', '7', '7개 상품'));
   assert.ok(!compareValues('same_number', '3', '7개 상품'));
   assert.ok(!compareValues('same_number', '없음', '7개 상품'));

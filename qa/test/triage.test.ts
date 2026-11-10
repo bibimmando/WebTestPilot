@@ -257,6 +257,9 @@ test('Q22 제한: 결정적 관계 규칙 위반만 확신 높음, 다른 일반
   assert.equal(systemVerdict(p, v('S1.C9')).level, 'bug_medium');
   assert.equal(systemVerdict(p, v('S1.C10')).level, 'bug_medium', '같은 대상·같은 시점 재비교는 관계 비교가 아니다');
   assert.equal(systemVerdict(p, { ...v('S1.C8'), class: 'not_applicable' }).level, 'hold');
+  // 품질·사용성 묶음의 계산 규칙(철자)은 기능 버그가 아니라 UI 결함이다.
+  s.checks.push({ id: 'S1.C11', after: 'start', target: 'T1', read: 'text', op: 'contains', expected: 'Contact', source: { kind: 'inferred', rule: 'spelling', quote: '메뉴 낱말 Contact의 철자' } });
+  assert.equal(systemVerdict(p, v('S1.C11')).level, 'ui_defect');
 });
 
 test('분류: 같은 검사의 복제본은 원본 분류를 공유하고, 불일치를 먼저·원본을 복제본보다 먼저 분류한다', async () => {

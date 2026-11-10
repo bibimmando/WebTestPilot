@@ -2,7 +2,7 @@
 // 분류는 판정이 아니라 후보 상태다. 결함 후보는 최초 실행에 고정된 입력으로 한 번 재실행해 재현 여부를 별도로 남긴다.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { blockedSummary, type Policy, type Signal } from './browser.ts';
+import { blockedSummary, hashRoute, type Policy, type Signal } from './browser.ts';
 import type { Plan } from './plan.ts';
 import { ruleOf } from './rules.ts';
 import { sequence } from './generate.ts';
@@ -297,7 +297,7 @@ export function checkQuotes(input: { class: string; quotes: Quote[] }, files: Ma
 export function groupSignals(scenarios: ScenarioResult[]): Judgment['errorSignals'] {
   const out = new Map<string, Judgment['errorSignals'][number]>();
   for (const r of scenarios) for (const g of r.signals ?? []) {
-    const path = (() => { try { const u = new URL(g.url); return u.origin + u.pathname; } catch { return g.url; } })();
+    const path = (() => { try { const u = new URL(g.url); return u.origin + u.pathname + hashRoute(u).split('?')[0]; } catch { return g.url; } })();
     const key = JSON.stringify([g.kind, g.status ?? null, g.text, path]);
     if (!out.has(key)) out.set(key, { kind: g.kind, text: g.text, path, ...(g.status ? { status: g.status } : {}), ...(g.normal ? { normal: true as const } : {}), at: [] });
     out.get(key)!.at.push({ scenario: r.id, after: g.after });
@@ -473,6 +473,8 @@ export function systemVerdict(plan: Plan, v: Verdict): NonNullable<Verdict['syst
   const relation = !!ref && (c!.op === 'equals' || c!.op === 'same_number')
     && (ref.after !== c!.after || JSON.stringify(plan.targets[ref.target ?? '']?.target) !== JSON.stringify(plan.targets[c!.target ?? '']?.target));
   if (ruleOf(c?.source.rule)?.deterministic && relation) return { level: 'bug_high', reason: `결정적 관계 비교(규칙 ${c!.source.rule}) 위반, 재현됨` };
+  // 품질·사용성 묶음(3)의 계산 규칙(철자)은 기능 결함이 아니라 화면 결함이다.
+  if (ruleOf(c?.source.rule)?.group === 3) return { level: 'ui_defect', reason: `일반 규칙 ${c!.source.rule}(품질·사용성) 위반, 재현됨` };
   return { level: 'bug_medium', reason: `일반 규칙 ${c?.source.rule ?? '?'} 위반, 재현됨 (일반 규칙 상한)` };
 }
 
