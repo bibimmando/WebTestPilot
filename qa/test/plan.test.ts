@@ -1,4 +1,4 @@
-import { groupTemplates } from '../src/sitemap.ts';
+import { groupTemplates, pathOf, splitByShape, urlScheme, type PageInfo } from '../src/sitemap.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validate, freeze, mergePlans, compareValues, numberIn, expectedFrom, sortKeys, startTargetsElsewhere, combineDraft, scenariosWithErrors, type Draft, type Pinned, type Requirement } from '../src/plan.ts';
@@ -263,6 +263,59 @@ test('템플릿 묶기: 같은 상위 경로의 여러 상세는 한 템플릿, 
     `${o}/c/dev/submit`, `${o}/c/games/submit`, `${o}/c/dev`, `${o}/c/games`, `${o}/u/kim`, `${o}/u/lee`, `${o}/policies/terms`, `${o}/policies/privacy`, `${o}/all`, `${o}/popular`]);
   assert.deepEqual(deep.map(x => [x.key.replace(o, ''), x.pages.length]),
     [['/c/:x/comments/:x/:x', 3], ['/c/:x/submit', 2], ['/c/:x', 2], ['/u/:x', 2], ['/policies/:x', 2], ['/all', 1], ['/popular', 1]]);
+});
+
+test('주소 방식 판별: hash·쿼리 라우팅·언어 조각을 먼저 알아보고 그 방식으로 페이지 종류를 묶는다', () => {
+  const o = 'http://x.test';
+  const keys = (urls: string[]) => groupTemplates(urls).map(x => [x.key.replace(o, ''), x.pages.length]);
+  // hash 라우팅
+  const hash = [`${o}/#/`, `${o}/#/product/1`, `${o}/#/product/2`, `${o}/#/contact`];
+  assert.deepEqual(urlScheme(hash).routing, ['hash']);
+  assert.deepEqual(keys(hash), [['/', 1], ['/#/product/:x', 2], ['/#/contact', 1]]);
+  // 프런트 컨트롤러 + route 쿼리(종류) + product_id(식별자)
+  const ix = `${o}/index.php?route=`;
+  const q = [`${ix}common/home`, `${ix}product/category&path=20`, `${ix}product/product&product_id=40`, `${ix}product/product&product_id=41`,
+    `${ix}product/product&product_id=42&sort=p`, `${ix}information/contact`];
+  const sq = urlScheme(q);
+  assert.deepEqual([sq.routing, sq.query[`${o}/index.php`].route, sq.query[`${o}/index.php`].id], [['query'], ['route'], ['product_id']]);
+  assert.deepEqual(keys(q), [['/index.php?route=common/home', 1], ['/index.php?route=product/category&path=:x', 1], ['/index.php?route=product/product&product_id=:x', 3],
+    ['/index.php?route=information/contact', 1]]);
+  assert.notEqual(pathOf(q[2], sq), pathOf(q[3], sq), '식별자가 다른 쿼리 주소는 다른 페이지');
+  assert.equal(pathOf(`${ix}product/product&product_id=42`, sq), pathOf(q[4], sq), '종류·식별자 밖의 쿼리(정렬)는 같은 페이지');
+  // 같은 상품에 분류·제조사 문맥 키가 덧붙어도 같은 종류·같은 페이지다(종류마다 거의 늘 있는 식별자 키만 화면을 정한다).
+  const ctx = [`${ix}common/home`, `${ix}product/product&product_id=40`, `${ix}product/product&product_id=41`, `${ix}product/product&product_id=42`,
+    `${ix}product/product&product_id=43`, `${ix}product/product&product_id=44`, `${ix}product/product&product_id=45`, `${ix}product/product&product_id=46`,
+    `${ix}product/product&product_id=47`, `${ix}product/product&product_id=40&manufacturer_id=8`, `${ix}product/product&path=20&product_id=41`,
+    `${ix}product/category&path=20`, `${ix}product/category&path=18`, `${ix}product/category&path=25`];
+  const sc = urlScheme(ctx);
+  assert.deepEqual(keys(ctx).map(([k]) => k), ['/index.php?route=common/home', '/index.php?route=product/product&product_id=:x', '/index.php?route=product/category&path=:x']);
+  assert.equal(pathOf(`${ix}product/product&product_id=40&manufacturer_id=8`, sc), pathOf(`${ix}product/product&product_id=40`, sc));
+  // 목록 주소와 상세 주소가 같은 route이고 식별자 값이 둘뿐이어도, 식별자 키가 있는지 없는지로 목록·상세를 가른다.
+  const brands = [`${o}/index.php?controller=index`, `${o}/index.php?controller=manufacturer`, `${o}/index.php?id_manufacturer=1&controller=manufacturer`,
+    `${o}/index.php?id_manufacturer=2&controller=manufacturer`, `${o}/index.php?controller=cart`];
+  assert.deepEqual(keys(brands).map(([k, n]) => [k, n]), [['/index.php?controller=index', 1], ['/index.php?controller=manufacturer', 1],
+    ['/index.php?controller=manufacturer&id_manufacturer=:x', 2], ['/index.php?controller=cart', 1]]);
+  // 값 안에 주소가 잘못 붙은 링크(?controller=authentication?back=https://…)는 돌아갈 주소가 달라도 한 종류다.
+  const auth = (back: string) => `${o}/index.php?controller=authentication?back=${o}/index.php?controller=${back}`;
+  assert.deepEqual(keys([...brands, auth('cart'), auth('manufacturer'), auth('index')]).at(-1), ['/index.php?controller=authentication', 3]);
+  // 글 번호만 쿼리로 가리키는 사이트(/?p=12)
+  assert.deepEqual(keys([`${o}/`, `${o}/?p=1`, `${o}/?p=2`, `${o}/?p=3`]), [['/', 1], ['/?p=:x', 3]]);
+  // 언어 조각: /en 다음 조각을 첫 조각으로 본다(전에는 /en/:x로 다 묶였다)
+  const loc = [`${o}/en`, `${o}/en/products`, `${o}/en/cart`, `${o}/en/product/1`, `${o}/en/product/2`];
+  assert.ok(urlScheme(loc).locale);
+  assert.deepEqual(keys(loc), [['/en/', 1], ['/en/products', 1], ['/en/cart', 1], ['/en/product/:x', 2]]);
+  // 일반 경로 사이트의 쿼리(정렬·쪽 번호)는 종류를 나누지 않는다
+  assert.deepEqual(keys([`${o}/products`, `${o}/products?page=2`, `${o}/products?page=3`, `${o}/products?page=4`]), [['/products', 4]]);
+});
+
+test('화면 골격으로 종류 나누기: 이름이 다른 형제 페이지의 골격이 다르면 떼고, 식별자만 다른 페이지는 골격이 달라도 둔다', () => {
+  const o = 'http://x.test';
+  const info = (shape: string): PageInfo => ({ links: [], search: false, shape, api: [], forms: [] });
+  const t = splitByShape([{ key: `${o}/web/:x`, pages: [`${o}/web/form.html`, `${o}/web/index.html`, `${o}/web/other.html`] },
+    { key: `${o}/product/:x`, pages: [`${o}/product/1`, `${o}/product/2`] }],
+    { [`${o}/web/form.html`]: info('form:1'), [`${o}/web/index.html`]: info('form:0'), [`${o}/product/1`]: info('field:0'), [`${o}/product/2`]: info('field:1-4') });
+  assert.deepEqual(t.map(x => [x.key.replace(o, ''), x.pages.map(p => p.replace(o, ''))]),
+    [['/web/index.html', ['/web/index.html']], ['/web/:x', ['/web/form.html', '/web/other.html']], ['/product/:x', ['/product/1', '/product/2']]]);
 });
 
 test('계획 합치기: 어느 대화도 다루지 않은 요구사항은 미계획으로 남기고, 다른 대화가 다룬 요구사항의 미계획은 지운다', () => {

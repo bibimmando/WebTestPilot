@@ -2,6 +2,7 @@
 // 모든 모델 호출이 하나의 비용 장부(--budget)를 공유하고, 한도를 넘을 호출은 보내지 않는다.
 //
 //   node src/cli.ts --url <시작 URL> [--requirements <요구사항.json>] [--app <앱 설정.json>] [--budget 10] [--name maison]
+import { siteStructure } from './structure.ts';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +38,12 @@ const { values: a } = parseArgs({ options: {
   'pages-per-template': { type: 'string', default: '3' },
   // 동시에 여는 탐색·분류 대화 수와 동시에 실행할 시나리오 수. 순차와 판정이 같은지 확인하기 전까지 기본 1
   concurrency: { type: 'string', default: '1' }, workers: { type: 'string', default: '1' },
+  // 탐색 대화 단위: template(페이지 종류마다, 기본) 또는 cluster(사이트 구조의 묶음마다, A/B 확인 전)
+  sessions: { type: 'string', default: 'template' },
+  // 사이트 구조 AI 검토(--triage-model로): 애매한 페이지 종류 묶기·중심 노드를 AI가 한 번 판정. A/B 확인 전까지 기본 끔
+  'ai-structure': { type: 'boolean', default: false },
 } });
+if (!['template', 'cluster'].includes(a.sessions!)) { console.error(`--sessions는 template·cluster 중 하나: ${a.sessions}`); process.exit(2); }
 if (a['plan-effort'] !== undefined && !['low', 'medium', 'high'].includes(a['plan-effort'])) {
   console.error(`--plan-effort는 low·medium·high 중 하나: ${a['plan-effort']}`);
   process.exit(2);
@@ -107,11 +113,14 @@ if (app.login) {
 }
 try {
   const e = await explore({ browser, policy, startUrl: a.url, requirements, reviewEarly: a['review-early'], ...(a['plan-effort'] ? { effort: a['plan-effort'] as 'low' | 'medium' | 'high' } : {}), send, model: a['plan-model']!, budget, maxTurns: Number(a['max-turns']),
-    maxPages: Number(a['max-pages']), maxTemplates: Number(a['max-templates']), turnsPerTemplate: Number(a['turns-per-template']), pagesPerTemplate: Number(a['pages-per-template']), concurrency: Number(a.concurrency),
-    keepUsd: budget.limitUsd * 0.3, deadline: t0 + Number(a['explore-minutes']) * 60_000, storageState });
+    maxPages: Number(a['max-pages']), maxTemplates: Number(a['max-templates']), turnsPerTemplate: Number(a['turns-per-template']), pagesPerTemplate: Number(a['pages-per-template']), concurrency: Number(a.concurrency), sessions: a.sessions as 'template' | 'cluster', ...(a['ai-structure'] ? { structureModel: a['triage-model'] } : {}),
+    // 분류·재현·제목 몫. 30%를 남겼더니 실제 분류는 $0.09~0.35만 써(Maison·Adminator·Agora 11/14, 예산 $6) 약 $1.5가 매번 남고 탐색은 7~8종에서 멈췄다.
+    // 15%(최소 $0.5)로 줄인다. 분류가 모자라면 남은 항목은 판정 못 함으로 남는다(오류가 아니다).
+    keepUsd: Math.max(0.5, budget.limitUsd * 0.15), deadline: t0 + Number(a['explore-minutes']) * 60_000, storageState });
   timing.explore = Date.now() - t0;
   save('explore.json', { stop: e.stop, detail: e.detail, blocked: e.blocked, violations: e.violations, sitemap: e.sitemap, conversations: e.conversations,
     complete: e.complete, exploredUrls: e.exploredUrls, turns: e.turns });
+  if (e.sitemap) save('site-structure.json', siteStructure(e.sitemap, new URL(a.url).href));
   summary = { explore: { stop: e.stop, detail: e.detail, turns: e.turns.length, spentUsd: budget.spent, conversations: e.conversations,
     templates: e.sitemap?.templates.map(t => ({ key: t.key, pages: t.pages.length })), unvisited: e.sitemap?.unvisited.length } };
   if (!e.plan) throw new Error(`계획 없음: ${e.stop} ${e.detail ?? ''}`);

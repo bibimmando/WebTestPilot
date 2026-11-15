@@ -273,6 +273,13 @@ test('reconcile·1차 분류: 관측 참조는 정상적으로 읽은 값만 쓰
   const startFailed = reconcile(p, [e('start', 'S1', { status: 'failed' }), policyOk('S1')]);
   const v = preclassify({ ...p, scenarios: [s] }, { runDir: '', exitCode: 1, problems: [], requirements: [], scenarios: [startFailed.scenarios[0]] });
   assert.deepEqual(v.filter(x => x.kind === 'check').map(x => x.class), ['not_run', 'not_run', 'not_run'], JSON.stringify(v));
+  assert.equal(v.find(x => x.kind === 'start')?.class, 'needs_triage', '원인을 모르는 시작 실패는 AI 분류로 보낸다');
+  // 실행 쪽 네트워크가 끊겨 시작 페이지를 못 열었으면 AI 없이 환경 실패(판정 못 함). 대상 서버의 연결 거부는 앱 쪽일 수 있어 그대로 분류로 보낸다.
+  const withSignal = (text: string) => preclassify({ ...p, scenarios: [s] }, { runDir: '', exitCode: 1, problems: [], requirements: [],
+    scenarios: [{ ...startFailed.scenarios[0], signals: [{ kind: 'requestfailed', after: 'start', url: 'http://x/', text }] }] }).find(x => x.kind === 'start')!;
+  const net = withSignal('GET net::ERR_INTERNET_DISCONNECTED');
+  assert.deepEqual([net.class, systemVerdict(p, net).level, systemVerdict(p, net).reason], ['environment_failure', 'incomplete', '실행 환경 네트워크 끊김(GET net::ERR_INTERNET_DISCONNECTED)']);
+  assert.equal(withSignal('GET net::ERR_CONNECTION_REFUSED').class, 'needs_triage');
 });
 
 test('C4: 같은 템플릿 다른 페이지에서 계획을 실행하고, 대상이 없으면 결함이 아니라 적용 불가로 남긴다', async () => {

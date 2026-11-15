@@ -30,6 +30,13 @@ const tier = (p: Price, promptTokens: number): Rate => (p.over100k && promptToke
 
 export class BudgetError extends Error {}
 
+/** 요청(또는 그 일부)의 입력 토큰 상한: UTF-8 바이트 수. 이미지는 base64 길이가 아니라 장당 토큰 상한으로 센다(바이트로 세면 수십 배 과대 예약된다). */
+export function upperTokens(x: unknown): number {
+  let images = 0;
+  const text = JSON.stringify(x, function (this: { type?: string }, k, v) { return k === 'data' && this?.type === 'base64' ? (images++, '') : v; });
+  return Buffer.byteLength(text, 'utf8') + images * IMAGE_TOKENS;
+}
+
 /** 실행 전체가 공유하는 비용 장부. 예약액은 정산 전까지 점유하고, 정산은 실제 usage로 한다. */
 export class Budget {
   spent = 0;
@@ -42,13 +49,12 @@ export class Budget {
   private waiters: (() => void)[] = [];
   constructor(limitUsd: number) { this.limitUsd = limitUsd; }
 
-  /** 요청의 최악 비용(입력은 UTF-8 바이트를 토큰 상한으로, 5분 캐시 쓰기 1.25배, 출력은 max_tokens)을 점유한다. 한도를 넘으면 BudgetError. */
-  reserve(req: Anthropic.MessageCreateParamsNonStreaming): number {
+  /**
+   * 요청의 최악 비용(입력 토큰 상한 × 5분 캐시 쓰기 1.25배, 출력은 max_tokens)을 점유한다. 한도를 넘으면 BudgetError.
+   * 입력 토큰 상한은 UTF-8 바이트다. 호출한 쪽이 더 좁은 상한(inputTokens, 앞 응답의 실제 토큰 + 그 뒤 더한 내용의 바이트)을 알면 그것을 쓴다.
+   */
+  reserve(req: Anthropic.MessageCreateParamsNonStreaming, inputTokens = upperTokens(req)): number {
     if (!PRICES[req.model]) throw new BudgetError(`가격을 모르는 모델: ${req.model}`);
-    // 이미지는 base64 길이가 아니라 장당 토큰 상한으로 센다(바이트로 세면 수십 배 과대 예약된다).
-    let images = 0;
-    const text = JSON.stringify(req, function (this: { type?: string }, k, v) { return k === 'data' && this?.type === 'base64' ? (images++, '') : v; });
-    const inputTokens = Buffer.byteLength(text, 'utf8') + images * IMAGE_TOKENS;
     const price = tier(PRICES[req.model], inputTokens);
     const worst = (inputTokens * 1.25 * price.input + req.max_tokens * price.output) / 1e6;
     const left = this.limitUsd - this.spent - this.held - this.floorUsd;
@@ -62,9 +68,9 @@ export class Budget {
    * 동시에 도는 다른 호출의 예약 때문에 모자라면 그 호출이 끝날 때까지 기다렸다가 다시 예약한다.
    * 기다리는 호출이 없으면(순차 실행·실제 소진) reserve처럼 바로 BudgetError다.
    */
-  async reserveWhenFree(req: Anthropic.MessageCreateParamsNonStreaming): Promise<number> {
+  async reserveWhenFree(req: Anthropic.MessageCreateParamsNonStreaming, inputTokens?: number): Promise<number> {
     for (;;) {
-      try { return this.reserve(req); } catch (e) {
+      try { return this.reserve(req, inputTokens); } catch (e) {
         if (!(e instanceof BudgetError) || this.inflight === 0 || !PRICES[req.model]) throw e;
         await new Promise<void>(res => this.waiters.push(res));
       }
@@ -108,22 +114,31 @@ export async function runAgent(o: {
   budget: Budget; maxTurns: number; maxTokens?: number; effort?: 'low' | 'medium' | 'high';
   /** 글로만 답했거나 글이 잘렸을 때 한 번 제출을 다시 요청한다(제출 도구 하나뿐인 대화용) */
   nudge?: boolean;
+  /** 일시적 실패 뒤 다시 보낼 때까지 기다리는 시간(테스트용으로 줄인다) */
+  retryDelaysMs?: number[];
 }): Promise<AgentResult> {
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: o.user }];
   const turns: AgentResult['turns'] = [];
   const byName = new Map(o.tools.map(t => [t.def.name, t]));
   let nudged = false;
+  /** 앞 응답까지의 실제 토큰(입력+출력)과 그때의 메시지 수. 다음 예약의 입력 상한을 좁히는 데 쓴다 */
+  let known: { tokens: number; messages: number } | undefined;
   const end = (stop: AgentResult['stop'], extra: Partial<AgentResult> = {}): AgentResult => ({ stop, messages, turns, ...extra });
 
   for (let i = 0; i < o.maxTurns; i++) {
     const request: Anthropic.MessageCreateParamsNonStreaming = {
-      model: o.model, max_tokens: o.maxTokens ?? 16000, system: o.system,
+      // 도구 정의·시스템 프롬프트는 대화마다 같다. 그 끝에 캐시 지점을 따로 두어 다음 대화(페이지 종류별 탐색, 분류)가 읽기 가격으로 다시 쓴다.
+      // 대화 끝 지점(cache_control)만 있으면 새 대화의 첫 호출은 이 공통 앞부분을 매번 새로 쓴다(toolshop 11/10: 대화 7개 모두 첫 호출 캐시 읽기 0, 약 1.2만 토큰 쓰기).
+      model: o.model, max_tokens: o.maxTokens ?? 16000, system: [{ type: 'text', text: o.system, cache_control: { type: 'ephemeral' } }],
       tools: o.tools.map(t => t.def), messages: [...messages],
       output_config: { effort: o.effort ?? 'medium' },
       cache_control: { type: 'ephemeral' },
     };
+    // 둘째 호출부터 입력 상한 = 앞 응답의 실제 입력+출력 토큰 + 그 뒤에 더한 메시지의 바이트. 전체를 바이트로 세면 토큰의 2~3배라
+    // 실제 $0.02~0.05인 호출에 $0.8~1.1을 예약해 예산 $6 중 $3.6만 쓰고 남은 페이지 종류를 시작하지 못했다(Maison 11/13 A·A2·B2).
+    const hint = known ? known.tokens + upperTokens(messages.slice(known.messages)) : undefined;
     let reserved: number;
-    try { reserved = await o.budget.reserveWhenFree(request); } catch (e) {
+    try { reserved = await o.budget.reserveWhenFree(request, hint); } catch (e) {
       if (e instanceof BudgetError) return end('budget', { detail: e.message });
       throw e;
     }
@@ -131,7 +146,7 @@ export async function runAgent(o: {
     turns.push(turn);
     let response: Anthropic.Message;
     try {
-      response = await o.send(request);
+      response = await sendRetrying(o.send, request, o.retryDelaysMs);
       turn.response = response;
       turn.cost = o.budget.charge(response.model, response.usage, reserved);
     } catch (e) {
@@ -142,6 +157,8 @@ export async function runAgent(o: {
     if (response.model !== request.model) return end('error', { detail: `요청과 다른 모델이 응답함: ${response.model}` });
     // thinking 블록을 포함한 content를 그대로 되돌려야 다음 호출이 유효하다.
     messages.push({ role: 'assistant', content: response.content });
+    const u = response.usage;
+    known = { tokens: u.input_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + u.output_tokens, messages: messages.length };
 
     if (response.stop_reason === 'pause_turn') continue;
     // 제출 도구만 쓰는 짧은 대화: 판단을 글로만 쓰고 끝내거나(end_turn) 글이 출력 한도에서 잘리면(max_tokens) 한 번만 도구로 제출하라고 다시 요청한다.
@@ -187,6 +204,22 @@ export async function runAgent(o: {
     messages.push({ role: 'user', content: [...results, ...notice] });
   }
   return end('max_turns');
+}
+
+/** 잠깐 끊긴 네트워크·과부하처럼 다시 보내면 될 수 있는 실패. 요청 내용 문제(400 등)는 다시 보내지 않는다. */
+const TRANSIENT = /Connection error|ECONNRESET|ETIMEDOUT|ENETUNREACH|ENOTFOUND|EAI_AGAIN|socket hang up|fetch failed|overloaded|\b(429|500|502|503|504|529)\b/i;
+/**
+ * 일시적 실패는 같은 예약으로 5초·20초·60초 뒤 다시 보낸다. SDK 기본 재시도는 몇 초뿐이라 1분 남짓 끊기면 대화가 통째로 끝났고,
+ * 실패한 호출의 예약은 청구됐을 수 있어 놓지 않으므로 남은 대화가 예산 부족으로 시작조차 못 했다(Maison·Adminator·Agora 11/14: 세 실행이 같은 3초 사이에 끊김).
+ */
+export async function sendRetrying(send: Send, request: Anthropic.MessageCreateParamsNonStreaming, delays = [5000, 20000, 60000]): Promise<Anthropic.Message> {
+  for (let i = 0; ; i++) {
+    try { return await send(request); } catch (e) {
+      const msg = `${(e as { status?: number })?.status ?? ''} ${(e as Error)?.message ?? e}`;
+      if (i >= delays.length || !TRANSIENT.test(msg)) throw e;
+      await new Promise(r => setTimeout(r, delays[i]));
+    }
+  }
 }
 
 async function runTool(tool: Tool | undefined, input: unknown, ctx: { turnsLeft: number; maxTurns: number }): Promise<ToolOutcome> {

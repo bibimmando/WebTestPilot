@@ -1,0 +1,7 @@
+<!doctype html><meta charset="utf-8"><title>메뉴 링크</title>
+<header><button id="acct" aria-haspopup="menu" aria-expanded="false">계정</button><div id="m"></div>
+<button id="go" onclick="location.href='/pressed-plain-button.html'">이동 버튼</button></header>
+<script>
+document.getElementById('acct').onclick = () => { document.getElementById('m').innerHTML = '<a href="/signup.html">회원가입</a>'; };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('m').innerHTML = ''; });
+</script>

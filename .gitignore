@@ -9,10 +9,13 @@ venv/
 !.env.example
 *.log
 .tools/
+/output/
+/archives/output/
+**/.browser-profile/
 **/benchmark-results/
 **/crawl-results/
 **/ai-results/
-/webtestpilot-crawler/generated/
+/archives/code/webtestpilot-crawler/generated/
 _opus_*_tmp.py
 auth_state.json
 storage_state.json
@@ -22,3 +25,5 @@ playwright-report/
 test-results/
 .DS_Store
 Thumbs.db
+/node_modules/
+/tools/playwright-agents/tests/generated/

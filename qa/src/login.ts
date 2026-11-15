@@ -2,7 +2,7 @@
 // 프로그램이 로그인해 브라우저 상태(쿠키·로컬 저장소)를 만들고, 탐색·실행·재현은 그 상태로 시작한다.
 // 비밀값은 환경 변수에서만 읽고 모델 입력·기록·보고서에 넣지 않는다.
 import { readFileSync } from 'node:fs';
-import type { Browser, BrowserContext } from 'playwright';
+import type { Browser, BrowserContext, Page } from 'playwright';
 import { settle, toLocator, type Policy, type Target } from './browser.ts';
 import { checkResetSpec, type ResetSpec } from './reset.ts';
 
@@ -19,8 +19,9 @@ export type LoginSpec = {
   url: string;
   /** 아이디·비밀번호 칸과 제출 버튼. 계획의 대상과 같은 데이터 모양(역할·이름 등) */
   username: Target; password: Target; submit: Target;
-  /** 성공 확인: 로그인 뒤 이 글자가 보이거나 주소에 이 문자열이 들어 있어야 한다(둘 다 주면 둘 다) */
-  success: { text?: string; urlIncludes?: string };
+  /** 성공 확인: 로그인 뒤 이 글자가 보이거나, 주소에 이 문자열이 들어 있거나, 이 대상(역할·이름)이 있어야 한다(여럿 주면 모두).
+   * target은 로그인 뒤 첫 화면이 홈이라 주소로 가를 수 없고 사용자 이름이 aria-label에만 있을 때 쓴다(Maison 8081: "계정 메뉴 (이름)" 버튼) */
+  success: { text?: string; urlIncludes?: string; target?: Target };
   /** 비밀값을 읽을 환경 변수 이름. 값 자체는 설정 파일에 쓰지 않는다 */
   env: { username: string; password: string };
 };
@@ -39,7 +40,7 @@ export function readAppConfig(path: string): AppConfig {
     const target = (t: unknown) => !!t && typeof t === 'object' && ('role' in t || 'text' in t);
     if (typeof l.url !== 'string' || !target(l.username) || !target(l.password) || !target(l.submit)) throw new Error('앱 설정: login에는 url과 username·password·submit 대상이 필요함');
     const s = l.success as LoginSpec['success'] | undefined;
-    if (!s || (!s.text && !s.urlIncludes)) throw new Error('앱 설정: login.success에 text나 urlIncludes가 필요함');
+    if (!s || (!s.text && !s.urlIncludes && !target(s.target))) throw new Error('앱 설정: login.success에 text·urlIncludes·target 중 하나가 필요함');
     const env = l.env as LoginSpec['env'] | undefined;
     if (!env || typeof env.username !== 'string' || typeof env.password !== 'string') throw new Error('앱 설정: login.env에 username·password 환경 변수 이름이 필요함');
   }
@@ -71,8 +72,7 @@ export async function login(browser: Browser, policy: Policy, spec: LoginSpec, e
     await page.waitForLoadState('load', { timeout: timeoutMs }).catch(() => {});
     await settle(page, timeoutMs);
     const deadline = Date.now() + timeoutMs;
-    const ok = async () => (!spec.success.urlIncludes || page.url().includes(spec.success.urlIncludes))
-      && (!spec.success.text || (await page.getByText(spec.success.text).count()) > 0);
+    const ok = () => succeeded(page, spec.success);
     while (!(await ok())) {
       if (Date.now() > deadline) return { ok: false, reason: `성공 확인 조건을 만족하지 않음(현재 주소 ${new URL(page.url()).pathname})` };
       await page.waitForTimeout(200);
@@ -86,7 +86,7 @@ export async function login(browser: Browser, policy: Policy, spec: LoginSpec, e
       const p = await check.newPage();
       await p.goto(landing, { timeout: timeoutMs });
       await settle(p, timeoutMs);
-      const kept = (!spec.success.urlIncludes || p.url().includes(spec.success.urlIncludes)) && (!spec.success.text || (await p.getByText(spec.success.text).count()) > 0);
+      const kept = await succeeded(p, spec.success);
       if (!kept) return { ok: false, reason: '저장한 로그인 상태로 다시 열면 로그인 상태가 아님(쿠키·저장소에 남지 않는 로그인)' };
     } finally { await check.close(); }
     return { ok: true, state };
@@ -96,4 +96,11 @@ export async function login(browser: Browser, policy: Policy, spec: LoginSpec, e
   } finally {
     await context.close();
   }
+}
+
+/** 로그인 성공 조건(주어진 것 모두). */
+async function succeeded(page: Page, s: LoginSpec['success']): Promise<boolean> {
+  return (!s.urlIncludes || page.url().includes(s.urlIncludes))
+    && (!s.text || (await page.getByText(s.text).count()) > 0)
+    && (!s.target || (await toLocator(page, s.target).count()) > 0);
 }

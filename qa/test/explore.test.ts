@@ -4,10 +4,11 @@ import { createServer, type Server } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { chromium, type Browser } from 'playwright';
 import type Anthropic from '@anthropic-ai/sdk';
-import { explore, otherPages } from '../src/explore.ts';
+import { collapseSeen, explore, otherPages, templateOrder } from '../src/explore.ts';
 import { Budget, type Send } from '../src/agent.ts';
 import { validate, type Draft } from '../src/plan.ts';
 import { crawl } from '../src/sitemap.ts';
+import { siteStructure } from '../src/structure.ts';
 import { openContext } from '../src/browser.ts';
 
 let browser: Browser | undefined;
@@ -528,6 +529,35 @@ test('여러 페이지 사이트: 사이트 지도를 만들고 페이지 종류
   assert.deepEqual(limited.conversations.map(c => [c.template.replace(origin, ''), c.stop, c.detail ?? '']).at(-1), ['/cart.html', 'not_attempted', '페이지 종류 수 한도(2)']);
   assert.equal(limited.complete, false, '시도하지 않은 페이지 종류가 있으면 완료가 아니다');
 
+  // 묶음 모드: 홈(상품 목록·장바구니로 이어지는 중심 노드)과 그 아래 종류를 같은 묶음으로, 종류마다 짧은 대화를 차례로 연다.
+  // 대화마다 묶음 구조를 받고, 뒤 대화는 앞 대화가 계획한 시나리오 제목을 받는다(겹치지 않게).
+  firsts.length = 0;
+  const grouped = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html',
+    requirements: [], send, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 20, sessions: 'cluster' });
+  assert.deepEqual(grouped.conversations.map(c => [c.template.replace(origin, ''), c.cluster?.replace(origin, ''), c.planned]),
+    [['/home.html', '/home.html', true], ['/item/:x', '/home.html', true], ['/cart.html', '/home.html', true]]);
+  assert.equal(firsts.length, 3);
+  assert.ok(firsts.every(f => /묶음\(3개 종류\)에 속합니다/.test(f) && /\/item\/:x: 대표 \S+\/item\/a\.html/.test(f)));
+  assert.ok(!/앞 대화가 이미 계획한/.test(firsts[0]) && /앞 대화가 이미 계획한 시나리오[^]*- 홈 화면 제목/.test(firsts[1]) && /- 상품 A 제목/.test(firsts[2]), firsts[2]);
+  assert.equal(grouped.complete, true);
+
+  // 구조 AI 검토(structureModel): 대화 전에 한 번 묻고, 확인된 답(상품 페이지들은 다른 기능)을 사이트 지도에 반영한 뒤 탐색한다.
+  let structureAsked = 0;
+  const withStructure: Send = async req => {
+    if (String(JSON.stringify(req.system)).includes('사이트 구조 분류')) {
+      structureAsked++;
+      return { id: 'm', type: 'message', role: 'assistant', model: req.model, stop_reason: 'tool_use', stop_sequence: null,
+        content: [{ type: 'tool_use', id: 's1', name: 'answer', input: { answers: [{ id: 'A1', decision: 'different', evidence: ['제목 "상품 A"', '제목 "상품 B"'] }] } }],
+        usage: { input_tokens: 100, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } as unknown as Anthropic.Message;
+    }
+    return send(req);
+  };
+  const reviewed = await explore({ browser: browser!, policy: { origins: [origin] }, startUrl: origin + '/home.html',
+    requirements: [], send: withStructure, model: 'claude-opus-5-5', budget: new Budget(2), maxTurns: 20, structureModel: 'claude-sonnet-5-5' });
+  assert.equal(structureAsked, 1);
+  assert.deepEqual(reviewed.sitemap!.structureReview!.questions.map(q => [q.id, q.decision, q.applied]), [['A1', 'different', true], ['C2', 'unknown', false]], '답하지 않은 질문은 판단 불가로 남고 반영하지 않는다');
+  assert.ok(reviewed.sitemap!.templates.some(t => t.key.endsWith('/item/b.html')), JSON.stringify(reviewed.sitemap!.templates.map(t => t.key)));
+
   // 동시 실행: 대화가 실제로 겹쳐 돌고, 합친 결과는 순차와 같은 순서·대상이며 S#·F#는 대화마다 다른 구간을 쓴다.
   // 각 대화의 첫 호출은 세 대화가 모두 시작할 때까지 기다린다. 순차 실행이면 기다림이 시간 초과로 끝난다.
   let arrived = 0, together = true, release = () => {};
@@ -658,6 +688,81 @@ test('사이트 지도: 같은 origin 링크가 404면 링크가 있던 페이�
   } finally { await g.context.close(); }
 });
 
+test('사이트 지도: 메뉴 버튼(aria-haspopup)을 열어야 생기는 링크도 모으고, 메뉴가 아닌 일반 버튼은 누르지 않는다', async () => {
+  const g = await openContext(browser!, { origins: [origin] });
+  try {
+    const map = await crawl(await g.context.newPage(), origin + '/menulinks.html', { origins: [origin] }, { maxPages: 5, perTemplate: 2, timeoutMs: 2000 });
+    assert.ok(map.visited.some(u => u.endsWith('/signup.html')), JSON.stringify(map.visited));
+    assert.ok(!JSON.stringify(map).includes('pressed-plain-button'), '메뉴가 아닌 이동 버튼은 누르지 않는다');
+  } finally { await g.context.close(); }
+});
+
+test('사이트 구조: 공통 메뉴 링크와 본문 링크를 나누고, 목록을 가진 종류를 중심 노드로 묶으며, 폼·API를 남긴다', async () => {
+  const g = await openContext(browser!, { origins: [origin] });
+  try {
+    const start = origin + '/st-index.html';
+    const map = await crawl(await g.context.newPage(), start, { origins: [origin] }, { maxPages: 10, perTemplate: 2, timeoutMs: 2000 });
+    const home = map.structure![start];
+    assert.ok(home.links.find(l => l.to.endsWith('/st-about.html'))!.layout && !home.links.find(l => l.to.endsWith('/st/p/1.html'))!.layout, JSON.stringify(home.links));
+    assert.deepEqual(home.api, ['GET /st/api/items']);
+    const s = siteStructure(map, start);
+    const t = (k: string) => s.templates.find(x => x.key.endsWith(k))!;
+    assert.ok(t('/st-index.html').hub && t('/st-index.html').out.some(o => o.to.endsWith('/st/p/:x') && o.list), JSON.stringify(t('/st-index.html')));
+    assert.ok(t('/st-about.html').layoutOnly && !t('/st/p/:x').layoutOnly);
+    assert.deepEqual(t('/st-join.html').forms.map(f => ({ method: f.method, submit: f.submit, fields: f.fields.map(x => `${x.type}:${x.name}:${x.required}`) })),
+      [{ method: 'POST', submit: '가입하기', fields: ['email:이메일:true', 'password:비밀번호:false'] }]);
+    assert.deepEqual(s.commonForms.map(f => f.fields.map(x => x.name)), [['검색']], '헤더 검색칸은 공통 폼으로 뺀다');
+    // form 밖 입력칸은 버튼이 있는 영역마다 따로 묶고(헤더 검색과 수량이 섞이지 않음), shadow DOM 입력도 세며, 끝나는 애니메이션 뒤 사라진 요소는 읽지 않는다.
+    const homeForms = t('/st-index.html').forms.map(f => [f.fields.map(x => x.name).join(), f.submit]);
+    assert.ok(homeForms.some(([n, b]) => n === '수량' && b === '담기'), JSON.stringify(homeForms));
+    assert.ok(homeForms.some(([n]) => n === '그림자 입력') && !homeForms.some(([n]) => n.includes('검색') || n.includes('떠나는')), JSON.stringify(homeForms));
+    // 이미지·JSON은 페이지 종류가 아니다. 막힌 이동(/away) 뒤에도 다음 페이지를 연다.
+    assert.deepEqual((map.files ?? []).map(u => u.replace(origin, '')).sort(), ['/st-api.html', '/st-pic.png']);
+    assert.ok(!map.templates.some(x => /st-api|st-pic/.test(x.key)));
+    assert.ok(map.failed.some(u => u.endsWith('/away')) && map.visited.some(u => u.endsWith('/st-about.html')), JSON.stringify([map.failed, map.failedReasons]));
+    const own = (k: string) => s.clusters.find(c => c.templates.some(x => x.endsWith(k)))!.hub;
+    assert.equal(own('/st/p/:x'), own('/st-index.html'));
+    assert.notEqual(own('/st-join.html'), own('/st-index.html'));
+  } finally { await g.context.close(); }
+});
+
+test('사이트 구조: 모든 페이지 사이드 메뉴와 목적지가 같아도 홈 본문 목차의 링크는 본문 링크로 남는다', () => {
+  const o = 'http://x';
+  const sections = ['/a', '/b', '/c', '/d'];
+  // 사이드 메뉴(nav#side)는 모든 페이지에 같은 링크가 있고, 홈 본문(ul.toc)에도 같은 목적지 링크가 있다. /a는 하위 페이지 /a/1·/a/2를 본문 목록으로 가진다.
+  const nav = sections.map(to => ({ to: o + to, text: '', layout: true, region: 'nav#side' }));
+  const info = (body: string[], region: string) => ({ links: [...nav, ...body.map(to => ({ to: o + to, text: '', layout: false, region }))], search: false, shape: '', api: [], forms: [] });
+  const map = { visited: [], unvisited: [], failed: [], templates: [{ key: o + '/', pages: [o + '/'] }, ...sections.map(s => ({ key: o + s, pages: [o + s] })),
+    { key: o + '/a/:x', pages: [o + '/a/1', o + '/a/2', o + '/a/3'] }],
+    structure: { [o + '/']: info(sections, 'ul.toc'), [o + '/a']: info(['/a/1', '/a/2', '/a/3'], 'main'), [o + '/b']: info([], 'main'), [o + '/c']: info([], 'main'), [o + '/d']: info([], 'main') } };
+  const s = siteStructure(map, o + '/');
+  const home = s.templates.find(t => t.key === o + '/')!;
+  assert.ok(home.hub && home.out.length === 4, JSON.stringify(home.out));
+  assert.ok(s.templates.find(t => t.key === o + '/a')!.out.some(x => x.to === o + '/a/:x' && x.list));
+
+  // 모든 페이지에 있는 헤더 영역의 링크는 목적지에 현재 주소가 들어가 페이지마다 달라도 공통 링크다(가짜 중심 노드를 만들지 않는다).
+  const hdr = (p: string) => [{ to: `${o}/login?back=${encodeURIComponent(o + p)}`, text: '', layout: true, region: 'div#user' }];
+  const docs = ['/doc/1', '/doc/2', '/doc/3'];
+  const map2 = { visited: [], unvisited: [], failed: [], templates: [{ key: o + '/', pages: [o + '/'] }, { key: o + '/doc/:x', pages: docs.map(d => o + d) },
+    { key: o + '/login', pages: ['/', ...docs].map(p => `${o}/login?back=${encodeURIComponent(o + p)}`) }],
+    structure: Object.fromEntries(['/', ...docs].map(p => [o + p, { links: hdr(p), search: false, shape: '', api: [], forms: [] }])) };
+  const s2 = siteStructure(map2, o + '/');
+  assert.ok(!s2.templates.find(t => t.key === o + '/doc/:x')!.hub && s2.templates.find(t => t.key === o + '/login')!.layoutOnly);
+});
+
+test('사이트 구조: 같은 종류인데 화면 골격이 다르면 mixed로 표시하고, 묶음은 정한 크기로 나눈다', () => {
+  const o = 'http://x';
+  const info = (shape: string, links: string[] = []) => ({ links: links.map(to => ({ to: o + to, text: '', layout: false })), search: false, shape, api: [], forms: [] });
+  const map = { visited: [], unvisited: [], failed: [], templates: [
+    { key: o + '/', pages: [o + '/'] }, { key: o + '/a', pages: [o + '/a'] }, { key: o + '/b', pages: [o + '/b'] },
+    { key: o + '/c', pages: [o + '/c'] }, { key: o + '/info/:x', pages: [o + '/info/faq', o + '/info/terms'] }],
+    structure: { [o + '/']: info('h1:1', ['/a', '/b', '/c', '/info/faq']), [o + '/info/faq']: info('h1:1 list:5+'), [o + '/info/terms']: info('h1:1 table:1') } };
+  const s = siteStructure(map, o + '/', 3);
+  assert.ok(s.templates.find(t => t.key === o + '/info/:x')!.mixed);
+  assert.deepEqual(s.clusters.map(c => c.templates.length), [3, 2]);
+  assert.ok(s.clusters.every(c => c.hub === o + '/'));
+});
+
 test('정체 판정: Tab으로 포커스만 옮기는 행동은 화면 변화로 센다', async () => {
   const results: string[] = [];
   const send: Send = async req => {
@@ -701,4 +806,62 @@ test('화면 크기: 모바일에서 pin한 대상은 모바일 시나리오에�
   const res = await runPlan({ plan: r.plan!, policy: { origins: [origin] }, timeoutMs: 1500,
     runDir: fileURLToPath(new URL(`../runs/test-viewport-${Date.now()}`, import.meta.url)) });
   assert.deepEqual(res.scenarios[0].checks.map(c => c.status), ['passed'], JSON.stringify(res.scenarios[0]));
+});
+
+test('snapshot 접기: 이 대화에서 글자·ref까지 같은 6줄 이상 하위 트리만 접고, 바뀐 영역·ref가 다른 영역·짧은 영역은 그대로 보낸다', () => {
+  const nav = ['  - navigation [ref=e2]:', '    - link "Home" [ref=e3]', '    - link "Shop" [ref=e4]', '    - link "Cart" [ref=e5]', '    - link "Help" [ref=e6]', '    - link "Login" [ref=e7]'];
+  const page = (main: string[]) => ['- generic [ref=e1]:', ...nav, '  - main [ref=e8]:', ...main].join('\n');
+  const sent = new Set<string>();
+  const first = collapseSeen(page(['    - heading "목록" [ref=e9]']), sent);
+  assert.ok(!first.includes('이미 본'), '처음 보는 화면은 그대로');
+  const second = collapseSeen(page(['    - heading "상세" [ref=e10]']), sent);
+  assert.match(second, /- navigation \[ref=e2\] \(이 대화에서 이미 본 것과 같은 6줄, ref 그대로 사용 가능\. 펼치려면 snapshot ref=e2\)/);
+  assert.ok(second.includes('heading "상세"') && !second.includes('link "Home"'), '바뀐 본문은 보이고 같은 메뉴는 접힌다');
+  // ref가 바뀌면(다른 요소) 접지 않는다.
+  const moved = collapseSeen(page([]).replace('[ref=e3]', '[ref=e30]'), new Set(sent));
+  assert.ok(moved.includes('link "Home" [ref=e30]'));
+  // 짧은 영역은 접어도 아낄 것이 없어 그대로다.
+  const small = new Set<string>();
+  collapseSeen('- list [ref=e1]:\n  - listitem [ref=e2]: a', small);
+  assert.equal(collapseSeen('- list [ref=e1]:\n  - listitem [ref=e2]: a', small), '- list [ref=e1]:\n  - listitem [ref=e2]: a');
+});
+
+test('탐색 순서: 시작 페이지, 그다음 공통 레이아웃보다 입력칸이 많은 폼 페이지, 나머지는 발견 순서', () => {
+  const o = 'http://x.test';
+  const map = { templates: ['/', '/about', '/cart', '/login', '/signup'].map(p => ({ key: o + p, pages: [o + p] })), visited: [o + '/', o + '/about', o + '/cart', o + '/login', o + '/signup'],
+    unvisited: [], failed: [], fields: { [o + '/']: 1, [o + '/about']: 1, [o + '/cart']: 1, [o + '/login']: 3, [o + '/signup']: 4 } };
+  assert.deepEqual(templateOrder(map, o + '/').map(t => t.key.slice(o.length)), ['/', '/login', '/signup', '/about', '/cart']);
+  assert.deepEqual(templateOrder({ ...map, fields: undefined }, o + '/').map(t => t.key.slice(o.length)), ['/', '/about', '/cart', '/login', '/signup'], '입력칸 정보가 없으면 발견 순서');
+});
+
+test('정책이 막은 앱 요청을 행동 결과에 알리고, restart로 대화 시작 상태(로그인 여부 포함)로 되돌린다', async () => {
+  const policy = { origins: [origin], deny: ['logout'] };
+  const outs: string[] = [];
+  const send = scripted([
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [{ name: 'fill', input: { ref: ref(snap, 'textbox "Email"'), value: 'a@b.c' } }, { name: 'click', input: { ref: ref(snap, 'button "Sign In"') } }],
+    () => [{ name: 'snapshot', input: {} }],
+    snap => [{ name: 'click', input: { ref: ref(snap, 'button "Sign Out"') } }, { name: 'click', input: { ref: ref(snap, 'button "Subscribe"') } }],
+    out => { outs.push(out); return [{ name: 'restart', input: { url: origin + '/signin.html' } }, { name: 'snapshot', input: {} }]; },
+    out => { outs.push(out); return [{ name: 'pin', input: { ref: ref(out, 'textbox "Email"'), group: false } }]; },
+    out => { outs.push(out); return null; },
+  ]);
+  await explore({ browser: browser!, policy, startUrl: origin + '/signin.html', requirements: [], send, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 10 });
+  assert.match(outs[0], /테스트 정책이 막은 앱 요청\(앱 결함 아님\): POST \/api\/logout \(앱 설정의 금지 주소\)/, outs[0]);
+  assert.match(outs[0], /POST \/api\/subscribe \(쓰기 차단\)/, outs[0]);
+  assert.ok(!posts.some(p => p.includes('/api/')), posts.join(', '));
+  // 되돌린 뒤에는 로그인 전 폼이 다시 보이고, 새로 열어도 있는 대상이라 pin된다.
+  assert.match(outs[1], /처음 상태로 되돌리고 이동함/);
+  assert.match(outs[1], /textbox "Email"/);
+  assert.match(outs[2], /^T1 = /m, outs[2]);
+
+  // 로그인 상태로 시작한 대화는 restart 뒤에도 로그인 상태다.
+  const state = { cookies: [], origins: [{ origin, localStorage: [{ name: 'user', value: 'demo' }] }] };
+  const seen: string[] = [];
+  const send2 = scripted([
+    () => [{ name: 'restart', input: { url: origin + '/signin.html' } }, { name: 'snapshot', input: {} }],
+    out => { seen.push(out); return null; },
+  ]);
+  await explore({ browser: browser!, policy, startUrl: origin + '/signin.html', requirements: [], send: send2, model: 'claude-opus-5-5', budget: new Budget(1), maxTurns: 5, storageState: state });
+  assert.match(seen[0], /Already Signed In/, seen[0]);
 });

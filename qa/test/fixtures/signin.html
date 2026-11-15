@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>로그인</title></head>
+<body>
+<main id="app"></main>
+<p id="toast" role="status"></p>
+<button id="sub">Subscribe</button>
+<script>
+  // 로그인하면 폼이 사라지고, 로그아웃은 서버 요청이 성공해야 풀린다(정책이 막으면 실패 알림만 뜬다).
+  const app = document.getElementById('app'), toast = document.getElementById('toast');
+  function render() {
+    const user = localStorage.getItem('user');
+    app.innerHTML = user
+      ? '<h1>Already Signed In</h1><button id="out">Sign Out</button>'
+      : '<h1>Sign In</h1><label>Email <input id="email"></label><button id="in">Sign In</button>';
+    if (user) document.getElementById('out').onclick = () => fetch('/api/logout', { method: 'POST' })
+      .then(() => { localStorage.removeItem('user'); render(); }).catch(() => { toast.textContent = '로그아웃 실패'; });
+    else document.getElementById('in').onclick = () => { localStorage.setItem('user', document.getElementById('email').value || 'x'); render(); };
+  }
+  document.getElementById('sub').onclick = () => fetch('/api/subscribe', { method: 'POST' }).catch(() => { toast.textContent = '구독 실패'; });
+  render();
+</script>
+</body></html>

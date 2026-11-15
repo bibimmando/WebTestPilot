@@ -1,0 +1,6 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>홈</title></head><body><header><nav><a href="/away">밖</a> <a href="/st-index.html">홈</a> <a href="/st-about.html">소개</a> <a href="/st-join.html">가입</a></nav><div id="search"><input type="search" placeholder="검색"><button>찾기</button></div></header><main><h1>상품</h1><ul><li><a href="/st/p/1.html">상품 1</a></li><li><a href="/st/p/2.html">상품 2</a></li><li><a href="/st/p/3.html">상품 3</a></li></ul><a href="/st-api.html">데이터</a> <a href="/st-pic.png">사진</a>
+<div class="buy"><input type="number" aria-label="수량"><button>담기</button></div>
+<x-box></x-box><div id="old" style="animation: fade 1.2s forwards"><input aria-label="떠나는 입력"></div></main>
+<style>@keyframes fade { from { opacity: 1 } to { opacity: .2 } }</style>
+<script>customElements.define('x-box', class extends HTMLElement { constructor() { super(); this.attachShadow({ mode: 'open' }).innerHTML = '<input aria-label="그림자 입력">'; } });
+document.getElementById('old').addEventListener('animationend', e => e.target.remove());</script><script>fetch("/st/api/items?id=7").catch(()=>{})</script></body></html>

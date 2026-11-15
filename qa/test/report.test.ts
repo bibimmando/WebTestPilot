@@ -62,6 +62,30 @@ function savedRun(): string {
   return dir;
 }
 
+test('보고서 영역: 사이트 구조의 묶음별로 발견을 세고, 여러 페이지에 같은 대상으로 나온 점검은 공통 영역으로 한 번만 보인다', () => {
+  const dir = savedRun();
+  const old = buildReport(dir);
+  assert.deepEqual(old.areas?.map(a => [a.kind, a.templates.map(t => [t.template, t.bugs])]), [['all', [[url, 1], ['http://app.test/cart', 0]]]],
+    '구조 정보가 없는 예전 실행은 영역 하나(전체)');
+  const ex = JSON.parse(readFileSync(join(dir, 'explore.json'), 'utf8'));
+  const [cart, help] = ['http://app.test/cart', 'http://app.test/help'];
+  const info = (links: string[]) => ({ links: links.map(to => ({ to, text: '', layout: false })), search: false, shape: '', api: [], forms: [] });
+  const unnamed = { kind: 'unnamed-control', viewport: 'desktop', level: 'improvement', target: 'button', detail: 'button', confirmed: true };
+  ex.sitemap = { ...ex.sitemap, templates: [...ex.sitemap.templates, { key: help, pages: [help] }], visited: [url, cart, help],
+    structure: { [url]: info([cart, help]), [cart]: info([]), [help]: info([]) },
+    audit: [...ex.sitemap.audit, ...[cart, help].map(u => ({ url: u, findings: [unnamed] }))] };
+  ex.sitemap.audit[0].findings.push(unnamed);
+  writeFileSync(join(dir, 'explore.json'), JSON.stringify(ex));
+  const r = buildReport(dir);
+  assert.deepEqual(r.areas!.map(a => [a.kind, a.hub, a.templates.map(t => [t.template, t.bugs, t.ui, t.improvements])]),
+    [['hub', url, [[url, 1, 1, 0], [cart, 0, 0, 0], [help, 0, 0, 0]]]], '목록 페이지가 중심 노드, 공통 영역 점검은 종류별 개수에서 뺀다');
+  assert.deepEqual(r.commonAudit?.map(a => [a.kind, a.pages]), [['unnamed-control', 3]]);
+  assert.equal(r.improvements.length, 3, 'report.json의 페이지별 점검 목록은 그대로다');
+  const html = renderHtml(r, dir);
+  assert.ok(html.includes('공통 영역 발견 (1종)'));
+  assert.ok(html.includes('<th>영역</th><td>/list에서 이어지는 페이지 › /list</td>'), '발견마다 영역과 페이지 종류를 보인다');
+});
+
 test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·근거·증거를 남기며, 미완료와 범위 밖을 숨기지 않는다', async () => {
   const dir = savedRun();
   const r = buildReport(dir);
@@ -92,7 +116,14 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   assert.ok(html.includes('수집 상한을 넘어 버린 신호 3건'), '버린 오류 신호 수를 숨기지 않는다');
   // 시각 판정이 개선 제안뿐이면 UI 결함 타일에 넣지 않는다.
   const onlyImprovement = renderHtml({ ...r, bugs: [], visual: [{ ...r.bugs[0], level: 'improvement' }] }, dir);
-  assert.ok(onlyImprovement.includes('<p class="num">1</p><p class="tlabel">UI 결함</p>'), '점검 UI 결함 1건만 센다');
+  assert.ok(onlyImprovement.includes('<p class="num">1</p><p class="tlabel">UI 버그</p>'), '점검 UI 결함 1건만 센다');
+  // 버그 개수(02): 발견 단위, 유형·도메인별. 규칙 action-has-effect는 기능, 점검 가림은 UI.
+  assert.deepEqual([r.bugs[0].bugType, r.uiDefects[0].bugType?.type], [{ type: 'function', basis: '일반 규칙 action-has-effect' }, 'ui']);
+  assert.deepEqual(r.bugTypes, { total: 2, function: 1, routing: 0, ui: 1, input: 0, byOrigin: [{ origin: 'http://app.test', total: 2, function: 1, routing: 0, ui: 1, input: 0 }] });
+  assert.ok(html.includes('<td>http://app.test</td><td class="nw"><b class="hi">2</b></td>'), '도메인 표');
+  assert.ok(html.includes('<h2><span class="no">03</span>버그 (2)</h2>') && html.includes('<h2><span class="no">06</span>판정하지 못한 항목 (2)</h2>'), '03~06을 도메인마다 보인다');
+  assert.ok(html.includes('1.1 기대 동작</th><td>&quot;담은 상품&quot; 목록 안의 목록 항목 — 1개') && html.includes('1.2 실제 동작</th><td>개수: 0'), '대상별 기대·실제');
+  assert.ok(html.includes('<td class="nw">요청 오류 응답</td><td>500 GET 500</td><td>/api</td>'), '오류 신호 표: 종류 | 응답 | 경로');
   const { targetText } = await import('../src/report.ts');
   assert.equal(targetText({ role: 'link', name: '^Shop$', href: '/shop', nth: 1, of: 2 }), '"Shop" 링크 (주소 /shop) (2개 중 2번째)', '주소로 구별한 링크는 주소도 적는다');
   assert.equal(targetText({ text: String.raw`^(?!\s*Quantity\s*$)\s*\S.{0,39}$`, anchor: '^Quantity$' }), '"Quantity" 영역의 요소','읽는 말로 못 옮기는 정규식은 보이지 않는다');
@@ -104,7 +135,7 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   assert.ok(html.includes('data:image/png;base64,'), '버그 항목에는 실패 시점 화면을 넣는다');
 
   // 발견 제목: AI가 없으면 기대 동작 + 검사 기록으로 만든 실제 한 줄
-  assert.ok(html.includes('실제: &quot;담은 상품&quot; 목록 안의 목록 항목의 개수 0 (기대 1)'), html.match(/실제: [^<]*/)?.[0] ?? '실제 줄 없음');
+  assert.ok(html.includes('<p class="label">실제 동작</p><p>&quot;담은 상품&quot; 목록 안의 목록 항목의 개수 0 (기대 1)'), html.match(/실제 동작<\/p><p>[^<]*/)?.[0] ?? '실제 줄 없음');
 
   // AI 제목: 기록에 없는 숫자는 돌려보내고, 고친 제목만 남긴다. 판정은 그대로다.
   const { writeHeadlines } = await import('../src/headline.ts');
@@ -125,7 +156,7 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   const titled = buildReport(dir);
   assert.deepEqual(titled.bugs.map(b => b.level), r.bugs.map(b => b.level), '제목은 판정을 바꾸지 않는다');
   const titledHtml = renderHtml(titled, dir);
-  assert.ok(titledHtml.includes('담기 버튼을 눌러도 목록 항목이 0개(기대 1개)') && titledHtml.includes('기대 동작: '), '제목 아래에 기대 동작을 남긴다');
+  assert.ok(titledHtml.includes('담기 버튼을 눌러도 목록 항목이 0개(기대 1개)') && titledHtml.includes('<p class="label">기대 동작</p><p>&lt;script&gt;'), '제목 아래에 기대 동작을 남긴다');
   assert.deepEqual(checkHeadline('"Orb Lamp" 버튼', 'x "Orb Lamp" 영역'), []);
   assert.deepEqual(checkHeadline('"Orb Lampe" 버튼', 'x "Orb Lamp" 영역'), ['인용 "Orb Lampe"은 검사 기록에 그대로 없습니다']);
   assert.match(checkHeadline('가'.repeat(61), '')[0], /60자 이내/);
@@ -171,6 +202,27 @@ test('보고서: 판정을 구역으로 나누고, 사람이 따라 할 절차·
   const before = readFileSync(join(dir, 'report.json'), 'utf8');
   await writeReport(dir, browser);
   assert.equal(readFileSync(join(dir, 'report.json'), 'utf8'), before);
+});
+
+test('버그 유형: 규칙·읽기·앞선 입력으로 나누고, 애매하면 시각 > 입력 규칙 > 이동 규칙 > 그 밖의 규칙 > 앞선 입력 > 주소 순서', async () => {
+  const { bugTypeOf } = await import('../src/report.ts');
+  const targets = { T1: { target: { role: 'textbox', name: '^Password$' } }, T2: { target: { role: 'searchbox' } } } as unknown as Plan['targets'];
+  const steps = [{ id: 'S.A1', op: 'fill' as const, target: 'T1', value: '12345678' }, { id: 'S.A2', op: 'click' as const, target: 'T3' }];
+  const chk = (read: string, rule?: string, after = 'S.A2') => ({ id: 'S.C1', after, read, op: 'equals', expected: 'x', source: { kind: rule ? 'inferred' : 'constraint', ...(rule ? { rule } : {}) } }) as never;
+  const t = (c: never, st = steps, visual = false) => bugTypeOf(c, st, targets, visual).type;
+  assert.equal(t(chk('text', 'required-input')), 'input');
+  assert.equal(t(chk('visible', 'no-error-page')), 'routing');
+  assert.equal(t(chk('url', 'link-target')), 'routing');
+  assert.equal(t(chk('value', 'action-has-effect')), 'function', '값을 넣었어도 다른 버튼 효과를 보는 일반 규칙은 기능');
+  assert.equal(t(chk('url')), 'input', '규칙 없이 값을 넣은 뒤 가입이 받아들여졌는지 본 검사는 입력 검증');
+  assert.equal(t(chk('text'), [steps[1]]), 'function');
+  assert.equal(t(chk('url'), [steps[1]]), 'routing', '값 입력 없이 이동 뒤 주소를 본 검사');
+  assert.equal(t(chk('text'), [{ ...steps[0], target: 'T2' }, steps[1]]), 'function', '검색칸 입력은 입력 검증으로 보지 않는다');
+  assert.equal(t(chk('text', undefined, 'start')), 'function', '입력 전에 본 검사');
+  assert.equal(t(chk('visual', 'content-readable')), 'ui');
+  assert.equal(t(chk('text', 'spelling')), 'ui', '품질 규칙(3묶음)');
+  assert.equal(t(chk('text', 'required-input'), steps, true), 'ui', '시각 판정이 가장 먼저');
+  assert.equal(bugTypeOf(undefined, steps, targets, false).type, 'function', '행동 실패');
 });
 
 test('행동 실행 집계: 시도 기준 실패율, 시도하지 못한 행동의 원인, 같은 대상의 반복 실패', async () => {

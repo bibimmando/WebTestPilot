@@ -22,6 +22,8 @@ export type Class = 'passed' | 'passed_inferred' | 'passed_observed' | 'mismatch
   /** 앱 설정이 금지한 행동(로그아웃 등)이라 실행하지 않음. 결함도 자동화 실패도 아니다 */
   | 'policy_blocked' | 'write_blocked'
   | 'needs_triage' | 'app_defect_candidate' | 'automation_failure' | 'uncertain'
+  /** 실행하는 컴퓨터의 네트워크가 끊겨 시작 페이지를 못 엶(net::ERR_INTERNET_DISCONNECTED 등). 앱 결함도 자동화 실패도 아니다. 판정 못 함으로 센다 */
+  | 'environment_failure'
   /** 시각 검사: 판정 대기, 모든 조건 충족 */
   | 'needs_visual' | 'passed_visual';
 export type Quote = { file: string; text: string };
@@ -64,6 +66,9 @@ export const REPRO_REASON_TEXT: Record<ReproReason, string> = {
 export type SystemLevel = 'bug_high' | 'bug_medium' | 'not_bug' | 'hold' | 'incomplete' | 'ui_defect' | 'improvement';
 
 /** 실행 기록만으로 하는 1차 분류. 실패 위치만으로 원인을 정하지 않고, 원인을 모르는 실패는 needs_triage로 둔다. */
+// 실행하는 쪽의 연결이 끊긴 것만 뜻하는 오류. 대상 서버가 연결을 거부·시간 초과(CONNECTION_REFUSED·TIMED_OUT)한 것은 앱 쪽 문제일 수 있어 넣지 않는다.
+const LOCAL_NETWORK = /net::ERR_(INTERNET_DISCONNECTED|NETWORK_CHANGED|NAME_NOT_RESOLVED|ADDRESS_UNREACHABLE|NETWORK_ACCESS_DENIED|PROXY_CONNECTION_FAILED)/;
+
 export function preclassify(plan: Plan, run: RunResult): Verdict[] {
   const out: Verdict[] = [];
   for (const s of plan.scenarios) {
@@ -87,7 +92,9 @@ export function preclassify(plan: Plan, run: RunResult): Verdict[] {
       if (x.call === 'start') {
         if (r.start === 'failed') {
           cause = s.id;
-          out.push({ id: s.id, scenario: s.id, kind: 'start', requirements: s.covers, observed: 'start_failed', class: 'needs_triage' });
+          // 시작 페이지 요청이 실행 쪽 네트워크 끊김으로 실패했으면 AI 분류 없이 환경 실패로 둔다(toolshop 11/11: 11건이 증거 없음으로 "판단 불가", 분류 호출만 썼음).
+          const net = r.signals?.find(g => g.after === 'start' && g.kind === 'requestfailed' && LOCAL_NETWORK.test(g.text ?? ''));
+          out.push({ id: s.id, scenario: s.id, kind: 'start', requirements: s.covers, observed: 'start_failed', ...(net ? { error: net.text, class: 'environment_failure' as const } : { class: 'needs_triage' as const }) });
         }
       } else if (x.call === 'act') {
         const st = r.steps.find(y => y.id === x.id)!;
@@ -451,7 +458,7 @@ export function systemVerdict(plan: Plan, v: Verdict): NonNullable<Verdict['syst
   if (v.class === 'not_applicable') return { level: 'hold', reason: '같은 템플릿 다른 페이지에서 이름으로 고정한 대상이 없음: 페이지마다 다른 이름인지 요소 누락인지 사람이 확인' };
   if (v.class !== 'app_defect_candidate') return incomplete(({ invalid: '무효 시나리오', not_run: `실행 안 됨(원인 ${v.cause ?? '알 수 없음'})`,
     uncertain_execution: '실행 여부 불명확', precondition_failed: '시작 조건 준비 실패', policy_blocked: '앱 설정이 금지한 행동이라 실행하지 않음', write_blocked: '쓰기 차단으로 확인 불가', uncertain: 'AI 분류가 판단 불가',
-    mismatch: '분류 미완료', needs_triage: '분류 미완료' } as Partial<Record<Class, string>>)[v.class] ?? v.class);
+    mismatch: '분류 미완료', needs_triage: '분류 미완료', environment_failure: `실행 환경 네트워크 끊김(${v.error ?? '?'})` } as Partial<Record<Class, string>>)[v.class] ?? v.class);
   // AI가 결함 후보로 봤어도 실패 시점 snapshot을 못 남겼으면 그 분류를 실패 시점 증거로 확인할 수 없다(Q66). 원래 불일치는 남는다.
   if (v.captureErrors?.some(e => e.startsWith('aria')) && v.triage && 'reason' in v.triage) return incomplete(`증거 부족: 실패 시점 증거 수집 실패(${v.captureErrors.join('; ')})`);
   // 값을 읽어 비교한 불일치만 판정한다. 대상 미해결·오류는 같은 실패가 재현돼도 결함 근거가 아니다.

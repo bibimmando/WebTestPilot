@@ -31,22 +31,23 @@ jobs:
             exit 1
           fi
 
-  python-tests:
-    name: Python tests
+  qa-tests:
+    name: QA tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: webtestpilot-crawler
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: '3.11'
+          # qa는 TypeScript를 Node가 바로 실행한다(타입 제거). 개발 환경과 같은 24를 쓴다.
+          node-version: '24'
+      # Playwright는 저장소 루트 package.json에 있고, qa는 Claude SDK·MCP SDK를 자기 package.json에 둔다.
       - name: Install dependencies
-        run: python -m pip install -e '.[test,benchmark]'
+        run: npm ci && npm ci --prefix qa
       - name: Install browser
-        run: python -m playwright install --with-deps chromium
-      - name: Test
-        run: python -m pytest
-
+        run: npx playwright install --with-deps chromium
+      - name: Type check
+        run: npx --prefix qa tsc -p qa --noEmit
+      # 무료 테스트만 돈다(로컬 fixture 서버와 가짜 모델). 유료 API는 부르지 않는다.
+      - name: Run tests
+        run: npm test --prefix qa

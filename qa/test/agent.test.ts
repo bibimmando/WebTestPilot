@@ -22,8 +22,17 @@ test('제출이 통과하면 같은 응답의 뒤 도구는 실행하지 않는�
 
 test('호출 실패·다른 모델 응답은 기록을 남기고 error로 끝난다', async () => {
   const base = { model: 'claude-sonnet-5-5', system: 's', tools: [], user: 'u', maxTurns: 3 };
-  const failed = await runAgent({ ...base, budget: new Budget(1), send: async () => { throw new Error('529 overloaded'); } });
-  assert.deepEqual([failed.stop, failed.detail, failed.turns.length], ['error', '529 overloaded', 1]);
+  let tries = 0;
+  const failed = await runAgent({ ...base, budget: new Budget(1), retryDelaysMs: [0, 0, 0], send: async () => { tries++; throw new Error('529 overloaded'); } });
+  assert.deepEqual([failed.stop, failed.detail, failed.turns.length, tries], ['error', '529 overloaded', 1, 4], '일시적 실패는 같은 턴에서 세 번 더 보낸 뒤 끝낸다');
+  // 일시적으로 끊겼다가 다시 되면 같은 예약으로 이어 가고 한 번만 청구한다. 요청 내용 오류(400)는 다시 보내지 않는다.
+  let n = 0;
+  const budget = new Budget(1);
+  const recovered = await runAgent({ ...base, budget, retryDelaysMs: [0, 0, 0], send: async req => { if (++n <= 2) throw new Error('Connection error.'); return reply([], 'end_turn', req.model); } });
+  assert.deepEqual([recovered.stop, recovered.turns.length, n, budget.held], ['no_submit', 1, 3, 0]);
+  let bad = 0;
+  await runAgent({ ...base, budget: new Budget(1), retryDelaysMs: [0, 0, 0], send: async () => { bad++; throw Object.assign(new Error('invalid_request_error'), { status: 400 }); } });
+  assert.equal(bad, 1);
   const swapped = await runAgent({ ...base, budget: new Budget(1), send: async () => reply([], 'end_turn', 'claude-opus-5-5') });
   assert.equal(swapped.stop, 'error');
 });
@@ -142,4 +151,29 @@ test('제출 도구 대화: 글로만 답하거나 글이 잘리면 한 번만 �
   // 켜지 않은 대화(탐색)는 전처럼 바로 끝난다
   ({ r, seen } = await go([reply([text('a')], 'end_turn')], false));
   assert.deepEqual([r.stop, seen.length], ['no_submit', 1]);
+});
+
+test('캐시: 대화마다 같은 시스템 프롬프트 끝에 캐시 지점을 따로 두고, 대화 끝 자동 지점도 유지한다', async () => {
+  const seen: Anthropic.MessageCreateParamsNonStreaming[] = [];
+  await runAgent({ send: async req => { seen.push(req); return reply([{ type: 'text', text: 'x' }], 'end_turn'); }, model: 'claude-sonnet-5-5', system: '규칙',
+    tools: [], user: 'u', budget: new Budget(1), maxTurns: 1 });
+  assert.deepEqual(seen[0].system, [{ type: 'text', text: '규칙', cache_control: { type: 'ephemeral' } }]);
+  assert.deepEqual((seen[0] as { cache_control?: unknown }).cache_control, { type: 'ephemeral' });
+});
+
+test('예약: 둘째 호출부터 입력 상한을 앞 응답의 실제 토큰 + 새로 더한 내용의 바이트로 잡아, 전체를 바이트로 셀 때보다 작게 예약한다', async () => {
+  // 큰 시스템 프롬프트(바이트 많음)에 실제 토큰은 적은 대화. 첫 호출은 바이트 상한, 둘째 호출은 실제 토큰 + 도구 결과 바이트로 예약한다.
+  const big = '가'.repeat(30000);
+  let n = 0;
+  const tool: Tool = { def: { name: 'look', description: 'x', input_schema: { type: 'object', properties: {} } }, run: async () => ({ text: '결과', ...(n >= 2 ? { done: 1 } : {}) }) };
+  const r = await runAgent({ model: 'claude-opus-5-5', system: big, tools: [tool], user: '시작', budget: new Budget(5), maxTurns: 3,
+    send: async req => ({ id: 'm', type: 'message', role: 'assistant', model: req.model, stop_reason: 'tool_use', stop_sequence: null,
+      content: [{ type: 'tool_use', id: `t${++n}`, name: 'look', input: {} }],
+      usage: { input_tokens: 12000, output_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } }) as unknown as Anthropic.Message });
+  assert.equal(r.stop, 'done');
+  const [first, second] = r.turns.map(t => t.reserved);
+  const out = 16000 * 20 / 1e6;
+  assert.ok(second - out < (first - out) / 3, `둘째 예약의 입력 몫 ${second - out} < 첫 예약 입력 몫 ${first - out}/3`);
+  // 상한은 실제 입력(12000 + 50 출력 + 새 메시지)보다 작아지지 않는다.
+  assert.ok(second >= (12050 * 1.25 * 4 + 16000 * 20) / 1e6, String(second));
 });

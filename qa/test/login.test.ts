@@ -83,6 +83,10 @@ test('로그인: 성공하면 그 브라우저 상태로 로그인 이후 화면
   const missing = await login(browser!, policy, spec(), {});
   assert.deepEqual(missing, { ok: false, reason: '환경 변수 QA_TEST_USER가 비어 있음' });
   assert.match((await login(browser!, { origins: ['http://other.test'] }, spec(), env())).ok ? '' : '허용 origin 밖', /허용 origin 밖/);
+  // 성공 조건을 대상(역할·이름)으로만 줄 수도 있다. 로그인 뒤 첫 화면 주소로 가를 수 없는 앱용.
+  const byTarget = { ...spec(), success: { target: { role: 'link', name: '^로그아웃$' } } };
+  assert.ok((await login(browser!, policy, byTarget, env())).ok);
+  assert.equal((await login(browser!, policy, byTarget, env('nope-123'))).ok, false, '대상이 없으면(로그인 실패) 실패');
 });
 
 test('실행: 로그인 상태로 시나리오를 시작하고, 금지 주소(로그아웃)는 요청하지 않아 다음 시나리오도 로그인 상태다. 세션은 실행 폴더에 남지 않는다', async () => {
